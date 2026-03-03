@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Вход…</title>
+  <script src="../config.js"></script>
+  <script src="../app.js"></script>
+</head>
+
+<body>
+  <p>Выполняется вход…</p>
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var token = params.get('access_token');
+    if (token) {
+      window.adminApp.setToken(token);
+      window.location.replace('../index.html');
+    } else {
+      window.location.replace('../index.html?error=auth_failed');
+    }
+  </script>
+</body>
+
+</html>

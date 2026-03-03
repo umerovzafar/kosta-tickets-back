@@ -1,0 +1,285 @@
+services:
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "${GATEWAY_PORT:-1234}:1234"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${GATEWAY_DATABASE_URL:-postgresql://gateway:gateway@users_db:5432/kosta_users}
+      - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+      - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://localhost:1234}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
+      - TICKETS_SERVICE_URL=${TICKETS_SERVICE_URL:-http://tickets:1235}
+      - NOTIFICATIONS_SERVICE_URL=${NOTIFICATIONS_SERVICE_URL:-http://notifications:1237}
+      - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL:-http://inventory:1238}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
+    volumes:
+      - media_storage:/app/media
+    depends_on:
+      users_db:
+        condition: service_healthy
+      auth:
+        condition: service_started
+      tickets:
+        condition: service_started
+      notifications:
+        condition: service_started
+      inventory:
+        condition: service_started
+
+  users_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${USERS_DB_USER:-gateway}
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:-gateway}
+      POSTGRES_DB: ${USERS_DB_NAME:-kosta_users}
+    volumes:
+      - users_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  tickets:
+    build:
+      context: ./tickets
+      dockerfile: Dockerfile
+    ports:
+      - "1235:1235"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${TICKETS_DATABASE_URL:-postgresql://tickets:tickets@tickets_db:5432/kosta_tickets}
+      - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+    volumes:
+      - media_storage:/app/media
+    depends_on:
+      tickets_db:
+        condition: service_healthy
+
+  tickets_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${TICKETS_DB_USER:-tickets}
+      POSTGRES_PASSWORD: ${TICKETS_DB_PASSWORD:-tickets}
+      POSTGRES_DB: ${TICKETS_DB_NAME:-kosta_tickets}
+    volumes:
+      - tickets_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    ports:
+      - "1236:1236"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://gateway:gateway@users_db:5432/kosta_users}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - AUTH_REDIRECT_URI=${AZURE_REDIRECT_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-10080}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+    depends_on:
+      users_db:
+        condition: service_healthy
+
+  admin-panel:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile
+    ports:
+      - "${ADMIN_PANEL_PORT:-8080}:80"
+    restart: unless-stopped
+
+  notifications:
+    build:
+      context: ./notifications
+      dockerfile: Dockerfile
+    ports:
+      - "1237:1237"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${NOTIFICATIONS_DATABASE_URL:-postgresql://notifications:notifications@notifications_db:5432/kosta_notifications}
+      - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+    volumes:
+      - media_storage:/app/media
+    depends_on:
+      notifications_db:
+        condition: service_healthy
+
+  notifications_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${NOTIFICATIONS_DB_USER:-notifications}
+      POSTGRES_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:-notifications}
+      POSTGRES_DB: ${NOTIFICATIONS_DB_NAME:-kosta_notifications}
+    volumes:
+      - notifications_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  inventory:
+    build:
+      context: ./inventory
+      dockerfile: Dockerfile
+    ports:
+      - "1238:1238"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${INVENTORY_DATABASE_URL:-postgresql://inventory:inventory@inventory_db:5432/kosta_inventory}
+      - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+    volumes:
+      - media_storage:/app/media
+    depends_on:
+      inventory_db:
+        condition: service_healthy
+
+  inventory_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${INVENTORY_DB_USER:-inventory}
+      POSTGRES_PASSWORD: ${INVENTORY_DB_PASSWORD:-inventory}
+      POSTGRES_DB: ${INVENTORY_DB_NAME:-kosta_inventory}
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  attendance:
+    build:
+      context: ./attendance
+      dockerfile: Dockerfile
+    ports:
+      - "1239:1239"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${ATTENDANCE_DATABASE_URL:-postgresql://attendance:attendance@attendance_db:5432/kosta_attendance}
+    depends_on:
+      attendance_db:
+        condition: service_healthy
+
+  attendance_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${ATTENDANCE_DB_USER:-attendance}
+      POSTGRES_PASSWORD: ${ATTENDANCE_DB_PASSWORD:-attendance}
+      POSTGRES_DB: ${ATTENDANCE_DB_NAME:-kosta_attendance}
+    volumes:
+      - attendance_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  todos:
+    build:
+      context: ./todos
+      dockerfile: Dockerfile
+    ports:
+      - "1240:1240"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${TODOS_DATABASE_URL:-postgresql://todos:todos@todos_db:5432/kosta_todos}
+    depends_on:
+      todos_db:
+        condition: service_healthy
+
+  todos_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${TODOS_DB_USER:-todos}
+      POSTGRES_PASSWORD: ${TODOS_DB_PASSWORD:-todos}
+      POSTGRES_DB: ${TODOS_DB_NAME:-kosta_todos}
+    volumes:
+      - todos_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  time_tracking:
+    build:
+      context: ./time_tracking
+      dockerfile: Dockerfile
+    ports:
+      - "1241:1241"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
+    depends_on:
+      time_tracking_db:
+        condition: service_healthy
+
+  time_tracking_db:
+    image: postgres:16-alpine
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${TIME_TRACKING_DB_USER:-time_tracking}
+      POSTGRES_PASSWORD: ${TIME_TRACKING_DB_PASSWORD:-time_tracking}
+      POSTGRES_DB: ${TIME_TRACKING_DB_NAME:-kosta_time_tracking}
+    volumes:
+      - time_tracking_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  telegram_bot:
+    build:
+      context: ./telegram_bot
+      dockerfile: Dockerfile
+    ports:
+      - "1242:1242"
+    env_file:
+      - .env
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+    restart: unless-stopped
+
+volumes:
+  media_storage:
+  users_db_data:
+  tickets_db_data:
+  notifications_db_data:
+  inventory_db_data:
+  attendance_db_data:
+  todos_db_data:
+  time_tracking_db_data:

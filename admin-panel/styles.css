@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; background: #f5f6f8; color: #1a1a1a; }
+.container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+header { background: #1e3a5f; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+header h1 { margin: 0; font-size: 1.25rem; }
+header a { color: #fff; text-decoration: none; font-size: 0.875rem; padding: 0.4rem 0.8rem; border: 1px solid rgba(255,255,255,0.5); border-radius: 6px; }
+header a:hover { background: rgba(255,255,255,0.1); }
+.login-box { background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 3rem; text-align: center; margin: 4rem auto; max-width: 400px; }
+.login-box h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+.login-box p { color: #666; margin: 0 0 1.5rem; font-size: 0.9375rem; }
+.login-box .form-group { text-align: left; margin-bottom: 1rem; }
+.login-box .form-group label { display: block; margin-bottom: 0.35rem; font-size: 0.875rem; font-weight: 500; color: #333; }
+.login-box .form-group input { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; }
+.login-box #form-login { margin-top: 1rem; }
+.login-box #btn-login-submit { margin-top: 0.5rem; width: 100%; }
+.btn { display: inline-block; padding: 0.65rem 1.25rem; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; border: none; text-decoration: none; }
+.btn-primary { background: #1e3a5f; color: #fff; }
+.btn-primary:hover { background: #2a4a75; }
+.btn-success { background: #2d7d46; color: #fff; }
+.btn-success:hover { background: #368f52; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.error-msg { background: #fce8e8; color: #b91c1c; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.875rem; }
+.dashboard h2 { margin: 0 0 1.5rem; font-size: 1.375rem; }
+.users-table { width: 100%; background: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-collapse: collapse; overflow: hidden; }
+.users-table th, .users-table td { padding: 0.875rem 1rem; text-align: left; border-bottom: 1px solid #eee; }
+.users-table th { background: #f8f9fa; font-weight: 600; font-size: 0.8125rem; color: #555; }
+.users-table tr:last-child td { border-bottom: none; }
+.users-table tr:hover td { background: #fafbfc; }
+.users-table .role-cell { display: flex; align-items: center; gap: 0.5rem; }
+.users-table select { padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.875rem; min-width: 140px; }
+.users-table .loading { padding: 3rem; text-align: center; color: #666; }
+.users-table .avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 0.5rem; }
+.users-table .no-avatar { width: 36px; height: 36px; border-radius: 50%; background: #ddd; display: inline-flex; align-items: center; justify-content: center; font-size: 0.875rem; color: #666; margin-right: 0.5rem; vertical-align: middle; }
