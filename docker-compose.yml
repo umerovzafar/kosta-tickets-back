@@ -53,8 +53,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1235:1235"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${TICKETS_DATABASE_URL:-postgresql://tickets:tickets@tickets_db:5432/kosta_tickets}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
@@ -85,8 +83,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1236:1236"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://gateway:gateway@users_db:5432/kosta_users}
       - AZURE_TENANT_ID=${AZURE_TENANT_ID}
@@ -124,8 +120,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1237:1237"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${NOTIFICATIONS_DATABASE_URL:-postgresql://notifications:notifications@notifications_db:5432/kosta_notifications}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
@@ -156,8 +150,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1238:1238"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${INVENTORY_DATABASE_URL:-postgresql://inventory:inventory@inventory_db:5432/kosta_inventory}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
@@ -188,8 +180,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1239:1239"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${ATTENDANCE_DATABASE_URL:-postgresql://attendance:attendance@attendance_db:5432/kosta_attendance}
     depends_on:
@@ -217,8 +207,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1240:1240"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${TODOS_DATABASE_URL:-postgresql://todos:todos@todos_db:5432/kosta_todos}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
@@ -251,8 +239,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1241:1241"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
     depends_on:
@@ -280,8 +266,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "1242:1242"
-    env_file:
-      - .env
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
     restart: unless-stopped
