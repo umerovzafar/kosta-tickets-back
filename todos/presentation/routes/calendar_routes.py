@@ -1,6 +1,5 @@
 """Эндпоинты интеграции с календарём Microsoft Outlook."""
 
-import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import Annotated
@@ -24,7 +23,6 @@ from infrastructure.repositories import OutlookCalendarTokenRepository
 from presentation.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
-logger = logging.getLogger(__name__)
 
 
 def _encode_state(user_id: int) -> str:
@@ -156,7 +154,6 @@ async def list_events(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("list_events failed: %s", e)
         raise HTTPException(status_code=500, detail="Error loading calendar events") from e
 
 

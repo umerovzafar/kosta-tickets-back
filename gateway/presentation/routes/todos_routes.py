@@ -1,7 +1,5 @@
 """Прокси запросов к сервису todos (календарь Outlook и др.)."""
 
-import logging
-
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
@@ -9,7 +7,6 @@ from fastapi.responses import JSONResponse, Response as FastAPIResponse
 from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/todos", tags=["todos"])
-logger = logging.getLogger(__name__)
 
 
 def _todos_base() -> str:
@@ -58,14 +55,12 @@ async def proxy_todos(request: Request, path: str):
                 headers=headers,
                 content=body,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException) as e:
-        logger.warning("todos proxy request failed: %s", e)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
         return JSONResponse(
             status_code=503,
             content={"detail": "Todos service unavailable"},
         )
-    except Exception as e:
-        logger.exception("todos proxy error: %s", e)
+    except Exception:
         return JSONResponse(
             status_code=502,
             content={"detail": "Bad gateway"},
