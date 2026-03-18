@@ -294,7 +294,7 @@ async def get_tickets_ws_url():
     return {"url": f"{ws_base}/api/v1/tickets/ws/tickets"}
 
 
-def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
+async def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
     """Получить пользователя по токену из query (?token=...) для WebSocket. Возвращает None, если токена нет или невалиден."""
     import urllib.parse
     query = (websocket.scope.get("query_string") or b"").decode()
