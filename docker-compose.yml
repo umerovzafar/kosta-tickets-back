@@ -5,19 +5,17 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${GATEWAY_PORT:-1234}:1234"
-    env_file:
-      - .env
     environment:
       - DATABASE_URL=${GATEWAY_DATABASE_URL:-postgresql://gateway:gateway@users_db:5432/kosta_users}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
-      - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://localhost:1234}
+      - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://192.168.230.142:1234}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
       - TICKETS_SERVICE_URL=${TICKETS_SERVICE_URL:-http://tickets:1235}
       - NOTIFICATIONS_SERVICE_URL=${NOTIFICATIONS_SERVICE_URL:-http://notifications:1237}
       - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL:-http://inventory:1238}
       - TODOS_SERVICE_URL=${TODOS_SERVICE_URL:-http://todos:1240}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
-      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
+      - FRONTEND_URL=${FRONTEND_URL:-http://192.168.230.142:5173}
+      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://192.168.230.142:8080}
     volumes:
       - media_storage:/app/media
     depends_on:
@@ -98,8 +96,8 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-10080}
-      - FRONTEND_URL=${FRONTEND_URL}
-      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
+      - FRONTEND_URL=${FRONTEND_URL:-http://192.168.230.142:5173}
+      - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://192.168.230.142:8080}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
     healthcheck:
@@ -224,8 +222,8 @@ services:
     environment:
       - DATABASE_URL=${TODOS_DATABASE_URL:-postgresql://todos:todos@todos_db:5432/kosta_todos}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
-      - MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-http://localhost:1234/api/v1/todos/calendar/callback}
-      - CALENDAR_CONNECTED_REDIRECT_URL=${CALENDAR_CONNECTED_REDIRECT_URL:-http://localhost:5173}
+      - MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-http://192.168.230.142:1234/api/v1/todos/calendar/callback}
+      - CALENDAR_CONNECTED_REDIRECT_URL=${CALENDAR_CONNECTED_REDIRECT_URL:-http://192.168.230.142:5173}
     depends_on:
       todos_db:
         condition: service_healthy
