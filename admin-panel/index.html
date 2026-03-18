@@ -34,22 +34,27 @@
           <a href="#" id="btn-logout">Выход</a>
         </div>
       </header>
-      <main class="container">
+      <main class="container dashboard">
         <div id="dashboard-error" class="error-msg" style="display:none"></div>
-        <h2>Пользователи</h2>
-        <table class="users-table">
-          <thead>
-            <tr>
-              <th>Пользователь</th>
-              <th>Email</th>
-              <th>Роль</th>
-              <th>Действие</th>
-            </tr>
-          </thead>
-          <tbody id="users-tbody">
-            <tr><td colspan="4" class="loading">Загрузка…</td></tr>
-          </tbody>
-        </table>
+        <section id="panel-users" class="card">
+            <div class="card-header">
+              <h2 class="card-title">Пользователи</h2>
+              <p class="card-subtitle">Назначайте ролям доступ, затем выбирайте роль для пользователя.</p>
+            </div>
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Email</th>
+                  <th>Роль</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody">
+                <tr><td colspan="4" class="loading">Загрузка…</td></tr>
+              </tbody>
+            </table>
+          </section>
       </main>
     </div>
   </div>
@@ -93,12 +98,16 @@
           window.adminApp.clearToken();
           window.location.href = window.adminApp.logoutUrl();
         };
-        loadDashboard();
+        initDashboard();
         return;
       }
     })();
 
-    function loadDashboard() {
+    function initDashboard() {
+      loadUsers();
+    }
+
+    function loadUsers() {
       var tbody = document.getElementById('users-tbody');
       var errEl = document.getElementById('dashboard-error');
 
@@ -152,6 +161,7 @@
           btn.disabled = false;
         });
     }
+
 
     function escapeHtml(s) {
       if (!s) return '';

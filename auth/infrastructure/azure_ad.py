@@ -2,6 +2,8 @@ from typing import Optional
 import msal
 from infrastructure.config import get_settings
 
+AZURE_LOGIN_SCOPES = ["email"]
+
 
 def get_msal_app():
     settings = get_settings()
@@ -15,9 +17,8 @@ def get_msal_app():
 def get_login_url(state: Optional[str] = None) -> str:
     settings = get_settings()
     app = get_msal_app()
-    scopes = ["email"]
     auth_url = app.get_authorization_request_url(
-        scopes=scopes,
+        scopes=AZURE_LOGIN_SCOPES,
         redirect_uri=settings.auth_redirect_uri,
         state=state,
     )
@@ -36,7 +37,7 @@ def acquire_token_by_code(code: str) -> Optional[dict]:
     app = get_msal_app()
     result = app.acquire_token_by_authorization_code(
         code=code,
-        scopes=["email"],
+        scopes=AZURE_LOGIN_SCOPES,
         redirect_uri=settings.auth_redirect_uri,
     )
     if "error" in result:

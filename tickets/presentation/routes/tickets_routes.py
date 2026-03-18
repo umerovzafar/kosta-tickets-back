@@ -10,7 +10,6 @@ from application.use_cases import (
     CreateCommentUseCase,
     ListCommentsUseCase,
     UpdateCommentUseCase,
-    DeleteCommentUseCase,
 )
 from application.ports import TicketRepositoryPort, CommentRepositoryPort, TicketFilters
 from domain.entities import Status, Priority
@@ -259,21 +258,3 @@ async def update_comment(
         updated_at=comment.updated_at,
     )
 
-
-@router.delete("/{ticket_uuid}/comments/{comment_id}", status_code=204)
-async def delete_comment(
-    ticket_uuid: str,
-    comment_id: int,
-    session: AsyncSession = Depends(get_session),
-    ticket_repo: TicketRepositoryPort = Depends(get_ticket_repo),
-    comment_repo: CommentRepositoryPort = Depends(get_comment_repo),
-):
-    uc_ticket = GetTicketUseCase(ticket_repo)
-    ticket = await uc_ticket.execute(ticket_uuid)
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    uc = DeleteCommentUseCase(comment_repo)
-    ok = await uc.execute(comment_id=comment_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Comment not found")
-    await session.commit()

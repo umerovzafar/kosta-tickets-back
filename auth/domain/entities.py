@@ -11,7 +11,9 @@ class User:
     display_name: Optional[str]
     picture: Optional[str]
     role: str
+    position: Optional[str]  # должность
     is_blocked: bool
     is_archived: bool
+    time_tracking_role: Optional[str]  # "user" | "manager" | None — отдельная роль в учёте времени
     created_at: datetime
     updated_at: datetime

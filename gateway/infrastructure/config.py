@@ -6,10 +6,12 @@ class Settings(BaseSettings):
     media_path: str = "./media"
     service_name: str = "gateway"
     gateway_base_url: str = ""
-    auth_service_url: str = ""
+    auth_service_url: str = "http://auth:1236"  # для Docker; при локальном запуске задать в .env
     tickets_service_url: str = ""
     notifications_service_url: str = ""
     inventory_service_url: str = ""
+    time_tracking_service_url: str = ""
+    todos_service_url: str = ""
     frontend_url: str = ""
     admin_frontend_url: str = ""
 

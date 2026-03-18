@@ -1,7 +1,7 @@
-from typing import Optional
+from typing import Optional, Sequence
 from domain.entities import User
 from domain.roles import Role
-from application.ports import UserRepositoryPort, TokenServicePort
+from application.ports import UserRepositoryPort, TokenServicePort, RoleRepositoryPort
 
 
 class AzureLoginUseCase:
@@ -17,6 +17,7 @@ class AzureLoginUseCase:
         picture: Optional[str],
         role: str = Role.EMPLOYEE.value,
     ) -> tuple[User, str]:
+        # Сначала ищем по azure_oid — дубликатов не создаём, даже если база уже заполнена
         user = await self._user_repo.get_by_azure_oid(azure_oid)
         if not user:
             user = await self._user_repo.create(
@@ -50,9 +51,9 @@ class AdminLoginUseCase:
             user = await self._user_repo.create(
                 azure_oid=LOCAL_ADMIN_OID,
                 email="admin@local",
-                display_name="Администратор",
+                display_name="Главный администратор",
                 picture=None,
-                role=Role.ADMIN.value,
+                role=Role.MAIN_ADMIN.value,
             )
         return self._token_service.create_access_token(user.id, user.azure_oid)
 
@@ -92,16 +93,23 @@ class ListUsersUseCase:
     def __init__(self, user_repo: UserRepositoryPort):
         self._user_repo = user_repo
 
-    async def execute(self, include_archived: bool = False) -> list:
-        return list(await self._user_repo.get_all(include_archived))
+    async def execute(
+        self,
+        include_archived: bool = False,
+    ) -> list:
+        return list(await self._user_repo.get_all(include_archived=include_archived))
 
 
 class SetRoleUseCase:
-    def __init__(self, user_repo: UserRepositoryPort):
+    def __init__(self, user_repo: UserRepositoryPort, role_repo: RoleRepositoryPort):
         self._user_repo = user_repo
+        self._role_repo = role_repo
 
     async def execute(self, user_id: int, role: str) -> Optional[User]:
-        return await self._user_repo.set_role(user_id, role)
+        r = await self._role_repo.get_by_name(role.strip())
+        if not r:
+            return None
+        return await self._user_repo.set_role(user_id, r["name"])
 
 
 class BlockUserUseCase:
@@ -118,3 +126,93 @@ class ArchiveUserUseCase:
 
     async def execute(self, user_id: int, is_archived: bool) -> Optional[User]:
         return await self._user_repo.set_archived(user_id, is_archived)
+
+
+class SetTimeTrackingRoleUseCase:
+    def __init__(self, user_repo: UserRepositoryPort):
+        self._user_repo = user_repo
+
+    async def execute(self, user_id: int, time_tracking_role: Optional[str]) -> Optional[User]:
+        return await self._user_repo.set_time_tracking_role(user_id, time_tracking_role)
+
+
+class SetPositionUseCase:
+    def __init__(self, user_repo: UserRepositoryPort):
+        self._user_repo = user_repo
+
+    async def execute(self, user_id: int, position: Optional[str]) -> Optional[User]:
+        return await self._user_repo.set_position(user_id, position)
+
+
+class ListRolesUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self) -> Sequence[dict]:
+        return await self._role_repo.list_all()
+
+
+class CreateRoleUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self, name: str) -> Optional[dict]:
+        name = (name or "").strip()
+        if not name:
+            return None
+        existing = await self._role_repo.get_by_name(name)
+        if existing:
+            return None
+        return await self._role_repo.create(name)
+
+
+class UpdateRoleUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self, role_id: int, name: str) -> Optional[dict]:
+        name = (name or "").strip()
+        if not name:
+            return None
+        existing = await self._role_repo.get_by_name(name)
+        if existing and existing["id"] != role_id:
+            return None
+        return await self._role_repo.update(role_id, name)
+
+
+class DeleteRoleUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self, role_id: int) -> tuple[bool, str]:
+        role = await self._role_repo.get_by_id(role_id)
+        if not role:
+            return False, "not_found"
+        n = await self._role_repo.count_users_with_role(role["name"])
+        if n > 0:
+            return False, "role_in_use"
+        ok = await self._role_repo.delete(role_id)
+        return ok, "ok"
+
+
+class GetRolePermissionsUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self, role_id: int) -> Optional[dict]:
+        role = await self._role_repo.get_by_id(role_id)
+        if not role:
+            return None
+        return await self._role_repo.get_permissions(role_id)
+
+
+class SetRolePermissionsUseCase:
+    def __init__(self, role_repo: RoleRepositoryPort):
+        self._role_repo = role_repo
+
+    async def execute(self, role_id: int, permissions: dict) -> bool:
+        role = await self._role_repo.get_by_id(role_id)
+        if not role:
+            return False
+        await self._role_repo.set_permissions(role_id, permissions)
+        return True

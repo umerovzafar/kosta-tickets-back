@@ -4,27 +4,15 @@ from infrastructure.config import get_settings
 
 
 def make_async_url(url: str) -> str:
-    if not url or not url.strip():
-        raise RuntimeError(
-            "DATABASE_URL is not set. Set TIME_TRACKING_DATABASE_URL in .env "
-            "(e.g. TIME_TRACKING_DATABASE_URL=postgresql://time_tracking:password@time_tracking_db:5432/kosta_time_tracking)."
-        )
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    if url.startswith("postgresql+asyncpg://"):
-        return url
-    raise RuntimeError("DATABASE_URL must be postgresql:// or postgresql+asyncpg://")
+    return url
 
 
-def _get_engine():
-    settings = get_settings()
-    return create_async_engine(
-        make_async_url(settings.database_url),
-        echo=False,
-    )
-
-
-engine = _get_engine()
+engine = create_async_engine(
+    make_async_url(get_settings().database_url),
+    echo=False,
+)
 
 async_session_factory = async_sessionmaker(
     engine,

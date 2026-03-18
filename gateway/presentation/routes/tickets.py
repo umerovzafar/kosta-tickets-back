@@ -28,7 +28,7 @@ from presentation.schemas.ticket_schemas import (
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 
-ROLES_FULL_ACCESS = {"IT отдел", "Администратор"}
+ROLES_FULL_ACCESS = {"IT отдел", "Администратор", "Главный администратор"}
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
@@ -133,10 +133,8 @@ async def list_tickets(
         params["priority"] = priority
     if category is not None:
         params["category"] = category
-    if current_user["role"] in ROLES_FULL_ACCESS:
-        if created_by_user_id is not None:
-            params["created_by_user_id"] = created_by_user_id
-    else:
+    # IT отдел и Администратор видят все тикеты; для остальных — только свои
+    if current_user["role"] not in ROLES_FULL_ACCESS:
         params["created_by_user_id"] = current_user["id"]
     return await _tickets_get("", params=params)
 
@@ -287,24 +285,6 @@ async def update_comment(
     return r.json()
 
 
-@router.delete("/{ticket_uuid}/comments/{comment_id}", status_code=204)
-async def delete_comment(
-    ticket_uuid: str,
-    comment_id: int,
-    current_user: dict = Depends(get_current_user),
-):
-    await _get_ticket_and_check_access(ticket_uuid, current_user)
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(
-            f"{settings.tickets_service_url}/tickets/{ticket_uuid}/comments/{comment_id}",
-        )
-    if r.status_code == 404:
-        raise HTTPException(status_code=404, detail="Comment or ticket not found")
-    r.raise_for_status()
-
-
-
 @router.get("/ws-url")
 async def get_tickets_ws_url():
     """Возвращает URL для подключения к WebSocket тикетов. Используйте один и тот же хост, что и для REST (gateway)."""
@@ -314,15 +294,43 @@ async def get_tickets_ws_url():
     return {"url": f"{ws_base}/api/v1/tickets/ws/tickets"}
 
 
+def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
+    """Получить пользователя по токену из query (?token=...) для WebSocket. Возвращает None, если токена нет или невалиден."""
+    import urllib.parse
+    query = (websocket.scope.get("query_string") or b"").decode()
+    params = urllib.parse.parse_qs(query)
+    tokens = params.get("token") or params.get("access_token")
+    if not tokens or not tokens[0].strip():
+        return None
+    token = tokens[0].strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                f"{settings.auth_service_url}/users/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if r.status_code != 200:
+            return None
+        user = r.json()
+        return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
+    except Exception:
+        return None
+
+
 @router.websocket("/ws/tickets")
 async def ws_tickets_proxy(websocket: WebSocket):
     await websocket.accept()
+    ws_user = await _get_ws_user(websocket)
     settings = get_settings()
     base = settings.tickets_service_url
     ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
     ws_url = f"{ws_base}/ws/tickets"
     try:
         import asyncio
+        import json
         import websockets
         async with websockets.connect(ws_url) as backend_ws:
             async def forward_from_backend():
@@ -335,6 +343,16 @@ async def ws_tickets_proxy(websocket: WebSocket):
             async def forward_from_client():
                 while True:
                     msg = await websocket.receive_text()
+                    try:
+                        data = json.loads(msg)
+                        action = data.get("action")
+                        payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
+                        if action == "list_tickets" and ws_user and (ws_user.get("role") or "").strip() in ROLES_FULL_ACCESS:
+                            payload = {k: v for k, v in payload.items() if k != "created_by_user_id"}
+                            data = {**data, "payload": payload}
+                            msg = json.dumps(data)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                     await backend_ws.send(msg)
 
             back_task = asyncio.create_task(forward_from_backend())

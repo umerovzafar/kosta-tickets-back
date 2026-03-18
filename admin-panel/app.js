@@ -30,7 +30,7 @@
     });
   }
 
-  var ROLES = ['Сотрудник', 'IT отдел', 'Партнер', 'Администратор', 'Офис менеджер'];
+  var ROLES = ['Сотрудник', 'IT отдел', 'Партнер', 'Администратор', 'Главный администратор', 'Офис менеджер'];
 
   function showError(el, msg) {
     var box = document.getElementById(el);
@@ -87,7 +87,7 @@
           window.location.href = 'index.html';
           return Promise.reject(new Error('Unauthorized'));
         }
-        if (r.status === 403) return Promise.reject(new Error('Доступ запрещён. Только роль «Администратор» может управлять пользователями.'));
+        if (r.status === 403) return Promise.reject(new Error('Доступ запрещён. Нужна роль Администратор, Партнер или IT отдел для просмотра списка пользователей.'));
         if (!r.ok) return Promise.reject(new Error('Не удалось загрузить пользователей'));
         return r.json();
       });
@@ -106,6 +106,7 @@
         if (!r.ok) return r.json().then(function (e) { throw new Error(e.detail || 'Ошибка'); });
         return r.json();
       });
-    }
+    },
+
   };
 })();

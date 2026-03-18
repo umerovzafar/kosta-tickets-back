@@ -9,10 +9,12 @@ class UserResponse(BaseModel):
     display_name: Optional[str]
     picture: Optional[str]
     role: str
+    position: Optional[str] = None
     is_blocked: bool = False
     is_archived: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    time_tracking_role: Optional[str] = None
 
 
 class UserDetailResponse(BaseModel):
@@ -22,8 +24,10 @@ class UserDetailResponse(BaseModel):
     display_name: Optional[str]
     picture: Optional[str]
     role: str
+    position: Optional[str] = None
     is_blocked: bool
     is_archived: bool
+    time_tracking_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -38,3 +42,15 @@ class BlockUserRequest(BaseModel):
 
 class ArchiveUserRequest(BaseModel):
     is_archived: bool
+
+
+class TimeTrackingRoleRequest(BaseModel):
+    """Роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей."""
+
+    time_tracking_role: Optional[str] = None
+
+
+class SetPositionRequest(BaseModel):
+    """Должность пользователя."""
+
+    position: Optional[str] = None

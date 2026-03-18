@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from application.use_cases import GetHealthUseCase
+from infrastructure.config import get_settings
 from infrastructure.database import get_session
 from infrastructure.repositories import HealthRepository
-from infrastructure.config import get_settings
 from presentation.schemas import HealthResponse
 
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-async def get_health_use_case(session: AsyncSession = Depends(get_session)) -> GetHealthUseCase:
+async def get_health_use_case(
+    session: AsyncSession = Depends(get_session),
+) -> GetHealthUseCase:
     return GetHealthUseCase(HealthRepository(session))
 
 

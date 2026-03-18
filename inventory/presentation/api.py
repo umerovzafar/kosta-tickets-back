@@ -12,6 +12,11 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         await conn.execute(
             text(
+                "ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        await conn.execute(
+            text(
                 """
                 ALTER TABLE inventory_categories
                 ADD COLUMN IF NOT EXISTS parent_id INTEGER NULL

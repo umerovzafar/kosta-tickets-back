@@ -23,13 +23,13 @@ async def azure_login(state: Optional[str] = Query(None)):
     except (httpx.ConnectError, httpx.ConnectTimeout) as e:
         raise HTTPException(
             status_code=502,
-            detail="Auth service unavailable. Check that auth container is running (docker-compose ps).",
+            detail="Auth service unavailable. Check: docker compose ps auth; docker compose logs auth",
         ) from e
     if r.status_code in (301, 302, 303, 307, 308):
         return RedirectResponse(url=r.headers["location"], status_code=r.status_code)
     raise HTTPException(
         status_code=502,
-        detail="Auth service unavailable. Check that auth container is running (docker-compose ps).",
+        detail="Auth service unavailable. Check: docker compose ps auth; docker compose logs auth",
     )
 
 

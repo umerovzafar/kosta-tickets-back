@@ -1,8 +1,19 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from presentation.routes import health
+from infrastructure.database import Base, engine
+from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
+from presentation.routes import health, users
 
-app = FastAPI(title="Kosta Time Tracking", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="Time Tracking", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -11,3 +22,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router)
+app.include_router(users.router)

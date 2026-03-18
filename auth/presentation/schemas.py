@@ -9,10 +9,13 @@ class UserResponse(BaseModel):
     display_name: Optional[str]
     picture: Optional[str]
     role: str
+    position: Optional[str] = None  # должность
     is_blocked: bool = False
     is_archived: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    permissions: Optional[dict] = None  # оставлено для совместимости
+    time_tracking_role: Optional[str] = None  # user | manager — роль в учёте времени
 
 
 class UserDetailResponse(BaseModel):
@@ -22,8 +25,10 @@ class UserDetailResponse(BaseModel):
     display_name: Optional[str]
     picture: Optional[str]
     role: str
+    position: Optional[str] = None  # должность
     is_blocked: bool
     is_archived: bool
+    time_tracking_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -38,6 +43,18 @@ class BlockUserRequest(BaseModel):
 
 class ArchiveUserRequest(BaseModel):
     is_archived: bool
+
+
+class TimeTrackingRoleRequest(BaseModel):
+    """Роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей."""
+
+    time_tracking_role: Optional[str] = None  # "user" | "manager" | null
+
+
+class SetPositionRequest(BaseModel):
+    """Должность пользователя."""
+
+    position: Optional[str] = None
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -65,3 +82,25 @@ class HealthResponse(BaseModel):
 class RoleItem(BaseModel):
     value: str
     label: str
+
+
+class RoleResponse(BaseModel):
+    id: int
+    name: str
+
+
+class RoleCreateRequest(BaseModel):
+    name: str
+
+
+class RoleUpdateRequest(BaseModel):
+    name: str
+
+
+class RolePermissionsResponse(BaseModel):
+    permissions: dict
+
+
+class RolePermissionsUpdateRequest(BaseModel):
+    """Ключи — названия прав (например time_tracking), значения — bool."""
+    permissions: Optional[dict] = None

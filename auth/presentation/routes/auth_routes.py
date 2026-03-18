@@ -1,11 +1,11 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
-from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import RedirectResponse
 from application.use_cases import AdminLoginUseCase, AzureLoginUseCase, GetCurrentUserUseCase
-from application.ports import UserRepositoryPort, TokenServicePort
+from application.ports import UserRepositoryPort, TokenServicePort, RoleRepositoryPort
 from infrastructure.database import get_session
-from infrastructure.repositories import UserRepository
+from infrastructure.repositories import UserRepository, RoleRepository
 from infrastructure.jwt_service import JWTService
 from infrastructure.azure_ad import get_login_url, get_logout_url, acquire_token_by_code
 from domain.roles import Role
@@ -38,9 +38,15 @@ def get_current_user_use_case(
     return GetCurrentUserUseCase(user_repo, token_service)
 
 
+def get_role_repo(session: AsyncSession = Depends(get_session)) -> RoleRepositoryPort:
+    return RoleRepository(session)
+
+
 @router.get("/roles")
-async def list_roles():
-    return [RoleItem(value=r.value, label=r.value) for r in Role]
+async def list_roles(role_repo: RoleRepositoryPort = Depends(get_role_repo)):
+    """Список ролей из БД (при первом запуске заполняется из enum по умолчанию)."""
+    roles = await role_repo.list_all()
+    return [RoleItem(value=r["name"], label=r["name"]) for r in roles]
 
 @router.get("/login")
 async def login(state: Optional[str] = None):
@@ -151,6 +157,8 @@ async def exchange(
 async def me(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     uc: GetCurrentUserUseCase = Depends(get_current_user_use_case),
+    role_repo: RoleRepositoryPort = Depends(get_role_repo),
+    session=Depends(get_session),
 ):
     token = (authorization or "").replace("Bearer ", "").strip()
     user = await uc.execute(token)
@@ -166,4 +174,6 @@ async def me(
         is_archived=user.is_archived,
         created_at=user.created_at,
         updated_at=user.updated_at,
+        permissions=None,
+        time_tracking_role=user.time_tracking_role,
     )
