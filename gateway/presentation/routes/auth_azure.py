@@ -78,6 +78,6 @@ async def azure_callback(code: str, state: Optional[str] = Query(None)):
         base = settings.frontend_url.rstrip("/")
         callback_path = "/auth/callback"
     return RedirectResponse(
-        url=f"{base}{callback_path}?access_token={access_token}",
+        url=f"{base}{callback_path}#access_token={access_token}",
         status_code=302,
     )

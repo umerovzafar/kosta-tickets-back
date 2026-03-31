@@ -15,5 +15,6 @@ class User:
     is_blocked: bool
     is_archived: bool
     time_tracking_role: Optional[str]  # "user" | "manager" | None — отдельная роль в учёте времени
+    desktop_background: Optional[str]  # путь к фону рабочего стола (media/desktop_backgrounds/...)
     created_at: datetime
     updated_at: datetime

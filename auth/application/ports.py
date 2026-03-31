@@ -101,6 +101,10 @@ class UserRepositoryPort(ABC):
     async def set_position(self, user_id: int, position: Optional[str]) -> Optional[User]:
         pass
 
+    @abstractmethod
+    async def set_desktop_background(self, user_id: int, path: Optional[str]) -> Optional[User]:
+        pass
+
 
 class TokenServicePort(ABC):
     @abstractmethod

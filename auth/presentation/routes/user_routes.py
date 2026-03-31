@@ -9,6 +9,7 @@ from application.use_cases import (
     ArchiveUserUseCase,
     SetTimeTrackingRoleUseCase,
     SetPositionUseCase,
+    SetDesktopBackgroundUseCase,
 )
 from application.ports import UserRepositoryPort, TokenServicePort, RoleRepositoryPort
 from domain.entities import User
@@ -24,6 +25,7 @@ from presentation.schemas import (
     ArchiveUserRequest,
     TimeTrackingRoleRequest,
     SetPositionRequest,
+    SetDesktopBackgroundRequest,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -68,6 +70,7 @@ def _user_to_response(user: User, permissions: Optional[dict] = None) -> UserRes
         updated_at=user.updated_at,
         permissions=permissions,
         time_tracking_role=user.time_tracking_role,
+        desktop_background=user.desktop_background,
     )
 
 
@@ -83,6 +86,7 @@ def _user_to_detail(user: User) -> UserDetailResponse:
         is_blocked=user.is_blocked,
         is_archived=user.is_archived,
         time_tracking_role=user.time_tracking_role,
+        desktop_background=user.desktop_background,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -100,6 +104,14 @@ def require_main_admin_or_admin(current_user: User = Depends(get_current_user)) 
     role = (current_user.role or "").strip()
     if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value):
         raise HTTPException(status_code=403, detail="Only Main Administrator or Administrator can manage time tracking access")
+    return current_user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Главный администратор, Администратор или Партнер — блокировка и архивация пользователей."""
+    role = (current_user.role or "").strip()
+    if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value, Role.PARTNER.value):
+        raise HTTPException(status_code=403, detail="Only Main Administrator, Administrator or Partner can block or archive users")
     return current_user
 
 
@@ -154,7 +166,7 @@ async def set_user_role(
 async def block_user(
     user_id: int,
     body: BlockUserRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
@@ -170,7 +182,7 @@ async def block_user(
 async def archive_user(
     user_id: int,
     body: ArchiveUserRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
@@ -218,3 +230,35 @@ async def set_position(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_detail(user)
+
+
+@router.patch("/me/desktop-background", response_model=UserResponse)
+async def set_my_desktop_background(
+    body: SetDesktopBackgroundRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    user_repo: UserRepositoryPort = Depends(get_user_repo),
+):
+    """Установить или заменить фон рабочего стола текущего пользователя."""
+    path = (body.path or "").strip() or None
+    uc = SetDesktopBackgroundUseCase(user_repo)
+    user = await uc.execute(current_user.id, path)
+    await session.commit()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_to_response(user)
+
+
+@router.delete("/me/desktop-background", response_model=UserResponse)
+async def delete_my_desktop_background(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    user_repo: UserRepositoryPort = Depends(get_user_repo),
+):
+    """Удалить фон рабочего стола текущего пользователя."""
+    uc = SetDesktopBackgroundUseCase(user_repo)
+    user = await uc.execute(current_user.id, None)
+    await session.commit()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_to_response(user)

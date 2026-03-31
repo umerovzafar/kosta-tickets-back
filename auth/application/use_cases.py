@@ -144,6 +144,14 @@ class SetPositionUseCase:
         return await self._user_repo.set_position(user_id, position)
 
 
+class SetDesktopBackgroundUseCase:
+    def __init__(self, user_repo: UserRepositoryPort):
+        self._user_repo = user_repo
+
+    async def execute(self, user_id: int, path: Optional[str]) -> Optional[User]:
+        return await self._user_repo.set_desktop_background(user_id, path)
+
+
 class ListRolesUseCase:
     def __init__(self, role_repo: RoleRepositoryPort):
         self._role_repo = role_repo

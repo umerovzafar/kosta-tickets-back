@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     frontend_url: str = ""
     admin_frontend_url: str = ""
     admin_username: str = "admin"
-    admin_password: str = "admin123"
+    admin_password: str = ""
     service_name: str = "auth"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
@@ -21,3 +21,11 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_production_secrets(settings: Settings) -> None:
+    """Проверка обязательных секретов при старте. Вызывает RuntimeError при небезопасной конфигурации."""
+    if not (settings.jwt_secret or "").strip():
+        raise RuntimeError(
+            "JWT_SECRET is required. Set JWT_SECRET in environment (e.g. in .env or docker-compose)."
+        )

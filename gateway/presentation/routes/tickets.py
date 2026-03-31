@@ -139,6 +139,15 @@ async def list_tickets(
     return await _tickets_get("", params=params)
 
 
+@router.get("/ws-url")
+async def get_tickets_ws_url():
+    """Возвращает URL для подключения к WebSocket тикетов. Используйте один и тот же хост, что и для REST (gateway)."""
+    settings = get_settings()
+    base = settings.gateway_base_url or "http://localhost:1234"
+    ws_base = base.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
+    return {"url": f"{ws_base}/api/v1/tickets/ws/tickets"}
+
+
 @router.get("/attachments/{filename}")
 async def get_ticket_attachment(filename: str):
     settings = get_settings()
@@ -285,15 +294,6 @@ async def update_comment(
     return r.json()
 
 
-@router.get("/ws-url")
-async def get_tickets_ws_url():
-    """Возвращает URL для подключения к WebSocket тикетов. Используйте один и тот же хост, что и для REST (gateway)."""
-    settings = get_settings()
-    base = settings.gateway_base_url or "http://localhost:1234"
-    ws_base = base.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
-    return {"url": f"{ws_base}/api/v1/tickets/ws/tickets"}
-
-
 async def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
     """Получить пользователя по токену из query (?token=...) для WebSocket. Возвращает None, если токена нет или невалиден."""
     import urllib.parse
@@ -336,6 +336,8 @@ async def ws_tickets_proxy(websocket: WebSocket):
             async def forward_from_backend():
                 try:
                     async for msg in backend_ws:
+                        if isinstance(msg, bytes):
+                            msg = msg.decode("utf-8")
                         await websocket.send_text(msg)
                 except Exception:
                     pass
@@ -346,11 +348,22 @@ async def ws_tickets_proxy(websocket: WebSocket):
                     try:
                         data = json.loads(msg)
                         action = data.get("action")
-                        payload = data.get("payload") if isinstance(data.get("payload"), dict) else {}
-                        if action == "list_tickets" and ws_user and (ws_user.get("role") or "").strip() in ROLES_FULL_ACCESS:
-                            payload = {k: v for k, v in payload.items() if k != "created_by_user_id"}
-                            data = {**data, "payload": payload}
-                            msg = json.dumps(data)
+                        payload = dict(data.get("payload") or {})
+                        if action in ("create_ticket", "add_comment") and not ws_user:
+                            await websocket.send_json({
+                                "request_id": data.get("request_id"),
+                                "error": "Authorization required. Connect with ?token=...",
+                            })
+                            continue
+                        if ws_user:
+                            if action == "create_ticket":
+                                payload["created_by_user_id"] = ws_user["id"]
+                            elif action == "add_comment":
+                                payload["user_id"] = ws_user["id"]
+                            elif action == "list_tickets" and (ws_user.get("role") or "").strip() not in ROLES_FULL_ACCESS:
+                                payload["created_by_user_id"] = ws_user["id"]
+                        data = {**data, "payload": payload}
+                        msg = json.dumps(data)
                     except (json.JSONDecodeError, TypeError):
                         pass
                     await backend_ws.send(msg)
@@ -366,9 +379,9 @@ async def ws_tickets_proxy(websocket: WebSocket):
                     await back_task
                 except asyncio.CancelledError:
                     pass
-    except Exception as e:
+    except Exception:
         try:
-            await websocket.send_json({"error": str(e)})
+            await websocket.send_json({"error": "Connection error"})
         except Exception:
             pass
     finally:

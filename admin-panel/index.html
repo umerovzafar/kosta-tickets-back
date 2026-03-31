@@ -3,172 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Панель администратора</title>
+  <title>Admin Login</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app">
-    <div class="page-login" id="page-login" style="display:none">
-      <div class="login-box">
-        <h2>Панель администратора</h2>
-        <p>Войдите по логину и паролю.</p>
-        <div id="login-error" class="error-msg" style="display:none"></div>
-        <form id="form-login">
-          <div class="form-group">
-            <label for="input-username">Логин</label>
-            <input type="text" id="input-username" name="username" required autocomplete="username">
-          </div>
-          <div class="form-group">
-            <label for="input-password">Пароль</label>
-            <input type="password" id="input-password" name="password" required autocomplete="current-password">
-          </div>
-          <button type="submit" class="btn btn-primary" id="btn-login-submit">Войти</button>
-        </form>
-      </div>
-    </div>
-    <div class="page-dashboard" id="page-dashboard" style="display:none">
-      <header>
-        <h1>Управление ролями пользователей</h1>
-        <div>
-          <span class="user" id="header-user"></span>
-          <a href="#" id="btn-logout">Выход</a>
+  <div class="page-login" id="page-login">
+    <div class="login-box">
+      <h2>Панель администратора</h2>
+      <p>Войдите по логину и паролю.</p>
+      <div id="login-error" class="error-msg" style="display:none"></div>
+      <form id="form-login">
+        <div class="form-group">
+          <label for="input-username">Логин</label>
+          <input type="text" id="input-username" name="username" required autocomplete="username">
         </div>
-      </header>
-      <main class="container dashboard">
-        <div id="dashboard-error" class="error-msg" style="display:none"></div>
-        <section id="panel-users" class="card">
-            <div class="card-header">
-              <h2 class="card-title">Пользователи</h2>
-              <p class="card-subtitle">Назначайте ролям доступ, затем выбирайте роль для пользователя.</p>
-            </div>
-            <table class="users-table">
-              <thead>
-                <tr>
-                  <th>Пользователь</th>
-                  <th>Email</th>
-                  <th>Роль</th>
-                  <th>Действие</th>
-                </tr>
-              </thead>
-              <tbody id="users-tbody">
-                <tr><td colspan="4" class="loading">Загрузка…</td></tr>
-              </tbody>
-            </table>
-          </section>
-      </main>
+        <div class="form-group">
+          <label for="input-password">Пароль</label>
+          <input type="password" id="input-password" name="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-login-submit">Войти</button>
+      </form>
     </div>
   </div>
   <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
     (function() {
+      if (!window.adminApp.ensureGuest()) return;
       var params = new URLSearchParams(window.location.search);
-      var error = params.get('error');
-      var token = window.adminApp.getToken();
-
-      if (error) {
-        document.getElementById('page-login').style.display = 'block';
-        document.getElementById('login-error').textContent = 'Ошибка входа. Попробуйте снова.';
-        document.getElementById('login-error').style.display = 'block';
-      } else if (!token) {
-        document.getElementById('page-login').style.display = 'block';
-        document.getElementById('form-login').onsubmit = function(e) {
-          e.preventDefault();
-          var username = document.getElementById('input-username').value.trim();
-          var password = document.getElementById('input-password').value;
-          var errEl = document.getElementById('login-error');
-          var btn = document.getElementById('btn-login-submit');
-          errEl.style.display = 'none';
-          btn.disabled = true;
-          window.adminApp.login(username, password)
-            .then(function() {
-              window.location.reload();
-            })
-            .catch(function(err) {
-              errEl.textContent = err.message || 'Неверный логин или пароль';
-              errEl.style.display = 'block';
-              btn.disabled = false;
-            });
-        };
-      } else {
-        document.getElementById('page-dashboard').style.display = 'block';
-        document.getElementById('btn-logout').href = window.adminApp.logoutUrl();
-        document.getElementById('btn-logout').onclick = function(e) {
-          e.preventDefault();
-          window.adminApp.clearToken();
-          window.location.href = window.adminApp.logoutUrl();
-        };
-        initDashboard();
-        return;
+      if (params.get('error')) {
+        var errBox = document.getElementById('login-error');
+        errBox.textContent = 'Ошибка входа. Попробуйте снова.';
+        errBox.style.display = 'block';
       }
-    })();
-
-    function initDashboard() {
-      loadUsers();
-    }
-
-    function loadUsers() {
-      var tbody = document.getElementById('users-tbody');
-      var errEl = document.getElementById('dashboard-error');
-
-      window.adminApp.loadUsers()
-        .then(function(users) {
-          tbody.innerHTML = '';
-          users.forEach(function(u) {
-            var tr = document.createElement('tr');
-            var avatar = u.picture
-              ? '<img class="avatar" src="' + escapeHtml(u.picture) + '" alt="">'
-              : '<span class="no-avatar">' + (u.display_name || u.email || '').charAt(0).toUpperCase() + '</span>';
-            var name = (u.display_name || u.email || 'ID ' + u.id);
-            var select = document.createElement('select');
-            select.dataset.userId = u.id;
-            window.adminApp.ROLES.forEach(function(r) {
-              var opt = document.createElement('option');
-              opt.value = r;
-              opt.textContent = r;
-              if (r === u.role) opt.selected = true;
-              select.appendChild(opt);
-            });
-            var btn = document.createElement('button');
-            btn.className = 'btn btn-success';
-            btn.textContent = 'Сохранить';
-            btn.type = 'button';
-            btn.onclick = function() { saveRole(u.id, select.value, btn, errEl); };
-            tr.innerHTML = '<td>' + avatar + escapeHtml(name) + '</td><td>' + escapeHtml(u.email || '') + '</td><td class="role-cell"></td><td></td>';
-            tr.querySelector('.role-cell').appendChild(select);
-            tr.querySelector('td:last-child').appendChild(btn);
-            tbody.appendChild(tr);
+      document.getElementById('form-login').onsubmit = function(e) {
+        e.preventDefault();
+        var username = document.getElementById('input-username').value.trim();
+        var password = document.getElementById('input-password').value;
+        var errEl = document.getElementById('login-error');
+        var btn = document.getElementById('btn-login-submit');
+        errEl.style.display = 'none';
+        btn.disabled = true;
+        window.adminApp.login(username, password)
+          .then(function() {
+            window.location.href = 'dashboard.html';
+          })
+          .catch(function(err) {
+            errEl.textContent = err.message || 'Неверный логин или пароль';
+            errEl.style.display = 'block';
+            btn.disabled = false;
           });
-        })
-        .catch(function(e) {
-          tbody.innerHTML = '<tr><td colspan="4" class="loading">Ошибка: ' + escapeHtml(e.message) + '</td></tr>';
-        });
-    }
-
-    function saveRole(userId, role, btn, errEl) {
-      btn.disabled = true;
-      btn.textContent = '…';
-      errEl.style.display = 'none';
-      window.adminApp.setRole(userId, role)
-        .then(function() {
-          btn.textContent = 'Сохранено';
-          setTimeout(function() { btn.textContent = 'Сохранить'; btn.disabled = false; }, 1500);
-        })
-        .catch(function(e) {
-          errEl.textContent = e.message || 'Не удалось сохранить роль';
-          errEl.style.display = 'block';
-          btn.textContent = 'Сохранить';
-          btn.disabled = false;
-        });
-    }
-
-
-    function escapeHtml(s) {
-      if (!s) return '';
-      var div = document.createElement('div');
-      div.textContent = s;
-      return div.innerHTML;
-    }
+      };
+    })();
   </script>
 </body>
 </html>

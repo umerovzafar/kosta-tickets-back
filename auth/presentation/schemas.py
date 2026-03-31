@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     updated_at: Optional[datetime] = None
     permissions: Optional[dict] = None  # оставлено для совместимости
     time_tracking_role: Optional[str] = None  # user | manager — роль в учёте времени
+    desktop_background: Optional[str] = None  # путь к фону рабочего стола
 
 
 class UserDetailResponse(BaseModel):
@@ -29,6 +30,7 @@ class UserDetailResponse(BaseModel):
     is_blocked: bool
     is_archived: bool
     time_tracking_role: Optional[str] = None
+    desktop_background: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -55,6 +57,12 @@ class SetPositionRequest(BaseModel):
     """Должность пользователя."""
 
     position: Optional[str] = None
+
+
+class SetDesktopBackgroundRequest(BaseModel):
+    """Путь к файлу фона рабочего стола (относительно media)."""
+
+    path: str
 
 
 class ProfileUpdateRequest(BaseModel):

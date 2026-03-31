@@ -11,8 +11,16 @@
 <body>
   <p>Выполняется вход…</p>
   <script>
-    var params = new URLSearchParams(window.location.search);
-    var token = params.get('access_token');
+    var token = null;
+    var hash = window.location.hash.replace(/^#/, '');
+    if (hash) {
+      var params = new URLSearchParams(hash);
+      token = params.get('access_token');
+    }
+    if (!token) {
+      var searchParams = new URLSearchParams(window.location.search);
+      token = searchParams.get('access_token');
+    }
     if (token) {
       window.adminApp.setToken(token);
       window.location.replace('../index.html');

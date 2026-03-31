@@ -13,6 +13,19 @@ from presentation.routes import health, hikvision, settings
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight runtime migration for explanations table.
+        await conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS attendance_explanations "
+                "ADD COLUMN IF NOT EXISTS explanation_file_path VARCHAR(1024)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE IF EXISTS attendance_explanations "
+                "ALTER COLUMN explanation_text DROP NOT NULL"
+            )
+        )
     yield
 
 

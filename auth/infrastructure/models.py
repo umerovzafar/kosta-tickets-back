@@ -36,5 +36,6 @@ class UserModel(Base):
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     time_tracking_role: Mapped[str | None] = mapped_column(String(32), nullable=True)  # user | manager
+    desktop_background: Mapped[str | None] = mapped_column(String(512), nullable=True)  # путь к фону рабочего стола
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

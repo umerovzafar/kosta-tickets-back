@@ -14,6 +14,9 @@ from presentation.routes import (
     roles,
     todos_routes,
     media,
+    attendance_routes,
+    time_tracking_routes,
+    expenses_routes,
 )
 
 app = FastAPI(title="Gateway", version="1.0.0")
@@ -25,9 +28,18 @@ def _cors_origins() -> list[str]:
     for url in (settings.frontend_url or "").strip(), (settings.admin_frontend_url or "").strip():
         if url and url != "*":
             origins.extend(u.strip() for u in url.split(",") if u.strip() and u.strip() != "*")
+    # Всегда добавляем localhost для локальной разработки (frontend на 5173, admin на 8080)
+    defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ]
+    for o in defaults:
+        if o not in origins:
+            origins.append(o)
     if not origins:
-        # по умолчанию — основной фронт и типичный origin админки (открытой с файлов или другого порта)
-        origins = ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080", "null"]
+        origins = defaults + ["null"]
     return list(dict.fromkeys(origins))  # без дубликатов
 
 
@@ -51,3 +63,7 @@ app.include_router(inventory_routes.router)
 app.include_router(roles.router)
 app.include_router(todos_routes.router)
 app.include_router(media.router)
+app.include_router(attendance_routes.router_compat)  # /hikvision/attendance — до attendance
+app.include_router(attendance_routes.router)
+app.include_router(time_tracking_routes.router)
+app.include_router(expenses_routes.router)

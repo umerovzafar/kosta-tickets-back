@@ -69,6 +69,11 @@ class TicketRepository(TicketRepositoryPort):
         row = result.scalars().one_or_none()
         return self._to_entity(row) if row else None
 
+    async def get_by_internal_id(self, ticket_id: int) -> Optional[Ticket]:
+        result = await self._session.execute(select(TicketModel).where(TicketModel.id == ticket_id))
+        row = result.scalars().one_or_none()
+        return self._to_entity(row) if row else None
+
     async def get_all(self, filters: TicketFilters) -> Sequence[Ticket]:
         q = select(TicketModel).order_by(TicketModel.created_at.desc())
         conditions = []

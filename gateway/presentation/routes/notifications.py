@@ -42,8 +42,8 @@ async def forward_to_notifications_service(message: dict) -> dict:
             await ws.send(json.dumps(message))
             raw = await asyncio.wait_for(ws.recv(), timeout=15.0)
             return json.loads(raw)
-    except Exception as e:
-        return {"error": str(e), "request_id": message.get("request_id")}
+    except Exception:
+        return {"error": "Service unavailable", "request_id": message.get("request_id")}
 
 
 @router.websocket("/ws")

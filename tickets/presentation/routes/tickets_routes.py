@@ -25,6 +25,7 @@ from presentation.schemas import (
     CommentCreateRequest,
     CommentUpdateRequest,
 )
+from presentation.ws_hub import notify_ticket_event
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -95,6 +96,7 @@ async def create_ticket(
         priority=priority,
     )
     await session.commit()
+    await notify_ticket_event("ticket_created", ticket_uuid=ticket.uuid)
     return _ticket_to_response(ticket)
 
 
@@ -148,6 +150,7 @@ async def update_ticket(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     await session.commit()
+    await notify_ticket_event("ticket_updated", ticket_uuid=ticket_uuid)
     return _ticket_to_response(ticket)
 
 
@@ -163,6 +166,7 @@ async def archive_ticket(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     await session.commit()
+    await notify_ticket_event("ticket_archived", ticket_uuid=ticket_uuid)
     return _ticket_to_response(ticket)
 
 
@@ -221,6 +225,9 @@ async def create_comment(
     uc = CreateCommentUseCase(comment_repo)
     comment = await uc.execute(ticket_id=ticket.id, user_id=user_id, content=body.content)
     await session.commit()
+    await notify_ticket_event(
+        "comment_created", ticket_uuid=ticket_uuid, comment_id=comment.id
+    )
     return CommentResponse(
         id=comment.id,
         ticket_id=comment.ticket_id,
@@ -249,6 +256,9 @@ async def update_comment(
     if not comment or comment.ticket_id != ticket.id:
         raise HTTPException(status_code=404, detail="Comment not found")
     await session.commit()
+    await notify_ticket_event(
+        "comment_updated", ticket_uuid=ticket_uuid, comment_id=comment.id
+    )
     return CommentResponse(
         id=comment.id,
         ticket_id=comment.ticket_id,

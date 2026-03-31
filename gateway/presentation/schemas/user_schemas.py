@@ -15,6 +15,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     time_tracking_role: Optional[str] = None
+    desktop_background: Optional[str] = None
 
 
 class UserDetailResponse(BaseModel):
@@ -28,6 +29,7 @@ class UserDetailResponse(BaseModel):
     is_blocked: bool
     is_archived: bool
     time_tracking_role: Optional[str] = None
+    desktop_background: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

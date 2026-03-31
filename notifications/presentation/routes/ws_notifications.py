@@ -127,6 +127,6 @@ async def ws_notifications(websocket: WebSocket):
 
                 await websocket.send_json(reply(error=f"Unknown action: {action}"))
 
-            except Exception as e:
+            except Exception:
                 await session.rollback()
-                await websocket.send_json(reply(error=str(e)))
+                await websocket.send_json(reply(error="Internal error"))

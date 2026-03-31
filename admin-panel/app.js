@@ -108,5 +108,154 @@
       });
     },
 
+    loadHikvisionUsers: function (filters) {
+      filters = filters || {};
+      var q = [];
+      if (filters.name) q.push('name=' + encodeURIComponent(filters.name));
+      if (filters.employee_no) q.push('employee_no=' + encodeURIComponent(filters.employee_no));
+      var path = '/api/v1/attendance/hikvision/users' + (q.length ? ('?' + q.join('&')) : '');
+      return apiFetch(path).then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (r.status === 403) return Promise.reject(new Error('Доступ запрещён.'));
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error(e.detail || 'Не удалось загрузить пользователей с камер');
+        });
+        return r.json();
+      });
+    },
+
+    listHikvisionMappings: function () {
+      return apiFetch('/api/v1/attendance/hikvision/mappings').then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error(e.detail || 'Не удалось загрузить привязки');
+        });
+        return r.json();
+      });
+    },
+
+    upsertHikvisionMapping: function (payload) {
+      return apiFetch('/api/v1/attendance/hikvision/mappings', {
+        method: 'PUT',
+        body: payload
+      }).then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error(e.detail || 'Не удалось сохранить привязку');
+        });
+        return r.json();
+      });
+    },
+
+    deleteHikvisionMapping: function (cameraEmployeeNo) {
+      return apiFetch('/api/v1/attendance/hikvision/mappings/' + encodeURIComponent(cameraEmployeeNo), {
+        method: 'DELETE'
+      }).then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error(e.detail || 'Не удалось удалить привязку');
+        });
+        return r.json();
+      });
+    },
+
+    ensureAuth: function () {
+      if (!getToken()) {
+        window.location.href = 'index.html';
+        return false;
+      }
+      return true;
+    },
+
+    ensureGuest: function () {
+      if (getToken()) {
+        window.location.href = 'dashboard.html';
+        return false;
+      }
+      return true;
+    },
+
+    bindLogout: function (id) {
+      var el = document.getElementById(id || 'btn-logout');
+      if (!el) return;
+      el.href = this.logoutUrl();
+      el.onclick = function (e) {
+        e.preventDefault();
+        clearToken();
+        window.location.href = API_BASE + '/api/v1/auth/azure/logout';
+      };
+    },
+
+    mountSidebar: function (activePage) {
+      var nav = document.getElementById('sidebar-nav');
+      if (!nav) return;
+      var items = [
+        { id: 'dashboard', href: 'dashboard.html', label: 'Дашборд' },
+        { id: 'users', href: 'users.html', label: 'Пользователи' },
+        { id: 'hikvision', href: 'hikvision.html', label: 'Камеры Hikvision' }
+      ];
+      nav.innerHTML = items.map(function (item) {
+        var cls = item.id === activePage ? 'side-link active' : 'side-link';
+        return '<a class="' + cls + '" href="' + item.href + '">' + item.label + '</a>';
+      }).join('');
+    },
+
+    dedupeHikvisionUsers: function (devices) {
+      var uniq = {};
+      var cameraMap = {};
+      var errors = [];
+      (devices || []).forEach(function (d) {
+        cameraMap[(d.camera_ip || '-')] = true;
+        if (d.error) {
+          errors.push('Камера ' + (d.camera_ip || '-') + ': ' + d.error);
+          return;
+        }
+        (d.users || []).forEach(function (u) {
+          var emp = (u.employee_no || '').trim();
+          var nm = (u.name || '').trim();
+          var key = emp ? ('emp:' + emp) : ('name:' + nm.toLowerCase());
+          if (!key || key === 'name:') key = 'raw:' + JSON.stringify(u);
+          if (!uniq[key]) {
+            uniq[key] = {
+              employee_no: emp || '-',
+              name: nm || '-',
+              department: (u.department || '').trim() || '-',
+              cameras: {}
+            };
+          }
+          if ((u.department || '').trim() && uniq[key].department === '-') {
+            uniq[key].department = (u.department || '').trim();
+          }
+          uniq[key].cameras[(d.camera_ip || '-')] = true;
+        });
+      });
+      var users = Object.keys(uniq).map(function (k) {
+        var item = uniq[k];
+        return {
+          cameras: Object.keys(item.cameras),
+          employee_no: item.employee_no,
+          name: item.name,
+          department: item.department
+        };
+      });
+      return { users: users, camera_count: Object.keys(cameraMap).length, errors: errors };
+    },
+
   };
 })();

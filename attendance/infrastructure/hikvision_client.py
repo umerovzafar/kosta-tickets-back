@@ -63,6 +63,51 @@ def _parse_json_response(body: dict) -> tuple[list[dict], int, int, str]:
     return records, total, num, status_str
 
 
+def _parse_user_from_info(info: dict) -> dict:
+    employee_no = _norm(info.get("employeeNoString") or info.get("employeeNo") or info.get("userId") or info.get("id"))
+    name = _norm(info.get("name"))
+    user_type = _norm(info.get("userType"), "")
+    gender = _norm(info.get("gender"), "")
+    department = _norm(info.get("department"), "")
+    return {
+        "employee_no": employee_no,
+        "name": name,
+        "department": department,
+        "user_type": user_type or None,
+        "gender": gender or None,
+    }
+
+
+def _parse_users_json_response(body: dict) -> tuple[list[dict], int, int, str]:
+    """
+    Парсит JSON-ответ ISAPI UserInfo/Search.
+    Возвращает (users, totalMatches, numOfMatches, responseStatusStrg).
+    """
+    root = body.get("UserInfoSearch") or body.get("UserInfoSearchResult") or body.get("UserInfo") or {}
+    total = int(root.get("totalMatches", 0) or 0)
+    num = int(root.get("numOfMatches", 0) or 0)
+    status_str = _norm(root.get("responseStatusStrg", ""), "")
+
+    info_list: Any = root.get("UserInfo") or root.get("UserInfoList") or root.get("InfoList") or []
+    if isinstance(info_list, dict):
+        # разные варианты оберток
+        info_list = (
+            info_list.get("UserInfo")
+            or info_list.get("UserInfoItem")
+            or info_list.get("InfoListItem")
+            or info_list.get("info")
+            or []
+        )
+    if not isinstance(info_list, list):
+        info_list = [info_list] if info_list else []
+
+    users: list[dict] = []
+    for item in info_list:
+        if isinstance(item, dict):
+            users.append(_parse_user_from_info(item))
+    return users, total, num, status_str
+
+
 def get_attendance_from_device(
     host: str,
     port: int = 80,
@@ -192,3 +237,123 @@ def get_attendance_from_devices(
         results.append(result)
     return results
 
+
+def get_users_from_device(
+    host: str,
+    port: int = 80,
+    user: str = "admin",
+    password: str = "",
+    max_users: int = 2000,
+    timeout: float = 60.0,
+    use_basic_auth: bool = False,
+    name: Optional[str] = None,
+    employee_no: Optional[str] = None,
+) -> dict:
+    """
+    Получить список пользователей (persons) с устройства Hikvision.
+
+    Используется ISAPI endpoint: /ISAPI/AccessControl/UserInfo/Search?format=json
+    """
+    if not host or not user:
+        return {"users": [], "error": "Устройство не настроено (host, user)", "camera_ip": host or "-"}
+
+    max_users = max(1, min(20000, max_users))
+    base_url = f"http://{host}:{port}"
+    path = "/ISAPI/AccessControl/UserInfo/Search"
+    auth: httpx.Auth = (
+        httpx.BasicAuth(user, password or "")
+        if use_basic_auth
+        else httpx.DigestAuth(user, password or "")
+    )
+
+    all_users: list[dict] = []
+    position = 0
+
+    with httpx.Client(timeout=timeout, auth=auth) as client:
+        while len(all_users) < max_users:
+            page_size = min(50, max_users - len(all_users))
+            # Hikvision expects "UserInfoSearchCond"
+            cond: dict[str, Any] = {
+                "searchID": "1",
+                "searchResultPosition": position,
+                "maxResults": page_size,
+            }
+            # Не все прошивки поддерживают фильтры, поэтому делаем их опциональными
+            if name:
+                cond["name"] = name
+            if employee_no:
+                cond["employeeNo"] = employee_no
+
+            body_json = {"UserInfoSearchCond": cond}
+            try:
+                url = f"{base_url}{path}?format=json"
+                resp = client.post(url, json=body_json, headers={"Accept": "application/json"})
+            except Exception as e:
+                err_msg = str(e).strip().lower()
+                if "timed out" in err_msg or "timeout" in err_msg:
+                    return {
+                        "users": all_users,
+                        "error": (
+                            "Таймаут подключения к устройству. Проверьте: "
+                            "устройство доступно с сервера, IP/порт/логин/пароль в .env."
+                        ),
+                        "camera_ip": host,
+                    }
+                return {"users": all_users, "error": f"Ошибка подключения: {e}", "camera_ip": host}
+
+            if resp.status_code != 200:
+                return {
+                    "users": all_users,
+                    "error": f"HTTP {resp.status_code}: {(resp.text or '')[:200]}",
+                    "camera_ip": host,
+                }
+
+            try:
+                data = resp.json()
+                users, total, num, status_str = _parse_users_json_response(data)
+            except Exception as e:
+                return {"users": all_users, "error": f"Ошибка разбора ответа: {e}", "camera_ip": host}
+
+            all_users.extend(users)
+            if status_str != "MORE" or num == 0:
+                break
+            position += num
+            if position >= total:
+                break
+
+    # Фильтры на всякий случай применяем ещё раз на нашей стороне (прошивки могут игнорировать)
+    if name:
+        all_users = [u for u in all_users if name.lower() in (u.get("name") or "").lower()]
+    if employee_no:
+        all_users = [u for u in all_users if (u.get("employee_no") or "").strip() == employee_no.strip()]
+
+    return {"users": all_users, "error": None, "camera_ip": host}
+
+
+def get_users_from_devices(
+    hosts: list[str],
+    port: int,
+    user: str,
+    password: str,
+    max_users_per_device: int,
+    timeout: float,
+    name: Optional[str] = None,
+    employee_no: Optional[str] = None,
+) -> list[dict]:
+    results: list[dict] = []
+    for host in hosts:
+        host = host.strip()
+        if not host:
+            continue
+        result = get_users_from_device(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            max_users=max_users_per_device,
+            timeout=timeout,
+            name=name,
+            employee_no=employee_no,
+        )
+        results.append(result)
+    return results

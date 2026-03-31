@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = ""
     service_name: str = "attendance"
+    media_path: str = "/app/media"
+    max_explanation_photo_size_mb: int = 10
     hikvision_device_ip: str = ""
     hikvision_device_port: int = 80
     hikvision_device_user: str = "admin"

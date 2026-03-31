@@ -1,6 +1,10 @@
+import uuid
+from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 import httpx
+
 from infrastructure.config import get_settings
 from presentation.schemas.user_schemas import (
     UserResponse,
@@ -89,6 +93,11 @@ def _auth_headers(authorization: Optional[str]) -> dict:
     return headers
 
 
+DESKTOP_BG_MAX_MB = 5
+DESKTOP_BG_ALLOWED = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+DESKTOP_BG_SUBDIR = "desktop_backgrounds"
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(authorization: Optional[str] = Header(None, alias="Authorization")):
     settings = get_settings()
@@ -100,6 +109,87 @@ async def get_me(authorization: Optional[str] = Header(None, alias="Authorizatio
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     r.raise_for_status()
+    return r.json()
+
+
+@router.post("/me/desktop-background", response_model=UserResponse)
+async def upload_desktop_background(
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    _: dict = Depends(require_auth),
+):
+    """Загрузить или заменить фон рабочего стола. Изображение: jpg, png, gif, webp, макс. 5 МБ."""
+    user = await _get_current_user_optional(authorization)
+    user_id = user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    ext = (Path(file.filename or "").suffix or "").lower()
+    if ext not in DESKTOP_BG_ALLOWED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Недопустимый формат. Разрешены: {', '.join(sorted(DESKTOP_BG_ALLOWED))}",
+        )
+
+    content = await file.read()
+    if len(content) > DESKTOP_BG_MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"Файл превышает {DESKTOP_BG_MAX_MB} МБ")
+
+    settings = get_settings()
+    base_dir = Path(settings.media_path).resolve()
+
+    old_path = user.get("desktop_background")
+    if old_path:
+        old_file = (base_dir / old_path).resolve()
+        if str(old_file).startswith(str(base_dir)) and old_file.exists() and old_file.is_file():
+            old_file.unlink(missing_ok=True)
+    user_dir = base_dir / DESKTOP_BG_SUBDIR / str(user_id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = user_dir / unique_name
+    file_path.write_bytes(content)
+
+    rel_path = f"{DESKTOP_BG_SUBDIR}/{user_id}/{unique_name}"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.patch(
+            f"{settings.auth_service_url}/users/me/desktop-background",
+            json={"path": rel_path},
+            headers=_auth_headers(authorization),
+        )
+    if r.status_code != 200:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to save settings")
+    return r.json()
+
+
+@router.delete("/me/desktop-background", response_model=UserResponse)
+async def delete_desktop_background(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    _: dict = Depends(require_auth),
+):
+    """Удалить фон рабочего стола."""
+    user = await _get_current_user_optional(authorization)
+    user_id = user.get("id")
+    old_path = user.get("desktop_background")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    settings = get_settings()
+    base_dir = Path(settings.media_path).resolve()
+    if old_path:
+        target = (base_dir / old_path).resolve()
+        if str(target).startswith(str(base_dir)) and target.exists() and target.is_file():
+            target.unlink(missing_ok=True)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.delete(
+            f"{settings.auth_service_url}/users/me/desktop-background",
+            headers=_auth_headers(authorization),
+        )
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to delete")
     return r.json()
 
 
