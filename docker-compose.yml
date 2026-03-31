@@ -226,7 +226,9 @@ services:
       - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
       - MICROSOFT_TENANT_ID=${MICROSOFT_TENANT_ID:-}
       - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
+      # Production (tickets.kostalegal.com): MICROSOFT_REDIRECT_URI=https://tickets.kostalegal.com/api/v1/todos/calendar/callback
       - MICROSOFT_REDIRECT_URI=${MICROSOFT_REDIRECT_URI:-http://localhost:1234/api/v1/todos/calendar/callback}
+      # Куда редирект после успешного OAuth календаря (совпадает с публичным SPA):
       - CALENDAR_CONNECTED_REDIRECT_URL=${CALENDAR_CONNECTED_REDIRECT_URL:-http://localhost:5173}
     depends_on:
       todos_db:

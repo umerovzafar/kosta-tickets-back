@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,7 +65,11 @@ async def _get_valid_token(
 async def calendar_connect(
     user_id: Annotated[int, Depends(get_current_user_id)],
 ):
-    """Редирект на страницу входа Microsoft для привязки календаря."""
+    """
+    Возвращает URL входа Microsoft. Всегда JSON — не HTTP-редирект: иначе fetch() на
+    фронте следует за 302 на login.microsoftonline.com и падает по CORS.
+    Редирект браузера выполняет клиент: window.location = data.url.
+    """
     settings = get_settings()
     if not (settings.microsoft_client_id and settings.microsoft_redirect_uri):
         raise HTTPException(
@@ -77,7 +81,7 @@ async def calendar_connect(
         url = get_authorize_url(state)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to build calendar connect URL: {e!s}") from e
-    return RedirectResponse(url=url)
+    return JSONResponse(content={"url": url})
 
 
 @router.get("/callback", summary="OAuth callback от Microsoft")

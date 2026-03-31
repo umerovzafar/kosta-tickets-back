@@ -21,7 +21,8 @@ def get_authorize_url(state: str) -> str:
     if not redirect_uri.startswith(("http://", "https://")) or " " in redirect_uri or "\n" in redirect_uri:
         raise ValueError(
             "MICROSOFT_REDIRECT_URI must be a single valid URL, e.g. "
-            "http://localhost:1234/api/v1/todos/calendar/callback"
+            "https://tickets.kostalegal.com/api/v1/todos/calendar/callback "
+            "(or http://localhost:1234/... for local dev). Must match Azure app registration."
         )
     scope_parts = [
         "https://graph.microsoft.com/Calendars.ReadWrite",
