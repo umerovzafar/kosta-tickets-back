@@ -21,17 +21,19 @@ async def get_current_user(authorization: Optional[str] = Header(None, alias="Au
     if not authorization or not authorization.strip():
         raise HTTPException(status_code=401, detail="Authorization required")
     settings = get_settings()
+    base = settings.auth_service_url.rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
-                f"{settings.auth_service_url}/users/me",
+                f"{base}/users/me",
                 headers={"Authorization": authorization},
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Auth service unavailable")
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 

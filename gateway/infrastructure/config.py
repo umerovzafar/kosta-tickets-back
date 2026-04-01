@@ -1,5 +1,17 @@
-from pydantic import field_validator
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
+
+# Дефолты как в docker-compose — пустые значения из Portainer не должны ломать прокси.
+_DEFAULT_SERVICE_URLS: dict[str, str] = {
+    "auth_service_url": "http://auth:1236",
+    "tickets_service_url": "http://tickets:1235",
+    "notifications_service_url": "http://notifications:1237",
+    "inventory_service_url": "http://inventory:1238",
+    "todos_service_url": "http://todos:1240",
+    "time_tracking_service_url": "http://time_tracking:1241",
+    "expenses_service_url": "http://expenses:1242",
+    "attendance_service_url": "http://attendance:1239",
+}
 
 
 class Settings(BaseSettings):
@@ -7,26 +19,28 @@ class Settings(BaseSettings):
     media_path: str = "./media"
     service_name: str = "gateway"
     gateway_base_url: str = ""
-    auth_service_url: str = "http://auth:1236"  # для Docker; при локальном запуске задать в .env
+    auth_service_url: str = ""
     tickets_service_url: str = ""
     notifications_service_url: str = ""
     inventory_service_url: str = ""
     time_tracking_service_url: str = ""
     expenses_service_url: str = ""
-
-    @field_validator("expenses_service_url", mode="before")
-    @classmethod
-    def _default_expenses_url_if_empty(cls, v: object) -> object:
-        # Portainer/stack часто передаёт пустую строку — тогда подставляем URL из docker-compose
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "http://expenses:1242"
-        return v
-
     attendance_service_url: str = ""
     attendance_hikvision_allowed_ips: str = ""
     todos_service_url: str = ""
     frontend_url: str = ""
     admin_frontend_url: str = ""
+
+    @field_validator(*tuple(_DEFAULT_SERVICE_URLS.keys()), mode="before")
+    @classmethod
+    def _default_microservice_urls_if_empty(cls, v: object, info: ValidationInfo) -> object:
+        key = info.field_name or ""
+        default = _DEFAULT_SERVICE_URLS.get(key)
+        if default is None:
+            return v
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return default
+        return v
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

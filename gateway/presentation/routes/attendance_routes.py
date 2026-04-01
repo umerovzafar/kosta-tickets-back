@@ -8,6 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
 
 
@@ -46,21 +47,7 @@ ROLES_CAN_UPDATE_WORKDAY_SETTINGS = {
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    user = r.json()
+    user = await verify_bearer_and_get_user(authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_VIEW:
         raise HTTPException(
@@ -130,7 +117,7 @@ async def get_hikvision_attendance(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             r = await client.get(f"{base}/hikvision/attendance", params=params)
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -160,7 +147,7 @@ async def get_hikvision_users(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             r = await client.get(f"{base}/hikvision/users", params=params)
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -176,7 +163,7 @@ async def list_hikvision_mappings(_: dict = Depends(get_current_user)):
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(f"{base}/hikvision/mappings")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -203,7 +190,7 @@ async def upsert_hikvision_mapping(
                 f"{base}/hikvision/mappings",
                 json=body.model_dump(exclude_none=True),
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -227,7 +214,7 @@ async def delete_hikvision_mapping(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.delete(f"{base}/hikvision/mappings/{camera_employee_no}")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -255,7 +242,7 @@ async def list_attendance_explanations(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(f"{base}/hikvision/explanations", params=params)
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -282,7 +269,7 @@ async def upsert_attendance_explanation(
                 f"{base}/hikvision/explanations",
                 json=body.model_dump(exclude_none=True),
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -323,7 +310,7 @@ async def upload_attendance_explanation_photo(
                 data=data,
                 files=files,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -366,7 +353,7 @@ async def get_workday_settings(_: dict = Depends(get_current_user)):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{base}/settings/workday")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")
@@ -422,7 +409,7 @@ async def get_daily_attendance_report(
                     params={"day": report_day.isoformat()},
                 ),
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
 
     try:
@@ -432,7 +419,7 @@ async def get_daily_attendance_report(
                 params={"include_archived": False},
                 headers={"Authorization": authorization} if authorization else {},
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Auth service unavailable")
 
     if workday_r.status_code >= 400:
@@ -608,7 +595,7 @@ async def update_workday_settings(
                 f"{base}/settings/workday",
                 json=body.model_dump(mode="json", exclude_none=True),
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Attendance service error")

@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, Query
 import httpx
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
@@ -9,21 +10,7 @@ ROLES_CAN_WRITE = {"IT отдел", "Администратор", "Офис ме
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    return r.json()
+    return await verify_bearer_and_get_user(authorization)
 
 
 def require_write_role(user: dict = Depends(get_current_user)):
@@ -45,7 +32,7 @@ async def _proxy_get(path: str, params: Optional[dict] = None):
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.get(url, params=params)
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail="Inventory service unavailable") from e
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Inventory service error")

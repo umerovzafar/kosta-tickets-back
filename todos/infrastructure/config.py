@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     service_name: str = "todos"
     # Auth: проверка пользователя по токену (GET /users/me)
     auth_service_url: str = ""
+
+    @field_validator("auth_service_url", mode="before")
+    @classmethod
+    def _default_auth_url_if_empty(cls, v: object) -> object:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "http://auth:1236"
+        return v
     # Microsoft Graph (календарь Outlook)
     microsoft_client_id: str = ""
     microsoft_tenant_id: str = ""
@@ -32,7 +39,8 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_redirect_uri(cls, v: str) -> str:
         # Убираем пробелы, переносы и лишнее, чтобы не склеилось с другой переменной
-        return (v or "").strip().replace("\n", "").replace("\r", "").split()[0]
+        parts = (v or "").strip().replace("\n", "").replace("\r", "").split()
+        return parts[0] if parts else ""
 
 
 def get_settings() -> Settings:

@@ -20,7 +20,7 @@ async def azure_login(state: Optional[str] = Query(None)):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(url, follow_redirects=False)
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(
             status_code=502,
             detail="Auth service unavailable. Check: docker compose ps auth; docker compose logs auth",
@@ -46,7 +46,7 @@ async def azure_logout():
                 f"{settings.auth_service_url}/auth/logout",
                 follow_redirects=False,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(
             status_code=502,
             detail="Auth service unavailable",

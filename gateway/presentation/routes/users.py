@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
-import httpx
 
+from infrastructure.auth_upstream import auth_service_request, verify_bearer_and_get_user
 from infrastructure.config import get_settings
 from presentation.schemas.user_schemas import (
     UserResponse,
@@ -28,21 +28,7 @@ ROLES_CAN_MANAGE_USERS = {MAIN_ADMIN_ROLE, ADMIN_ROLE, PARTNER_ROLE}
 
 
 async def _get_current_user_optional(authorization: Optional[str]) -> dict:
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    return r.json()
+    return await verify_bearer_and_get_user(authorization)
 
 
 async def require_auth(authorization: Optional[str] = Header(None, alias="Authorization")):
@@ -86,13 +72,6 @@ async def require_admin_or_it(authorization: Optional[str] = Header(None, alias=
     return user
 
 
-def _auth_headers(authorization: Optional[str]) -> dict:
-    headers = {}
-    if authorization:
-        headers["Authorization"] = authorization
-    return headers
-
-
 DESKTOP_BG_MAX_MB = 5
 DESKTOP_BG_ALLOWED = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DESKTOP_BG_SUBDIR = "desktop_backgrounds"
@@ -100,16 +79,7 @@ DESKTOP_BG_SUBDIR = "desktop_backgrounds"
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(authorization: Optional[str] = Header(None, alias="Authorization")):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{settings.auth_service_url}/users/me",
-            headers=_auth_headers(authorization),
-        )
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    return r.json()
+    return await verify_bearer_and_get_user(authorization)
 
 
 @router.post("/me/desktop-background", response_model=UserResponse)
@@ -152,12 +122,13 @@ async def upload_desktop_background(
 
     rel_path = f"{DESKTOP_BG_SUBDIR}/{user_id}/{unique_name}"
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/me/desktop-background",
-            json={"path": rel_path},
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        "/users/me/desktop-background",
+        authorization,
+        timeout=10.0,
+        json={"path": rel_path},
+    )
     if r.status_code != 200:
         file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to save settings")
@@ -183,11 +154,12 @@ async def delete_desktop_background(
         if str(target).startswith(str(base_dir)) and target.exists() and target.is_file():
             target.unlink(missing_ok=True)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(
-            f"{settings.auth_service_url}/users/me/desktop-background",
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "DELETE",
+        "/users/me/desktop-background",
+        authorization,
+        timeout=10.0,
+    )
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to delete")
     return r.json()
@@ -199,16 +171,16 @@ async def list_users(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{settings.auth_service_url}/users",
-            params={"include_archived": include_archived},
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "GET",
+        "/users",
+        authorization,
+        params={"include_archived": include_archived},
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -218,17 +190,13 @@ async def get_user_detail(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{settings.auth_service_url}/users/{user_id}",
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("GET", f"/users/{user_id}", authorization)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -239,18 +207,18 @@ async def set_user_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_main_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/{user_id}/role",
-            json=body.model_dump(),
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/users/{user_id}/role",
+        authorization,
+        json=body.model_dump(),
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -261,18 +229,18 @@ async def block_user(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/{user_id}/block",
-            json=body.model_dump(),
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/users/{user_id}/block",
+        authorization,
+        json=body.model_dump(),
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -283,18 +251,18 @@ async def archive_user(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/{user_id}/archive",
-            json=body.model_dump(),
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/users/{user_id}/archive",
+        authorization,
+        json=body.model_dump(),
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -306,18 +274,18 @@ async def set_time_tracking_role(
     _: dict = Depends(require_admin),
 ):
     """Назначить роль в учёте времени (user / manager). Главный администратор или Администратор."""
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/{user_id}/time-tracking-role",
-            json=body.model_dump(),
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/users/{user_id}/time-tracking-role",
+        authorization,
+        json=body.model_dump(),
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -329,16 +297,16 @@ async def set_position(
     _: dict = Depends(require_admin),
 ):
     """Установить должность пользователя. Главный администратор, Администратор или Партнер."""
-    settings = get_settings()
-    async with httpx.AsyncClient() as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/users/{user_id}/position",
-            json=body.model_dump(),
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/users/{user_id}/position",
+        authorization,
+        json=body.model_dump(),
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()

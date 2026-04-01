@@ -15,6 +15,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 import httpx
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
 from presentation.schemas.ticket_schemas import (
     TicketResponse,
@@ -33,21 +34,7 @@ ROLES_FULL_ACCESS = {"IT отдел", "Администратор", "Главн�
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
     """Текущий пользователь из auth. 401 если нет токена или токен невалиден."""
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    user = r.json()
+    user = await verify_bearer_and_get_user(authorization)
     return {"id": user["id"], "role": user.get("role") or "Сотрудник"}
 
 
@@ -58,7 +45,7 @@ async def _tickets_get(path: str, params: Optional[dict] = None):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(url, params=params)
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(
             status_code=503,
             detail="Tickets service unavailable. Ensure tickets container is running (docker-compose ps).",
@@ -174,7 +161,7 @@ async def get_ticket(ticket_uuid: str, current_user: dict = Depends(get_current_
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{get_settings().tickets_service_url}/tickets/{ticket_uuid}")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Tickets service unavailable.")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -190,7 +177,7 @@ async def _get_ticket_and_check_access(ticket_uuid: str, current_user: dict) -> 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{get_settings().tickets_service_url}/tickets/{ticket_uuid}")
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Tickets service unavailable.")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -305,18 +292,10 @@ async def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
     token = tokens[0].strip()
     if token.lower().startswith("bearer "):
         token = token[7:].strip()
-    settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        if r.status_code != 200:
-            return None
-        user = r.json()
+        user = await verify_bearer_and_get_user(f"Bearer {token}")
         return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
-    except Exception:
+    except HTTPException:
         return None
 
 

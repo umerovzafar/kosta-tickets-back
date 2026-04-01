@@ -49,7 +49,7 @@ async def todos_calendar_connect(request: Request):
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             r = await client.get(url, headers=headers)
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+    except httpx.RequestError:
         return JSONResponse(
             status_code=503,
             content={"detail": "Todos service unavailable"},
@@ -120,7 +120,7 @@ async def proxy_todos(request: Request, path: str):
                 headers=headers,
                 content=body,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException):
+    except httpx.RequestError:
         return JSONResponse(
             status_code=503,
             content={"detail": "Todos service unavailable"},

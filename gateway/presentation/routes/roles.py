@@ -1,22 +1,20 @@
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from infrastructure.config import get_settings
-from presentation.routes.users import require_admin, _auth_headers
+from infrastructure.auth_upstream import auth_service_request
+from presentation.routes.users import require_admin
 
 router = APIRouter(prefix="/api/v1/roles", tags=["roles"])
 
 
 @router.get("")
 async def list_roles(authorization: Optional[str] = Header(None, alias="Authorization"), _: dict = Depends(require_admin)):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(f"{settings.auth_service_url}/roles", headers=_auth_headers(authorization))
+    r = await auth_service_request("GET", "/roles", authorization, timeout=10.0)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -26,18 +24,13 @@ async def create_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(
-            f"{settings.auth_service_url}/roles",
-            json=body,
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("POST", "/roles", authorization, timeout=10.0, json=body)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 400:
         raise HTTPException(status_code=400, detail=r.json().get("detail") or "Invalid role data")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -47,17 +40,13 @@ async def get_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            f"{settings.auth_service_url}/roles/{role_id}",
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("GET", f"/roles/{role_id}", authorization, timeout=10.0)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Role not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -68,20 +57,15 @@ async def update_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/roles/{role_id}",
-            json=body,
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("PATCH", f"/roles/{role_id}", authorization, timeout=10.0, json=body)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 400:
         raise HTTPException(status_code=400, detail=r.json().get("detail") or "Invalid role data")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Role not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -91,12 +75,7 @@ async def delete_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(
-            f"{settings.auth_service_url}/roles/{role_id}",
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("DELETE", f"/roles/{role_id}", authorization, timeout=10.0)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
@@ -114,17 +93,13 @@ async def get_role_permissions(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            f"{settings.auth_service_url}/roles/{role_id}/permissions",
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request("GET", f"/roles/{role_id}/permissions", authorization, timeout=10.0)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Role not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
 
 
@@ -135,17 +110,17 @@ async def set_role_permissions(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    settings = get_settings()
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.patch(
-            f"{settings.auth_service_url}/roles/{role_id}/permissions",
-            json=body,
-            headers=_auth_headers(authorization),
-        )
+    r = await auth_service_request(
+        "PATCH",
+        f"/roles/{role_id}/permissions",
+        authorization,
+        timeout=10.0,
+        json=body,
+    )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Role not found")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
-

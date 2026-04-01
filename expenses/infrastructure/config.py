@@ -9,6 +9,13 @@ class Settings(BaseSettings):
     media_path: str = "./media"
     service_name: str = "expenses"
     auth_service_url: str = "http://auth:1236"
+
+    @field_validator("auth_service_url", mode="before")
+    @classmethod
+    def _default_auth_url_if_empty(cls, v: object) -> object:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "http://auth:1236"
+        return v
     max_upload_mb: int = 25
     # Если задано — submit и create с суммой выше лимита получают ошибку (доп. согласование)
     expense_amount_limit_uzs: Decimal | None = None

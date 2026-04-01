@@ -1,6 +1,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 import httpx
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
@@ -9,21 +10,7 @@ ROLES_CAN_WRITE = {"Партнер", "IT отдел", "Офис менеджер
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    return r.json()
+    return await verify_bearer_and_get_user(authorization)
 
 
 def require_write_role(user: dict = Depends(get_current_user)):

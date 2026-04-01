@@ -1,8 +1,8 @@
 import asyncio
 import json
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-import httpx
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import websockets
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
@@ -16,19 +16,11 @@ async def get_user_from_token(token: str) -> dict | None:
     if not token or not token.strip():
         return None
     token = token.replace("Bearer ", "").strip()
-    settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+        user = await verify_bearer_and_get_user(f"Bearer {token}")
+        return {"id": user["id"], "role": user.get("role") or "Сотрудник"}
+    except HTTPException:
         return None
-    if r.status_code != 200:
-        return None
-    user = r.json()
-    return {"id": user["id"], "role": user.get("role") or "Сотрудник"}
 
 
 async def forward_to_notifications_service(message: dict) -> dict:

@@ -1,31 +1,21 @@
 """Прокси к сервису расходов (expenses). Требует аутентификации."""
 
+import logging
 from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
+from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["expenses"])
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{settings.auth_service_url}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
-    return r.json()
+    return await verify_bearer_and_get_user(authorization)
 
 
 def _auth_headers(authorization: Optional[str]) -> dict[str, str]:
@@ -73,8 +63,12 @@ async def _forward(
                 headers=headers,
                 content=body,
             )
-    except httpx.RequestError:
-        # Сеть, DNS, таймаут, отказ upstream — см. EXPENSES_SERVICE_URL и контейнер expenses
+    except httpx.RequestError as e:
+        logger.warning(
+            "expenses upstream request failed: url=%s err=%s",
+            url,
+            e,
+        )
         raise HTTPException(status_code=503, detail="Expenses service unavailable")
     resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in ("connection", "transfer-encoding")}
     return Response(content=r.content, status_code=r.status_code, headers=resp_headers)

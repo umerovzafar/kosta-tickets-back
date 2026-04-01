@@ -60,7 +60,7 @@ async def admin_login(body: AdminLoginBody, request: Request):
                 f"{settings.auth_service_url}/auth/admin-login",
                 json={"username": body.username, "password": body.password},
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(
             status_code=502,
             detail="Auth service unavailable",
@@ -84,7 +84,7 @@ async def admin_bootstrap_status():
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{settings.auth_service_url}/auth/admin-bootstrap/status")
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail="Auth service unavailable") from e
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Auth error")
@@ -103,7 +103,7 @@ async def admin_bootstrap(request: Request, body: dict = Body(...)):
                 f"{settings.auth_service_url}/auth/admin-bootstrap",
                 json=body,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+    except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail="Auth service unavailable") from e
     def _detail() -> str:
         try:
