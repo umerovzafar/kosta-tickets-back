@@ -1,5 +1,20 @@
 (function () {
-  var API_BASE = window.ADMIN_API_BASE || 'http://localhost:1234';
+  var API_BASE = (function () {
+    var cfg =
+      typeof window.ADMIN_API_BASE !== 'undefined' && window.ADMIN_API_BASE !== null
+        ? String(window.ADMIN_API_BASE).trim()
+        : '';
+    if (cfg) return cfg.replace(/\/$/, '');
+    var o = window.location;
+    if (
+      o &&
+      (o.hostname === 'localhost' || o.hostname === '127.0.0.1') &&
+      String(o.port) === '8080'
+    ) {
+      return 'http://localhost:1234';
+    }
+    return (o && o.origin) ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
+  })();
   var TOKEN_KEY = 'admin_access_token';
 
   function getToken() {
