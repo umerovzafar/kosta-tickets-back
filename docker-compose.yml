@@ -3,6 +3,10 @@
 # Запуск: docker compose up -d --build
 # Полная пересборка: docker compose build --no-cache && docker compose up -d
 # Сброс БД (осторожно): docker compose down -v
+#
+# Gateway не ждёт healthy у всех микросервисов — иначе один «unhealthy» (например expenses)
+# блокирует весь стек в Portainer. Критичны только users_db + auth; остальное — service_started.
+# Пока сервис поднимается, API по нему может отдавать 503 — это нормально на старте.
 
 name: kosta-tickets-back
 
@@ -47,19 +51,19 @@ services:
       auth:
         condition: service_healthy
       tickets:
-        condition: service_healthy
+        condition: service_started
       notifications:
-        condition: service_healthy
+        condition: service_started
       inventory:
-        condition: service_healthy
+        condition: service_started
       todos:
-        condition: service_healthy
+        condition: service_started
       time_tracking:
-        condition: service_healthy
+        condition: service_started
       expenses:
-        condition: service_healthy
+        condition: service_started
       attendance:
-        condition: service_healthy
+        condition: service_started
 
   users_db:
     image: postgres:16-alpine
