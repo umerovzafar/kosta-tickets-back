@@ -372,11 +372,12 @@ services:
     volumes:
       - media_storage:/app/media
     healthcheck:
+      # HTTP 200 даже если БД ещё не отвечает (тело: status=degraded) — см. expenses/presentation/routes/health.py
       test: ["CMD-SHELL", "curl -sf http://localhost:1242/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 25s
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 90s
     depends_on:
       expenses_db:
         condition: service_healthy
