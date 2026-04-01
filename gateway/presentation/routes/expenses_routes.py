@@ -69,7 +69,14 @@ async def _forward(
             url,
             e,
         )
-        raise HTTPException(status_code=503, detail="Expenses service unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Expenses service unavailable. "
+                "Deploy the expenses container on the same Docker network as gateway; "
+                "EXPENSES_SERVICE_URL=http://expenses:1242 (see .env.example)."
+            ),
+        )
     resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in ("connection", "transfer-encoding")}
     return Response(content=r.content, status_code=r.status_code, headers=resp_headers)
 

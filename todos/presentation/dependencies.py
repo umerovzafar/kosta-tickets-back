@@ -16,8 +16,6 @@ async def get_current_user_id(
     if not authorization or not authorization.strip():
         raise HTTPException(status_code=401, detail="Authorization required")
     settings = get_settings()
-    if not settings.auth_service_url:
-        raise HTTPException(status_code=503, detail="Auth service not configured")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
