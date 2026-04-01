@@ -6,14 +6,22 @@
         : '';
     if (cfg) return cfg.replace(/\/$/, '');
     var o = window.location;
-    if (
-      o &&
-      (o.hostname === 'localhost' || o.hostname === '127.0.0.1') &&
-      String(o.port) === '8080'
-    ) {
+    if (!o || !o.protocol || !o.hostname) return 'http://localhost:1234';
+    var port = String(o.port || '');
+    // Локально: админка на :8080, gateway в Docker на :1234
+    if ((o.hostname === 'localhost' || o.hostname === '127.0.0.1') && port === '8080') {
       return 'http://localhost:1234';
     }
-    return (o && o.origin) ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
+    // Тот же сценарий по IP/LAN: контейнер admin-panel (:8080/:8081) ≠ gateway (:1234) — иначе POST /api уходит в nginx со статикой → 405
+    if (port === '8080' || port === '8081') {
+      var gwPort =
+        typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT !== null
+          ? String(window.ADMIN_GATEWAY_PORT).trim()
+          : '1234';
+      return o.protocol + '//' + o.hostname + ':' + gwPort;
+    }
+    // Прод: один домен и nginx проксирует /api на gateway — origin совпадает с API
+    return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
   })();
   var TOKEN_KEY = 'admin_access_token';
 
@@ -79,6 +87,9 @@
         }
         if (r.status === 404) {
           throw new Error('Сервис входа не найден. Проверьте, что gateway запущен на ' + (API_BASE || '...') + ' и перезапустите контейнеры (docker-compose up -d --build gateway auth).');
+        }
+        if (r.status === 405) {
+          throw new Error('405: запрос ушёл не на gateway (часто админка на :8080, а API на :1234). Проверьте config.js и пересоберите admin-panel; на сервере gateway: ADMIN_FRONTEND_URL=URL_админки для CORS.');
         }
         if (!r.ok) {
           return r.json().catch(function () { return {}; }).then(function (d) {
