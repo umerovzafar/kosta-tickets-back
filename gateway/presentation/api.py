@@ -42,11 +42,23 @@ def _cors_origins() -> list[str]:
     return list(dict.fromkeys(origins))  # без дубликатов
 
 
+# Админка на :8080, gateway на :1234 — разный origin; явный ADMIN_FRONTEND_URL не всегда задают.
+# Разрешаем частные сети (RFC1918) по http/https с любым портом.
+_CORS_PRIVATE_ORIGIN_REGEX = (
+    r"^https?://("
+    r"localhost|127\.0\.0\.1|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|"
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}"
+    r")(:\d+)?$"
+)
+
 origins = _cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=_CORS_PRIVATE_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
