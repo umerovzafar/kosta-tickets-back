@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from infrastructure.config import get_settings
 from presentation.routes import (
+    spa_auth_callback,
     health,
     auth_azure,
     auth_admin,
@@ -21,14 +22,12 @@ from presentation.routes import (
 
 app = FastAPI(title="Gateway", version="1.0.0")
 
-# Конкретный origin (не "*") — иначе при credentials: 'include' браузер блокирует CORS
 def _cors_origins() -> list[str]:
     settings = get_settings()
     origins: list[str] = []
     for url in (settings.frontend_url or "").strip(), (settings.admin_frontend_url or "").strip():
         if url and url != "*":
             origins.extend(u.strip() for u in url.split(",") if u.strip() and u.strip() != "*")
-    # Всегда добавляем localhost для локальной разработки (frontend на 5173, admin на 8080)
     defaults = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -53,6 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Location"],
 )
+app.include_router(spa_auth_callback.router)
 app.include_router(health.router)
 app.include_router(auth_azure.router)
 app.include_router(auth_admin.router)
