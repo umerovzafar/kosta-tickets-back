@@ -123,8 +123,14 @@ async def calendar_status(
     session: AsyncSession = Depends(get_session),
 ):
     """Проверка, подключён ли календарь Outlook для текущего пользователя."""
-    repo = OutlookCalendarTokenRepository(session)
-    row = await repo.get_by_user_id(user_id)
+    try:
+        repo = OutlookCalendarTokenRepository(session)
+        row = await repo.get_by_user_id(user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Calendar status unavailable",
+        ) from None
     return {"connected": row is not None}
 
 

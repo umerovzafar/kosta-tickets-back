@@ -24,11 +24,12 @@ async def get_current_user_id(
                 f"{settings.auth_service_url.rstrip('/')}/users/me",
                 headers={"Authorization": authorization},
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Auth service unavailable")
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise HTTPException(status_code=503, detail="Auth service error")
     data = r.json()
     user_id = data.get("id")
     if user_id is None:

@@ -73,7 +73,8 @@ async def _forward(
                 headers=headers,
                 content=body,
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout):
+    except httpx.RequestError:
+        # Сеть, DNS, таймаут, отказ upstream — см. EXPENSES_SERVICE_URL и контейнер expenses
         raise HTTPException(status_code=503, detail="Expenses service unavailable")
     resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in ("connection", "transfer-encoding")}
     return Response(content=r.content, status_code=r.status_code, headers=resp_headers)

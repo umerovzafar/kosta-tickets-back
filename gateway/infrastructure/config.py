@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -12,6 +13,15 @@ class Settings(BaseSettings):
     inventory_service_url: str = ""
     time_tracking_service_url: str = ""
     expenses_service_url: str = ""
+
+    @field_validator("expenses_service_url", mode="before")
+    @classmethod
+    def _default_expenses_url_if_empty(cls, v: object) -> object:
+        # Portainer/stack часто передаёт пустую строку — тогда подставляем URL из docker-compose
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "http://expenses:1242"
+        return v
+
     attendance_service_url: str = ""
     attendance_hikvision_allowed_ips: str = ""
     todos_service_url: str = ""
