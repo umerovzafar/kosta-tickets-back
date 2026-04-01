@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import RedirectResponse
-from application.use_cases import AdminLoginUseCase, AzureLoginUseCase, GetCurrentUserUseCase
+from application.use_cases import AdminLoginUseCase, AzureLoginUseCase, BootstrapAdminUseCase, GetCurrentUserUseCase
 from application.ports import UserRepositoryPort, TokenServicePort, RoleRepositoryPort
 from infrastructure.database import get_session
 from infrastructure.repositories import UserRepository, RoleRepository
@@ -10,7 +10,15 @@ from infrastructure.jwt_service import JWTService
 from infrastructure.azure_ad import get_login_url, get_logout_url, acquire_token_by_code
 from domain.roles import Role
 from infrastructure.config import get_settings
-from presentation.schemas import UserResponse, TokenResponse, RoleItem, AdminLoginRequest
+from presentation.schemas import (
+    UserResponse,
+    TokenResponse,
+    RoleItem,
+    AdminLoginRequest,
+    AdminBootstrapRequest,
+    AdminBootstrapResponse,
+    AdminBootstrapStatusResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -128,6 +136,64 @@ async def admin_login(
         raise HTTPException(status_code=401, detail="Invalid username or password")
     await session.commit()
     return TokenResponse(access_token=token)
+
+
+def get_bootstrap_admin_use_case(
+    session: AsyncSession = Depends(get_session),
+    user_repo: UserRepositoryPort = Depends(get_user_repo),
+) -> BootstrapAdminUseCase:
+    settings = get_settings()
+    return BootstrapAdminUseCase(
+        user_repo,
+        admin_username=settings.admin_username,
+        bootstrap_secret=settings.admin_bootstrap_secret,
+    )
+
+
+@router.get("/admin-bootstrap/status", response_model=AdminBootstrapStatusResponse)
+async def admin_bootstrap_status(
+    user_repo: UserRepositoryPort = Depends(get_user_repo),
+):
+    """Проверка, доступна ли первичная настройка (без авторизации)."""
+    settings = get_settings()
+    has_secret = bool((settings.admin_bootstrap_secret or "").strip())
+    creds = await user_repo.get_local_admin_credentials()
+    in_db = creds is not None
+    return AdminBootstrapStatusResponse(
+        bootstrap_available=has_secret and not in_db,
+        credentials_in_database=in_db,
+    )
+
+
+@router.post("/admin-bootstrap", response_model=AdminBootstrapResponse)
+async def admin_bootstrap(
+    body: AdminBootstrapRequest,
+    uc: BootstrapAdminUseCase = Depends(get_bootstrap_admin_use_case),
+    user_repo: UserRepositoryPort = Depends(get_user_repo),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Одноразовая генерация логина и пароля для входа в админ-панель.
+    На сервере должен быть задан ADMIN_BOOTSTRAP_SECRET; в теле запроса — тот же секрет.
+    После успеха пароль хранится в БД (bcrypt), пользователь local-admin — «Главный администратор».
+    """
+    settings = get_settings()
+    if not (settings.admin_bootstrap_secret or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="Первичная настройка отключена. Задайте ADMIN_BOOTSTRAP_SECRET в окружении.",
+        )
+    if await user_repo.get_local_admin_credentials():
+        raise HTTPException(
+            status_code=409,
+            detail="Учётная запись администратора уже создана. Вход через POST /auth/admin-login.",
+        )
+    result = await uc.execute(body.secret)
+    if not result:
+        raise HTTPException(status_code=403, detail="Неверный секрет")
+    username, password = result
+    await session.commit()
+    return AdminBootstrapResponse(username=username, password=password)
 
 
 @router.post("/exchange", response_model=TokenResponse)

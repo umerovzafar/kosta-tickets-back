@@ -13,8 +13,8 @@ ROLES_VIEW = {
     "Офис менеджер",
     "Сотрудник",
 }
-# Принять / отклонить заявку — только партнёр и администраторы (не офис-менеджер и др.)
 ROLES_MODERATE = {"Главный администратор", "Администратор", "Партнер"}
+ROLES_ADMIN_EDIT = {"Главный администратор", "Администратор"}
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
@@ -46,8 +46,12 @@ def check_moderate_role(user: dict) -> None:
     if role not in ROLES_MODERATE:
         raise HTTPException(
             status_code=403,
-            detail="Принимать и отклонять заявки могут только администратор или партнёр",
+            detail="Действие доступно только администратору или партнёру",
         )
+
+
+def is_admin_editor(user: dict) -> bool:
+    return (user.get("role") or "").strip() in ROLES_ADMIN_EDIT
 
 
 def created_by_filter_for_user(user: dict) -> int | None:

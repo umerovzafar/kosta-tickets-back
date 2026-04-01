@@ -81,6 +81,28 @@ class AdminLoginRequest(BaseModel):
     password: str
 
 
+class AdminBootstrapRequest(BaseModel):
+    """Секрет из переменной окружения ADMIN_BOOTSTRAP_SECRET на сервере."""
+
+    secret: str
+
+
+class AdminBootstrapResponse(BaseModel):
+    username: str
+    password: str
+    message: str = (
+        "Сохраните пароль в надёжном месте. Повторный запрос вернёт ошибку. "
+        "Секрет ADMIN_BOOTSTRAP_SECRET после этого можно убрать из окружения."
+    )
+
+
+class AdminBootstrapStatusResponse(BaseModel):
+    """bootstrapAvailable — можно вызвать POST /auth/admin-bootstrap (секрет задан и запись в БД ещё не создана)."""
+
+    bootstrap_available: bool
+    credentials_in_database: bool
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str

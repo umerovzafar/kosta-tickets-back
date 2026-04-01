@@ -3,7 +3,7 @@ from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from domain.entities import User
 from application.ports import UserRepositoryPort, RoleRepositoryPort
-from infrastructure.models import UserModel, RoleModel, RolePermissionModel
+from infrastructure.models import UserModel, RoleModel, RolePermissionModel, LocalAdminCredentialModel
 
 
 class RoleRepository(RoleRepositoryPort):
@@ -192,3 +192,31 @@ class UserRepository(UserRepositoryPort):
         )
         await self._session.flush()
         return await self.get_by_id(user_id)
+
+    async def get_local_admin_credentials(self) -> Optional[tuple[str, str]]:
+        """Если bootstrap выполнен: (username, bcrypt_hash)."""
+        result = await self._session.execute(
+            select(LocalAdminCredentialModel).where(LocalAdminCredentialModel.id == 1)
+        )
+        row = result.scalars().one_or_none()
+        if not row:
+            return None
+        return (row.username, row.password_hash)
+
+    async def save_local_admin_credentials(self, username: str, password_hash: str) -> None:
+        result = await self._session.execute(
+            select(LocalAdminCredentialModel).where(LocalAdminCredentialModel.id == 1)
+        )
+        existing = result.scalars().one_or_none()
+        if existing:
+            existing.username = username.strip()
+            existing.password_hash = password_hash
+        else:
+            self._session.add(
+                LocalAdminCredentialModel(
+                    id=1,
+                    username=username.strip(),
+                    password_hash=password_hash,
+                )
+            )
+        await self._session.flush()

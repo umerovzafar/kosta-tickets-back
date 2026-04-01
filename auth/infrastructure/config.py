@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     admin_frontend_url: str = ""
     admin_username: str = "admin"
     admin_password: str = ""
+    # Одноразовая первичная настройка: POST /auth/admin-bootstrap с телом {"secret": "..."}.
+    # После генерации пароль хранится в БД (bcrypt); env ADMIN_PASSWORD для входа не нужен.
+    admin_bootstrap_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("ADMIN_BOOTSTRAP_SECRET", "admin_bootstrap_secret"),
+    )
     service_name: str = "auth"
 
 

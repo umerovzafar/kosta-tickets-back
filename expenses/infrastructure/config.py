@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -7,8 +10,17 @@ class Settings(BaseSettings):
     service_name: str = "expenses"
     auth_service_url: str = "http://auth:1236"
     max_upload_mb: int = 25
+    # Если задано — submit и create с суммой выше лимита получают ошибку (доп. согласование)
+    expense_amount_limit_uzs: Decimal | None = None
 
     model_config = {"env_file": ".env", "extra": "ignore"}
+
+    @field_validator("expense_amount_limit_uzs", mode="before")
+    @classmethod
+    def empty_limit(cls, v):
+        if v is None or v == "":
+            return None
+        return v
 
 
 def get_settings() -> Settings:

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 from domain.entities import User
 
 
@@ -103,6 +103,15 @@ class UserRepositoryPort(ABC):
 
     @abstractmethod
     async def set_desktop_background(self, user_id: int, path: Optional[str]) -> Optional[User]:
+        pass
+
+    @abstractmethod
+    async def get_local_admin_credentials(self) -> Optional[Tuple[str, str]]:
+        """После bootstrap: (username, bcrypt_hash)."""
+        pass
+
+    @abstractmethod
+    async def save_local_admin_credentials(self, username: str, password_hash: str) -> None:
         pass
 
 
