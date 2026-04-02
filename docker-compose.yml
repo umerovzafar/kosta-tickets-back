@@ -373,6 +373,7 @@ services:
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
       - EXPENSE_AMOUNT_LIMIT_UZS=${EXPENSE_AMOUNT_LIMIT_UZS:-}
+      - LOG_LEVEL=${EXPENSES_LOG_LEVEL:-info}
     volumes:
       - media_storage:/app/media
     healthcheck:

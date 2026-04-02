@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Windows CRLF в скрипте ломает shebang в Linux-контейнере
+RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh
+
 EXPOSE 1242
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "1242", "--no-access-log", "--log-level", "critical"]
+# LOG_LEVEL: debug | info | warning | error (и для uvicorn в entrypoint, и для приложения в main.py)
+ENV LOG_LEVEL=info
+
+CMD ["./docker-entrypoint.sh"]
