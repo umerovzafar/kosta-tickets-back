@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from infrastructure.database import Base, async_session_factory, engine
 from infrastructure import models  # noqa: F401
@@ -16,6 +17,45 @@ _log = logging.getLogger("expenses.startup")
 _STARTUP_RETRIES = 30
 _STARTUP_DELAY_SEC = 2.0
 
+_LEGACY_INT_PK = frozenset({"integer", "bigint", "smallint"})
+
+
+async def _drop_legacy_integer_expense_tables(conn) -> None:
+    """
+    Старые БД могли создать expense_requests.id как INTEGER; текущая схема — VARCHAR(40) для KL-id.
+    Тогда CREATE TABLE для дочерних таблиц падает с DatatypeMismatchError.
+    Удаляем только таблицы модуля расходов (данные заявок теряются).
+    """
+    result = await conn.execute(
+        text(
+            """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'expense_requests'
+              AND column_name = 'id'
+            """
+        )
+    )
+    row = result.first()
+    if row is None:
+        return
+    dt = (row[0] or "").lower()
+    if dt not in _LEGACY_INT_PK:
+        return
+    _log.warning(
+        "Обнаружен legacy expense_requests.id (%s). Удаляем таблицы расходов для пересоздания под VARCHAR id "
+        "(данные заявок будут удалены).",
+        row[0],
+    )
+    for ddl in (
+        "DROP TABLE IF EXISTS expense_attachments CASCADE",
+        "DROP TABLE IF EXISTS expense_status_history CASCADE",
+        "DROP TABLE IF EXISTS expense_audit_logs CASCADE",
+        "DROP TABLE IF EXISTS expense_requests CASCADE",
+        "DROP TABLE IF EXISTS expense_kl_sequence CASCADE",
+    ):
+        await conn.execute(text(ddl))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,6 +63,7 @@ async def lifespan(app: FastAPI):
     for attempt in range(1, _STARTUP_RETRIES + 1):
         try:
             async with engine.begin() as conn:
+                await _drop_legacy_integer_expense_tables(conn)
                 await conn.run_sync(Base.metadata.create_all)
             async with async_session_factory() as session:
                 await seed_reference_data(session)
