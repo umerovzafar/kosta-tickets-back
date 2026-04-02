@@ -363,6 +363,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # В Docker Swarm / Portainer stacks depends_on не соблюдается — приложение само ждёт БД при старте.
   expenses:
     build:
       context: ./expenses

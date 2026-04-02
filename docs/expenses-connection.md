@@ -99,6 +99,11 @@ curl -s http://localhost:1242/health
 
 ---
 
-## 7. Отдельный стек / Portainer
+## 7. Portainer (stack / Swarm)
 
-Если gateway и expenses в **разных** стеках — нужна общая Docker-сеть (`external`) или явный `EXPENSES_SERVICE_URL` на доступный с хоста gateway адрес (например `http://host.docker.internal:1242` при пробросе порта).
+- **Переменные окружения** в UI стека должны дублировать нужные ключи из `.env` (файл из репозитория **сам по себе** в образ не попадает). Обязательно задайте согласованно:
+  - `EXPENSES_DB_PASSWORD`, `EXPENSES_DATABASE_URL` (пароль в URL = пароль БД),
+  - `DATABASE_URL` для контейнера подставляется из `EXPENSES_DATABASE_URL` через compose — при ручном деплое проверьте, что в сервис `expenses` передаётся **`DATABASE_URL`** или **`EXPENSES_DATABASE_URL`** (приложение читает оба имени).
+- **Пустой `EXPENSES_LOG_LEVEL`** в форме Portainer может передать пустой `LOG_LEVEL` и сломать uvicorn — либо не задавайте переменную, либо укажите `info` / `debug`.
+- В **Swarm** директива `depends_on` **не учитывается**: сервис при старте **сам повторяет** подключение к БД (см. `expenses/presentation/api.py`), чтобы не падать, если Postgres ещё не готов.
+- Если gateway и expenses в **разных** стеках — нужна общая Docker-сеть (`external`) или явный `EXPENSES_SERVICE_URL` на доступный с хоста gateway адрес (например `http://host.docker.internal:1242` при пробросе порта).
