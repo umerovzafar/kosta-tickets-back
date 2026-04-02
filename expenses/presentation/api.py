@@ -65,14 +65,15 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 await _drop_legacy_integer_expense_tables(conn)
                 await conn.run_sync(Base.metadata.create_all)
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE expense_attachments ADD COLUMN IF NOT EXISTS attachment_kind VARCHAR(64)"
-                        )
-                    )
-                except Exception as ex:
-                    _log.debug("attachment_kind column migration: %s", ex)
+                # create_all не добавляет колонки к уже существующим таблицам — иначе 500 на SELECT
+                for ddl in (
+                    "ALTER TABLE expense_requests ADD COLUMN IF NOT EXISTS payment_deadline DATE",
+                    "ALTER TABLE expense_attachments ADD COLUMN IF NOT EXISTS attachment_kind VARCHAR(64)",
+                ):
+                    try:
+                        await conn.execute(text(ddl))
+                    except Exception as ex:
+                        _log.debug("migration %s: %s", ddl, ex)
             async with async_session_factory() as session:
                 await seed_reference_data(session)
                 await session.commit()

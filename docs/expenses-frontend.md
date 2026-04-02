@@ -1,5 +1,7 @@
 # Подключение фронтенда к модулю «Расходы»
 
+> **Дубль для фронт-репозитория:** `tickets-front/docs/expenses-api-connection.md` и ТЗ контракта `tickets-front/TZ-expenses-backend.md`. При правках этого файла по возможности синхронизируйте копию во фронте.
+
 Фронтенд **не** обращается к микросервису `expenses` напрямую (порт 1242 доступен только внутри Docker-сети). Все запросы идут через **gateway** по публичному URL API.
 
 ---
@@ -78,6 +80,7 @@ Authorization: Bearer <access_token>
 |---------|----------------|
 | CORS error | `FRONTEND_URL` на gateway, совпадение origin с SPA |
 | 503 на `/api/v1/expenses` | Контейнер `expenses` запущен, `EXPENSES_SERVICE_URL` в env gateway |
+| **500** на `/api/v1/expenses` | Смотрите логи **`docker compose logs expenses --tail 100`** (или Portainer → Logs). Частая причина после обновления кода — **в БД не хватает колонки** (например `payment_deadline`); в актуальном образе expenses при старте выполняется `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Пересоберите и перезапустите `expenses`. Если ошибка остаётся — пришлите traceback из логов. |
 | 401 | Передаётся ли `Authorization`, не истёк ли токен |
 | 403 | Роль пользователя (раздел расходов / модерация) |
 
