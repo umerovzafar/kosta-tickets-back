@@ -72,6 +72,15 @@ Authorization: Bearer <access_token>
 
 Контракт полей (camelCase / деньги) согласован с ТЗ и нормализацией на фронте (`coerceExpense.ts` и см. `TZ-expenses-backend.md` во фронт-репозитории).
 
+### Автор заявки
+
+В ответах списка и карточки заявки добавлено поле **`createdBy`** (объект):
+
+- `id` — тот же смысл, что и `createdByUserId`
+- `displayName`, `email`, опционально `picture`, `position` — подтягиваются из **auth** (`GET /users/{id}` тем же Bearer-токеном)
+
+Если auth недоступен или профиль не найден, `createdBy` всё равно есть: заполняется **`id`**, остальные поля могут быть `null`.
+
 ---
 
 ## 6. Частые проблемы

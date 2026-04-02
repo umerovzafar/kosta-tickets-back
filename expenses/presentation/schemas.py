@@ -82,6 +82,18 @@ class AuditLogOut(BaseModel):
     performed_at: datetime = Field(serialization_alias="performedAt")
 
 
+class ExpenseAuthorSnippet(BaseModel):
+    """Кто подал заявку (из auth)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    display_name: Optional[str] = Field(None, serialization_alias="displayName")
+    email: Optional[str] = None
+    picture: Optional[str] = None
+    position: Optional[str] = None
+
+
 class ExpenseRequestListItemOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -104,6 +116,7 @@ class ExpenseRequestListItemOut(BaseModel):
     status: str
     current_approver_id: Optional[int] = Field(None, serialization_alias="currentApproverId")
     created_by_user_id: int = Field(serialization_alias="createdByUserId")
+    created_by: ExpenseAuthorSnippet = Field(serialization_alias="createdBy")
     updated_by_user_id: int = Field(serialization_alias="updatedByUserId")
     created_at: datetime = Field(serialization_alias="createdAt")
     updated_at: datetime = Field(serialization_alias="updatedAt")

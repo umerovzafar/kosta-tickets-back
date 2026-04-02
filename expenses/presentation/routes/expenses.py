@@ -6,12 +6,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.expense_service import calc_equivalent, validate_submit_fields
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
+from infrastructure.auth_users import fetch_users_by_ids
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
 from infrastructure.repositories import ExpenseRepository, _MISSING, next_kl_id
@@ -26,6 +27,7 @@ from presentation.deps import (
 from presentation.schemas import (
     AttachmentOut,
     AuditLogOut,
+    ExpenseAuthorSnippet,
     ExpenseCreateBody,
     ExpenseListResponse,
     ExpenseRequestDetailOut,
@@ -76,8 +78,16 @@ def _ensure_can_edit(row: ExpenseRequestModel, user: dict) -> None:
         )
 
 
-def _list_item(row: ExpenseRequestModel) -> ExpenseRequestListItemOut:
+def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestListItemOut:
     n = len(row.attachments or [])
+    a = author or {}
+    created_by = ExpenseAuthorSnippet(
+        id=row.created_by_user_id,
+        display_name=a.get("display_name"),
+        email=a.get("email"),
+        picture=a.get("picture"),
+        position=a.get("position"),
+    )
     return ExpenseRequestListItemOut(
         id=row.id,
         description=row.description,
@@ -98,6 +108,7 @@ def _list_item(row: ExpenseRequestModel) -> ExpenseRequestListItemOut:
         status=row.status,
         current_approver_id=row.current_approver_id,
         created_by_user_id=row.created_by_user_id,
+        created_by=created_by,
         updated_by_user_id=row.updated_by_user_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -111,8 +122,8 @@ def _list_item(row: ExpenseRequestModel) -> ExpenseRequestListItemOut:
     )
 
 
-def _detail(row: ExpenseRequestModel) -> ExpenseRequestDetailOut:
-    li = _list_item(row)
+def _detail(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestDetailOut:
+    li = _list_item(row, author)
     sh = sorted(row.status_history or [], key=lambda x: x.changed_at)
     al = sorted(row.audit_logs or [], key=lambda x: x.performed_at)
     atts = row.attachments or []
@@ -160,6 +171,30 @@ def _detail(row: ExpenseRequestModel) -> ExpenseRequestDetailOut:
     )
 
 
+async def _detail_response(row: ExpenseRequestModel, authorization: Optional[str]) -> ExpenseRequestDetailOut:
+    settings = get_settings()
+    m = await fetch_users_by_ids(settings.auth_service_url, authorization, {row.created_by_user_id})
+    return _detail(row, m.get(row.created_by_user_id))
+
+
+async def _list_with_authors(
+    rows: list[ExpenseRequestModel],
+    total: int,
+    skip: int,
+    limit: int,
+    authorization: Optional[str],
+) -> ExpenseListResponse:
+    settings = get_settings()
+    ids = {r.created_by_user_id for r in rows}
+    m = await fetch_users_by_ids(settings.auth_service_url, authorization, ids)
+    return ExpenseListResponse(
+        items=[_list_item(r, m.get(r.created_by_user_id)) for r in rows],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
+
+
 async def _audit_diff(
     repo: ExpenseRepository,
     row: ExpenseRequestModel,
@@ -202,6 +237,7 @@ async def list_expenses(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -227,18 +263,14 @@ async def list_expenses(
         skip=skip,
         limit=limit,
     )
-    return ExpenseListResponse(
-        items=[_list_item(r) for r in rows],
-        total=total,
-        skip=skip,
-        limit=limit,
-    )
+    return await _list_with_authors(rows, total, skip, limit, authorization)
 
 
 @router.post("", response_model=ExpenseRequestDetailOut)
 async def create_expense(
     body: ExpenseCreateBody,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -281,13 +313,14 @@ async def create_expense(
     )
     await session.commit()
     row = await repo.get_by_id(row.id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.get("/{expense_id}", response_model=ExpenseRequestDetailOut)
 async def get_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -296,7 +329,7 @@ async def get_expense(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.put("/{expense_id}", response_model=ExpenseRequestDetailOut)
@@ -304,6 +337,7 @@ async def update_expense(
     expense_id: str,
     body: ExpenseUpdateBody,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -403,13 +437,14 @@ async def update_expense(
     await _audit_diff(repo, row, before, after, int(user["id"]))
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/submit", response_model=ExpenseRequestDetailOut)
 async def submit_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -464,13 +499,14 @@ async def submit_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/approve", response_model=ExpenseRequestDetailOut)
 async def approve_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_moderate_role(user)
@@ -480,7 +516,7 @@ async def approve_expense(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
     if row.status == "approved":
-        return _detail(row)
+        return await _detail_response(row, authorization)
     if row.status != "pending_approval":
         raise HTTPException(
             status_code=409,
@@ -509,7 +545,7 @@ async def approve_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/reject", response_model=ExpenseRequestDetailOut)
@@ -517,6 +553,7 @@ async def reject_expense(
     expense_id: str,
     body: RejectBody,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_moderate_role(user)
@@ -526,7 +563,7 @@ async def reject_expense(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
     if row.status == "rejected":
-        return _detail(row)
+        return await _detail_response(row, authorization)
     if row.status != "pending_approval":
         raise HTTPException(
             status_code=409,
@@ -556,7 +593,7 @@ async def reject_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/revise", response_model=ExpenseRequestDetailOut)
@@ -564,6 +601,7 @@ async def revise_expense(
     expense_id: str,
     body: ReviseBody,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_moderate_role(user)
@@ -600,13 +638,14 @@ async def revise_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/pay", response_model=ExpenseRequestDetailOut)
 async def pay_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_moderate_role(user)
@@ -642,13 +681,14 @@ async def pay_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/close", response_model=ExpenseRequestDetailOut)
 async def close_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_moderate_role(user)
@@ -692,13 +732,14 @@ async def close_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.post("/{expense_id}/withdraw", response_model=ExpenseRequestDetailOut)
 async def withdraw_expense(
     expense_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -732,7 +773,7 @@ async def withdraw_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.get("/{expense_id}/attachments", response_model=list[AttachmentOut])
@@ -769,6 +810,7 @@ async def upload_attachment(
     file: UploadFile = File(...),
     attachment_kind: Optional[str] = Form(None, alias="attachmentKind"),
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -815,7 +857,7 @@ async def upload_attachment(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
 
 
 @router.delete("/{expense_id}/attachments/{attachment_id}", response_model=ExpenseRequestDetailOut)
@@ -823,6 +865,7 @@ async def delete_attachment(
     expense_id: str,
     attachment_id: str,
     user: dict = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
@@ -860,4 +903,4 @@ async def delete_attachment(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    return _detail(row)
+    return await _detail_response(row, authorization)
