@@ -24,6 +24,7 @@ class ExpenseRequestModel(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     expense_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    payment_deadline: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     amount_uzs: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     exchange_rate: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     equivalent_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -80,6 +81,7 @@ class ExpenseAttachmentModel(Base):
     storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    attachment_kind: Mapped[str | None] = mapped_column(String(64), nullable=True)
     uploaded_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

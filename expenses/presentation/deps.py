@@ -17,6 +17,22 @@ ROLES_MODERATE = {"Главный администратор", "Админист
 ROLES_ADMIN_EDIT = {"Главный администратор", "Администратор"}
 
 
+def _normalize_role_key(role: str) -> str:
+    """Регистронезависимо; ё/е в «Партнёр» (ТЗ §2)."""
+    r = (role or "").strip().lower().replace("ё", "е")
+    return r
+
+
+def _role_in_set(role: str, allowed: set[str]) -> bool:
+    rk = _normalize_role_key(role)
+    if not rk:
+        return False
+    for a in allowed:
+        if _normalize_role_key(a) == rk:
+            return True
+    return False
+
+
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
     if not authorization or not authorization.strip():
         raise HTTPException(status_code=401, detail="Authorization required")
@@ -38,27 +54,40 @@ async def get_current_user(authorization: Optional[str] = Header(None, alias="Au
 
 
 def check_view_role(user: dict) -> None:
-    role = (user.get("role") or "").strip()
-    if role not in ROLES_VIEW:
-        raise HTTPException(status_code=403, detail="Недостаточно прав для раздела расходов")
+    if not _role_in_set(user.get("role") or "", ROLES_VIEW):
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для раздела расходов",
+        )
 
 
 def check_moderate_role(user: dict) -> None:
-    role = (user.get("role") or "").strip()
-    if role not in ROLES_MODERATE:
+    if not _role_in_set(user.get("role") or "", ROLES_MODERATE):
         raise HTTPException(
             status_code=403,
-            detail="Действие доступно только администратору или партнёру",
+            detail="Действие доступно только ролям модерации (администратор, партнёр)",
         )
 
 
 def is_admin_editor(user: dict) -> bool:
-    return (user.get("role") or "").strip() in ROLES_ADMIN_EDIT
+    return _role_in_set(user.get("role") or "", ROLES_ADMIN_EDIT)
+
+
+def is_moderator(user: dict) -> bool:
+    return _role_in_set(user.get("role") or "", ROLES_MODERATE)
 
 
 def created_by_filter_for_user(user: dict) -> int | None:
     """Сотрудник видит только свои заявки; остальные роли — все."""
-    role = (user.get("role") or "").strip()
-    if role == "Сотрудник":
+    if _normalize_role_key(user.get("role") or "") == _normalize_role_key("Сотрудник"):
         return int(user["id"])
     return None
+
+
+def ensure_not_moderating_own_expense(user: dict, created_by_user_id: int) -> None:
+    """Модератор не может одобрять/отклонять/возвращать свою заявку (§12)."""
+    if is_moderator(user) and int(user["id"]) == int(created_by_user_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Нельзя модерировать собственную заявку",
+        )

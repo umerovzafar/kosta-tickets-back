@@ -6,6 +6,8 @@ from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from application.expense_service import REGISTRY_STATUSES
+
 from infrastructure.models import (
     DepartmentModel,
     ExchangeRateModel,
@@ -17,6 +19,8 @@ from infrastructure.models import (
     ExpenseTypeModel,
     ProjectModel,
 )
+
+_MISSING = object()
 
 
 def _now_utc() -> datetime:
@@ -59,11 +63,30 @@ class ExpenseRepository:
         r = await self._session.execute(q)
         return int(r.scalar() or 0)
 
+    async def attachment_kind_metrics(self, expense_request_id: str) -> tuple[int, int, int]:
+        """(payment_document_count, payment_receipt_count, untyped_count)."""
+        q = select(ExpenseAttachmentModel).where(
+            ExpenseAttachmentModel.expense_request_id == expense_request_id
+        )
+        r = await self._session.execute(q)
+        rows = r.scalars().all()
+        pd = pr = unt = 0
+        for row in rows:
+            k = (row.attachment_kind or "").strip()
+            if k == "payment_document":
+                pd += 1
+            elif k == "payment_receipt":
+                pr += 1
+            else:
+                unt += 1
+        return pd, pr, unt
+
     async def list_requests(
         self,
         *,
         created_by_user_id: int | None,
         status: str | None,
+        scope: str | None,
         expense_type: str | None,
         is_reimbursable: bool | None,
         date_from: date | None,
@@ -82,7 +105,9 @@ class ExpenseRepository:
         def _apply(stmt):
             if created_by_user_id is not None:
                 stmt = stmt.where(ExpenseRequestModel.created_by_user_id == created_by_user_id)
-            if status:
+            if scope == "registry":
+                stmt = stmt.where(ExpenseRequestModel.status.in_(list(REGISTRY_STATUSES)))
+            elif status:
                 stmt = stmt.where(ExpenseRequestModel.status == status)
             if expense_type:
                 stmt = stmt.where(ExpenseRequestModel.expense_type == expense_type)
@@ -134,6 +159,7 @@ class ExpenseRepository:
         id_: str,
         description: str,
         expense_date: date,
+        payment_deadline: date | None,
         amount_uzs: Decimal,
         exchange_rate: Decimal,
         equivalent_amount: Decimal,
@@ -155,6 +181,7 @@ class ExpenseRepository:
             id=id_,
             description=description.strip(),
             expense_date=expense_date,
+            payment_deadline=payment_deadline,
             amount_uzs=amount_uzs,
             exchange_rate=exchange_rate,
             equivalent_amount=equivalent_amount,
@@ -183,6 +210,7 @@ class ExpenseRepository:
         *,
         description: str | None,
         expense_date: date | None,
+        payment_deadline: date | None | object = _MISSING,
         amount_uzs: Decimal | None,
         exchange_rate: Decimal | None,
         equivalent_amount: Decimal | None,
@@ -202,6 +230,8 @@ class ExpenseRepository:
             row.description = description.strip()
         if expense_date is not None:
             row.expense_date = expense_date
+        if payment_deadline is not _MISSING:
+            row.payment_deadline = payment_deadline  # type: ignore[assignment]
         if amount_uzs is not None:
             row.amount_uzs = amount_uzs
         if exchange_rate is not None:
@@ -282,6 +312,7 @@ class ExpenseRepository:
         mime_type: str | None,
         size_bytes: int,
         uploaded_by_user_id: int,
+        attachment_kind: str | None = None,
     ) -> ExpenseAttachmentModel:
         att = ExpenseAttachmentModel(
             id=attachment_id,
@@ -290,6 +321,7 @@ class ExpenseRepository:
             storage_key=storage_key,
             mime_type=mime_type,
             size_bytes=size_bytes,
+            attachment_kind=attachment_kind,
             uploaded_by_user_id=uploaded_by_user_id,
             uploaded_at=_now_utc(),
         )
@@ -344,11 +376,15 @@ class ExpenseRepository:
 
 
 async def seed_reference_data(session: AsyncSession) -> None:
-    """Идемпотентное заполнение справочников."""
+    """Идемпотентное заполнение справочников (ТЗ §4)."""
     types_ = [
         ("transport", "Транспорт", 10),
-        ("meals", "Питание", 20),
-        ("office", "Офис", 30),
+        ("food", "Питание", 20),
+        ("accommodation", "Проживание", 30),
+        ("purchase", "Закупка", 40),
+        ("services", "Услуги", 50),
+        ("entertainment", "Развлечения", 60),
+        ("client_expense", "Расход клиента", 70),
         ("other", "Прочее", 100),
     ]
     for code, label, so in types_:

@@ -1,8 +1,37 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from application.expense_service import normalize_payment_method, validate_expense_type
+
+MoneyDecimal = Annotated[
+    Decimal,
+    Field(json_schema_extra={"example": 1250.5}),
+]
+
+
+def _coerce_decimal_value(v: Any) -> Any:
+    if v is None:
+        return None
+    if isinstance(v, Decimal):
+        return v
+    if isinstance(v, bool):
+        raise ValueError("Некорректное числовое значение")
+    if isinstance(v, (int, float)):
+        return Decimal(str(v))
+    if isinstance(v, dict):
+        if "$numberDecimal" in v:
+            return Decimal(str(v["$numberDecimal"]))
+        if "value" in v:
+            return _coerce_decimal_value(v["value"])
+    if isinstance(v, str):
+        s = v.replace(",", ".").replace(" ", "").replace("\u00a0", "").strip()
+        if not s:
+            return None
+        return Decimal(s)
+    raise ValueError("Некорректный формат числа")
 
 
 class HealthResponse(BaseModel):
@@ -23,6 +52,7 @@ class AttachmentOut(BaseModel):
     storage_key: str = Field(serialization_alias="storageKey")
     mime_type: Optional[str] = Field(None, serialization_alias="mimeType")
     size_bytes: int = Field(serialization_alias="sizeBytes")
+    attachment_kind: Optional[str] = Field(None, serialization_alias="attachmentKind")
     uploaded_by_user_id: int = Field(serialization_alias="uploadedByUserId")
     uploaded_at: datetime = Field(serialization_alias="uploadedAt")
 
@@ -58,9 +88,10 @@ class ExpenseRequestListItemOut(BaseModel):
     id: str
     description: str
     expense_date: date = Field(serialization_alias="expenseDate")
-    amount_uzs: Decimal = Field(serialization_alias="amountUzs")
-    exchange_rate: Decimal = Field(serialization_alias="exchangeRate")
-    equivalent_amount: Decimal = Field(serialization_alias="equivalentAmount")
+    payment_deadline: Optional[date] = Field(None, serialization_alias="paymentDeadline")
+    amount_uzs: MoneyDecimal = Field(serialization_alias="amountUzs")
+    exchange_rate: MoneyDecimal = Field(serialization_alias="exchangeRate")
+    equivalent_amount: MoneyDecimal = Field(serialization_alias="equivalentAmount")
     expense_type: str = Field(serialization_alias="expenseType")
     expense_subtype: Optional[str] = Field(None, serialization_alias="expenseSubtype")
     is_reimbursable: bool = Field(serialization_alias="isReimbursable")
@@ -87,7 +118,10 @@ class ExpenseRequestListItemOut(BaseModel):
 
 class ExpenseRequestDetailOut(ExpenseRequestListItemOut):
     attachments: list[AttachmentOut] = Field(default_factory=list)
-    status_history: list[StatusHistoryOut] = Field(default_factory=list, serialization_alias="statusHistory")
+    status_history: list[StatusHistoryOut] = Field(
+        default_factory=list,
+        serialization_alias="statusHistory",
+    )
     audit_logs: list[AuditLogOut] = Field(default_factory=list, serialization_alias="auditLog")
 
 
@@ -103,13 +137,16 @@ class ExpenseListResponse(BaseModel):
 class ExpenseCreateBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    description: str = ""
-    expense_date: Optional[date] = Field(None, validation_alias=AliasChoices("expenseDate", "expense_date"))
-    amount_uzs: Optional[Decimal] = Field(None, validation_alias=AliasChoices("amountUzs", "amount_uzs"))
-    exchange_rate: Optional[Decimal] = Field(None, validation_alias=AliasChoices("exchangeRate", "exchange_rate"))
-    expense_type: str = "other"
+    description: str = Field(..., min_length=1)
+    expense_date: date = Field(..., validation_alias=AliasChoices("expenseDate", "expense_date"))
+    payment_deadline: Optional[date] = Field(
+        None, validation_alias=AliasChoices("paymentDeadline", "payment_deadline")
+    )
+    amount_uzs: MoneyDecimal = Field(..., validation_alias=AliasChoices("amountUzs", "amount_uzs"))
+    exchange_rate: MoneyDecimal = Field(..., validation_alias=AliasChoices("exchangeRate", "exchange_rate"))
+    expense_type: str = Field(..., validation_alias=AliasChoices("expenseType", "expense_type"))
+    is_reimbursable: bool = Field(..., validation_alias=AliasChoices("isReimbursable", "is_reimbursable"))
     expense_subtype: Optional[str] = Field(None, validation_alias=AliasChoices("expenseSubtype", "expense_subtype"))
-    is_reimbursable: bool = Field(True, validation_alias=AliasChoices("isReimbursable", "is_reimbursable"))
     payment_method: Optional[str] = Field(None, validation_alias=AliasChoices("paymentMethod", "payment_method"))
     department_id: Optional[str] = Field(None, validation_alias=AliasChoices("departmentId", "department_id"))
     project_id: Optional[str] = Field(None, validation_alias=AliasChoices("projectId", "project_id"))
@@ -120,8 +157,26 @@ class ExpenseCreateBody(BaseModel):
 
     @field_validator("amount_uzs", "exchange_rate", mode="before")
     @classmethod
-    def empty_to_none(cls, v: Any) -> Any:
-        return v
+    def coerce_money(cls, v: Any) -> Any:
+        return _coerce_decimal_value(v)
+
+    @field_validator("expense_type", mode="after")
+    @classmethod
+    def check_expense_type(cls, v: str) -> str:
+        return validate_expense_type(v)
+
+    @field_validator("payment_method", mode="before")
+    @classmethod
+    def coerce_payment_method(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        return normalize_payment_method(str(v))
+
+    @model_validator(mode="after")
+    def validate_deadline_vs_expense_date(self) -> "ExpenseCreateBody":
+        if self.payment_deadline is not None and self.payment_deadline < self.expense_date:
+            raise ValueError("Конечный срок оплаты не может быть раньше даты расхода")
+        return self
 
 
 class ExpenseUpdateBody(BaseModel):
@@ -129,8 +184,11 @@ class ExpenseUpdateBody(BaseModel):
 
     description: Optional[str] = None
     expense_date: Optional[date] = Field(None, validation_alias=AliasChoices("expenseDate", "expense_date"))
-    amount_uzs: Optional[Decimal] = Field(None, validation_alias=AliasChoices("amountUzs", "amount_uzs"))
-    exchange_rate: Optional[Decimal] = Field(None, validation_alias=AliasChoices("exchangeRate", "exchange_rate"))
+    payment_deadline: Optional[date] = Field(
+        None, validation_alias=AliasChoices("paymentDeadline", "payment_deadline")
+    )
+    amount_uzs: Optional[MoneyDecimal] = Field(None, validation_alias=AliasChoices("amountUzs", "amount_uzs"))
+    exchange_rate: Optional[MoneyDecimal] = Field(None, validation_alias=AliasChoices("exchangeRate", "exchange_rate"))
     expense_type: Optional[str] = Field(None, validation_alias=AliasChoices("expenseType", "expense_type"))
     expense_subtype: Optional[str] = Field(None, validation_alias=AliasChoices("expenseSubtype", "expense_subtype"))
     is_reimbursable: Optional[bool] = Field(None, validation_alias=AliasChoices("isReimbursable", "is_reimbursable"))
@@ -142,17 +200,54 @@ class ExpenseUpdateBody(BaseModel):
     comment: Optional[str] = None
     current_approver_id: Optional[int] = Field(None, validation_alias=AliasChoices("currentApproverId", "current_approver_id"))
 
+    @field_validator("amount_uzs", "exchange_rate", mode="before")
+    @classmethod
+    def coerce_money_opt(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        return _coerce_decimal_value(v)
+
+    @field_validator("expense_type", mode="after")
+    @classmethod
+    def check_expense_type_opt(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        return validate_expense_type(v)
+
+    @field_validator("payment_method", mode="before")
+    @classmethod
+    def coerce_payment_method_opt(cls, v: Any) -> Any:
+        if v is None or v == "":
+            return None
+        return normalize_payment_method(str(v))
+
 
 class RejectBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     reason: str = Field(..., min_length=1, validation_alias=AliasChoices("reason", "rejectionReason", "rejection_reason"))
 
+    @field_validator("reason", mode="after")
+    @classmethod
+    def strip_reason(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("reason must not be empty")
+        return s
+
 
 class ReviseBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     comment: str = Field(..., min_length=1)
+
+    @field_validator("comment", mode="after")
+    @classmethod
+    def strip_comment(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("comment must not be empty")
+        return s
 
 
 class ExpenseTypeRefOut(BaseModel):
@@ -181,5 +276,5 @@ class ExchangeRateOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     date: date
-    rate: Decimal
+    rate: MoneyDecimal
     pair_label: str = Field(serialization_alias="pairLabel")

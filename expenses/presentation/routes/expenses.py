@@ -4,9 +4,9 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.expense_service import calc_equivalent, validate_submit_fields
@@ -14,11 +14,12 @@ from infrastructure.config import get_settings
 from infrastructure.database import get_session
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
-from infrastructure.repositories import ExpenseRepository, next_kl_id
+from infrastructure.repositories import ExpenseRepository, _MISSING, next_kl_id
 from presentation.deps import (
     check_moderate_role,
     check_view_role,
     created_by_filter_for_user,
+    ensure_not_moderating_own_expense,
     get_current_user,
     is_admin_editor,
 )
@@ -36,6 +37,8 @@ from presentation.schemas import (
 )
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
+
+_ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
 
 
 def _utc_now() -> datetime:
@@ -79,6 +82,7 @@ def _list_item(row: ExpenseRequestModel) -> ExpenseRequestListItemOut:
         id=row.id,
         description=row.description,
         expense_date=row.expense_date,
+        payment_deadline=row.payment_deadline,
         amount_uzs=row.amount_uzs,
         exchange_rate=row.exchange_rate,
         equivalent_amount=row.equivalent_amount,
@@ -122,6 +126,7 @@ def _detail(row: ExpenseRequestModel) -> ExpenseRequestDetailOut:
                 storage_key=a.storage_key,
                 mime_type=a.mime_type,
                 size_bytes=a.size_bytes,
+                attachment_kind=a.attachment_kind,
                 uploaded_by_user_id=a.uploaded_by_user_id,
                 uploaded_at=a.uploaded_at,
             )
@@ -180,6 +185,10 @@ async def _audit_diff(
 @router.get("", response_model=ExpenseListResponse)
 async def list_expenses(
     status: Optional[str] = Query(None),
+    scope: Optional[Literal["registry"]] = Query(
+        None,
+        description="registry — только approved, paid, closed (ТЗ §10)",
+    ),
     expense_type: Optional[str] = Query(None, alias="expenseType"),
     is_reimbursable: Optional[bool] = Query(None, alias="isReimbursable"),
     date_from: Optional[date] = Query(None, alias="dateFrom"),
@@ -205,6 +214,7 @@ async def list_expenses(
     rows, total = await repo.list_requests(
         created_by_user_id=eff_creator,
         status=status,
+        scope=scope,
         expense_type=expense_type,
         is_reimbursable=is_reimbursable,
         date_from=date_from,
@@ -233,24 +243,22 @@ async def create_expense(
 ):
     check_view_role(user)
     settings = get_settings()
-    amount_uzs = body.amount_uzs if body.amount_uzs is not None else Decimal("0.01")
-    exchange_rate = body.exchange_rate if body.exchange_rate is not None else Decimal("1")
-    if exchange_rate <= 0:
-        raise HTTPException(status_code=400, detail="exchangeRate must be greater than 0")
-    if amount_uzs <= 0:
-        raise HTTPException(status_code=400, detail="amountUzs must be greater than 0")
+    amount_uzs = body.amount_uzs
+    exchange_rate = body.exchange_rate
     eq = calc_equivalent(amount_uzs, exchange_rate)
+    exp_d = body.expense_date
     rid = await next_kl_id(session)
     uid = int(user["id"])
     repo = ExpenseRepository(session)
     row = await repo.create(
         id_=rid,
         description=body.description or "",
-        expense_date=body.expense_date or date.today(),
+        expense_date=exp_d,
+        payment_deadline=body.payment_deadline,
         amount_uzs=amount_uzs,
         exchange_rate=exchange_rate,
         equivalent_amount=eq,
-        expense_type=body.expense_type or "other",
+        expense_type=body.expense_type,
         expense_subtype=body.expense_subtype,
         is_reimbursable=body.is_reimbursable,
         payment_method=body.payment_method,
@@ -309,6 +317,7 @@ async def update_expense(
     before = {
         "description": row.description,
         "expense_date": row.expense_date,
+        "payment_deadline": row.payment_deadline,
         "amount_uzs": row.amount_uzs,
         "exchange_rate": row.exchange_rate,
         "equivalent_amount": row.equivalent_amount,
@@ -336,10 +345,27 @@ async def update_expense(
         exchange_rate = row.exchange_rate
     eq = calc_equivalent(amount_uzs, exchange_rate)
 
+    exp_d = row.expense_date
+    if "expense_date" in data:
+        exp_d = data["expense_date"]
+    pd_new = row.payment_deadline
+    if "payment_deadline" in data:
+        pd_new = data["payment_deadline"]
+    if pd_new is not None and exp_d is not None and pd_new < exp_d:
+        raise HTTPException(
+            status_code=400,
+            detail="Конечный срок оплаты не может быть раньше даты расхода",
+        )
+
+    payment_deadline_arg: date | object = _MISSING
+    if "payment_deadline" in data:
+        payment_deadline_arg = data["payment_deadline"]
+
     await repo.update_fields(
         row,
         description=data.get("description"),
         expense_date=data.get("expense_date"),
+        payment_deadline=payment_deadline_arg,
         amount_uzs=data.get("amount_uzs"),
         exchange_rate=data.get("exchange_rate"),
         equivalent_amount=eq,
@@ -359,6 +385,7 @@ async def update_expense(
     after = {
         "description": row.description,
         "expense_date": row.expense_date,
+        "payment_deadline": row.payment_deadline,
         "amount_uzs": row.amount_uzs,
         "exchange_rate": row.exchange_rate,
         "equivalent_amount": row.equivalent_amount,
@@ -396,11 +423,13 @@ async def submit_expense(
     if row.status not in ("draft", "revision_required"):
         raise HTTPException(status_code=400, detail="Отправка только из draft или revision_required")
     n_att = await repo.count_attachments(row.id)
+    pd_count, pr_count, _un = await repo.attachment_kind_metrics(row.id)
     limit = settings.expense_amount_limit_uzs
     try:
         validate_submit_fields(
             description=row.description,
             expense_date=row.expense_date,
+            payment_deadline=row.payment_deadline,
             amount_uzs=row.amount_uzs,
             exchange_rate=row.exchange_rate,
             expense_type=row.expense_type,
@@ -408,6 +437,8 @@ async def submit_expense(
             comment=row.comment,
             attachment_count=n_att,
             expense_amount_limit_uzs=limit,
+            payment_document_count=pd_count,
+            payment_receipt_count=pr_count,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -447,8 +478,15 @@ async def approve_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
+    if row.status == "approved":
+        return _detail(row)
     if row.status != "pending_approval":
-        raise HTTPException(status_code=400, detail="Одобрение только для pending_approval")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Одобрение недоступно для статуса «{row.status}»",
+        )
+    ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     row.status = "approved"
     row.approved_at = _utc_now()
@@ -486,8 +524,15 @@ async def reject_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
+    if row.status == "rejected":
+        return _detail(row)
     if row.status != "pending_approval":
-        raise HTTPException(status_code=400, detail="Отклонение только для pending_approval")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Отклонение недоступно для статуса «{row.status}»",
+        )
+    ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     row.status = "rejected"
     row.rejected_at = _utc_now()
@@ -526,8 +571,13 @@ async def revise_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
     if row.status != "pending_approval":
-        raise HTTPException(status_code=400, detail="Возврат на доработку только для pending_approval")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Возврат на доработку недоступен для статуса «{row.status}»",
+        )
+    ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     row.status = "revision_required"
     row.updated_by_user_id = int(user["id"])
@@ -564,10 +614,12 @@ async def pay_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
     if row.status != "approved":
         raise HTTPException(status_code=400, detail="Выплата только для approved")
     if not row.is_reimbursable:
         raise HTTPException(status_code=400, detail="Выплата только для возмещаемых расходов")
+    ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     row.status = "paid"
     row.paid_at = _utc_now()
@@ -604,6 +656,8 @@ async def close_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
+    ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     if row.status == "paid":
         new_status = "closed"
@@ -701,6 +755,7 @@ async def list_attachments(
             storage_key=a.storage_key,
             mime_type=a.mime_type,
             size_bytes=a.size_bytes,
+            attachment_kind=a.attachment_kind,
             uploaded_by_user_id=a.uploaded_by_user_id,
             uploaded_at=a.uploaded_at,
         )
@@ -712,6 +767,7 @@ async def list_attachments(
 async def upload_attachment(
     expense_id: str,
     file: UploadFile = File(...),
+    attachment_kind: Optional[str] = Form(None, alias="attachmentKind"),
     user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -726,6 +782,13 @@ async def upload_attachment(
             raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
         if row.status not in ("draft", "revision_required", "pending_approval"):
             raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
+    kind_norm: str | None = None
+    if attachment_kind is not None and str(attachment_kind).strip():
+        k = str(attachment_kind).strip()
+        if k not in _ALLOWED_ATTACHMENT_KINDS:
+            raise HTTPException(status_code=400, detail="Недопустимый тип вложения")
+        kind_norm = k
+
     content = await file.read()
     try:
         storage_key, safe_name = save_attachment(row.id, file.filename or "file", content)
@@ -740,6 +803,7 @@ async def upload_attachment(
         mime_type=file.content_type,
         size_bytes=len(content),
         uploaded_by_user_id=int(user["id"]),
+        attachment_kind=kind_norm,
     )
     await repo.add_audit(
         expense_request_id=row.id,

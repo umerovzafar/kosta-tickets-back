@@ -65,6 +65,14 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 await _drop_legacy_integer_expense_tables(conn)
                 await conn.run_sync(Base.metadata.create_all)
+                try:
+                    await conn.execute(
+                        text(
+                            "ALTER TABLE expense_attachments ADD COLUMN IF NOT EXISTS attachment_kind VARCHAR(64)"
+                        )
+                    )
+                except Exception as ex:
+                    _log.debug("attachment_kind column migration: %s", ex)
             async with async_session_factory() as session:
                 await seed_reference_data(session)
                 await session.commit()
