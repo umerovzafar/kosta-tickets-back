@@ -18,6 +18,8 @@ from urllib.parse import quote, urlparse, urlunparse, parse_qs, urlencode
 
 import aiosmtplib
 
+from infrastructure.expense_notify_routing import resolve_expense_notify_recipients
+
 if TYPE_CHECKING:
     from infrastructure.config import Settings
 
@@ -355,9 +357,15 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
             not bool((settings.smtp_host or "").strip()),
         )
         return
-    recipients = _parse_recipients(settings.expense_notify_to)
+    recipients = resolve_expense_notify_recipients(
+        settings,
+        department_id=ctx.department_id,
+        expense_type=ctx.expense_type,
+        project_id=ctx.project_id,
+        is_reimbursable=ctx.is_reimbursable,
+    )
     if not recipients:
-        _log.warning("expense notify: EXPENSE_NOTIFY_TO пусто, skip")
+        _log.warning("expense notify: нет получателей (ROUTING / EXPENSE_NOTIFY_TO), skip")
         return
 
     expense_id = ctx.expense_id
@@ -638,9 +646,6 @@ async def send_expense_smtp_test(settings: Settings) -> list[str]:
     """Тест SMTP: письмо «на согласование»."""
     if not _smtp_ready(settings):
         raise ValueError("Задайте EXPENSE_SMTP_HOST, EXPENSE_SMTP_USER, EXPENSE_SMTP_PASSWORD")
-    recipients = _parse_recipients(settings.expense_notify_to)
-    if not recipients:
-        raise ValueError("EXPENSE_NOTIFY_TO пусто")
 
     ctx = ExpenseModerationEmailContext(
         expense_id="TEST-EXPENSE",
@@ -663,6 +668,16 @@ async def send_expense_smtp_test(settings: Settings) -> list[str]:
         author_name="Тестовый автор",
         attachments=[],
     )
+    recipients = resolve_expense_notify_recipients(
+        settings,
+        department_id=ctx.department_id,
+        expense_type=ctx.expense_type,
+        project_id=ctx.project_id,
+        is_reimbursable=ctx.is_reimbursable,
+    )
+    if not recipients:
+        raise ValueError("Нет получателей: задайте EXPENSE_NOTIFY_ROUTING_JSON или EXPENSE_NOTIFY_TO")
+
     await _send_moderation_message(settings, ctx)
     _log.info("expense SMTP test sent to %s", recipients)
     return recipients

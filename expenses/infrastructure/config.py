@@ -50,6 +50,11 @@ class Settings(BaseSettings):
         default="zumerov@kostalegal.com",
         validation_alias=AliasChoices("EXPENSE_NOTIFY_TO"),
     )
+    # JSON: {"default":["a@x.com"],"rules":[{"if":{"departmentId":"…"},"to":["b@x.com"]}]} — см. expense_notify_routing.py
+    expense_notify_routing_json: str = Field(
+        default="",
+        validation_alias=AliasChoices("EXPENSE_NOTIFY_ROUTING_JSON"),
+    )
     smtp_host: str = Field(default="", validation_alias=AliasChoices("EXPENSE_SMTP_HOST", "SMTP_HOST"))
     smtp_port: int = Field(default=587, validation_alias=AliasChoices("EXPENSE_SMTP_PORT", "SMTP_PORT"))
     smtp_user: str = Field(default="", validation_alias=AliasChoices("EXPENSE_SMTP_USER", "SMTP_USER"))
