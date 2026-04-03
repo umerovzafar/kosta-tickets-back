@@ -377,6 +377,7 @@ services:
       - LOG_LEVEL=${EXPENSES_LOG_LEVEL:-info}
       # Письмо при submit заявки (см. .env.example — EXPENSE_SMTP_*)
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      - EXPENSE_NOTIFY_ON_CREATE=${EXPENSE_NOTIFY_ON_CREATE:-true}
       - EXPENSE_NOTIFY_ON_SUBMIT=${EXPENSE_NOTIFY_ON_SUBMIT:-true}
       - EXPENSE_NOTIFY_TO=${EXPENSE_NOTIFY_TO:-zumerov@kostalegal.com}
       - EXPENSE_SMTP_HOST=${EXPENSE_SMTP_HOST:-}

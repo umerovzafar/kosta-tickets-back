@@ -1,4 +1,4 @@
-"""Письмо при отправке заявки на расход (submit → pending_approval)."""
+"""Почта по заявкам на расход: черновик (create) и поступление на согласование (submit)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import logging
 from datetime import date, datetime
 from decimal import Decimal
 from email.message import EmailMessage
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import aiosmtplib
@@ -93,6 +93,7 @@ def _button_block_html(href: str, label: str, bg_hex: str) -> str:
 
 def _build_interactive_html(
     *,
+    stage: Literal["draft", "submitted"],
     safe_id: str,
     safe_author: str,
     expense_date_fmt: str,
@@ -103,11 +104,25 @@ def _build_interactive_html(
     open_link: str | None,
     intent_param: str,
 ) -> str:
+    if stage == "submitted":
+        badge_upper = "На согласование"
+        extra_line = (
+            '<p style="margin:12px 0 0 0;font-size:15px;color:#64748b;line-height:1.45;">'
+            "Требуется решение модератора.</p>"
+        )
+    else:
+        badge_upper = "Черновик"
+        extra_line = (
+            '<p style="margin:12px 0 0 0;font-size:15px;color:#64748b;line-height:1.45;">'
+            "Автор создал заявку. После отправки на согласование придёт ещё одно письмо с кнопками «Утвердить» и «Отклонить».</p>"
+        )
+
     if open_link:
-        approve_url = append_url_intent(open_link, intent_param, "approve")
-        reject_url = append_url_intent(open_link, intent_param, "reject")
         safe_open = html.escape(open_link, quote=True)
-        actions_block = f"""
+        if stage == "submitted":
+            approve_url = append_url_intent(open_link, intent_param, "approve")
+            reject_url = append_url_intent(open_link, intent_param, "reject")
+            actions_block = f"""
 <div style="margin:24px 0;padding:20px 20px 8px 20px;background:#eef2ff;border-radius:12px;border:1px solid #c7d2fe;">
   <p style="margin:0 0 16px 0;font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#1e1b4b;font-weight:600;">
     Действия (откройте в браузере, войдите в систему при необходимости)
@@ -116,11 +131,25 @@ def _build_interactive_html(
   {_button_block_html(approve_url, "Утвердить", "#16a34a")}
   {_button_block_html(reject_url, "Отклонить", "#dc2626")}
   <p style="margin:12px 0 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#64748b;line-height:1.4;">
-    Кнопки ведут в приложение. «Утвердить» и «Отклонить» добавляют к адресу параметр <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">{html.escape(intent_param)}</code>
-    — фронтенд может сразу открыть диалог согласования.
+    «Утвердить» и «Отклонить» добавляют параметр <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">{html.escape(intent_param)}</code>
+    — фронтенд может открыть диалог согласования.
   </p>
   <p style="margin:8px 0 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#94a3b8;">
     Если кнопки не нажимаются: <a href="{safe_open}" style="color:#2563eb;">ссылка на заявку</a>
+  </p>
+</div>"""
+        else:
+            actions_block = f"""
+<div style="margin:24px 0;padding:20px 20px 8px 20px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;">
+  <p style="margin:0 0 16px 0;font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#14532d;font-weight:600;">
+    Просмотр черновика
+  </p>
+  {_button_block_html(open_link, "Открыть заявку", "#2563eb")}
+  <p style="margin:12px 0 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#64748b;line-height:1.4;">
+    Утвердить или отклонить можно после того, как автор отправит заявку на согласование.
+  </p>
+  <p style="margin:8px 0 0 0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#94a3b8;">
+    <a href="{safe_open}" style="color:#2563eb;">Ссылка на заявку</a>
   </p>
 </div>"""
     else:
@@ -144,8 +173,9 @@ def _build_interactive_html(
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
         <tr>
           <td style="padding:24px 24px 8px 24px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 8px 0;font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">Новая заявка</p>
+            <p style="margin:0 0 8px 0;font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">{html.escape(badge_upper)}</p>
             <h1 style="margin:0;font-size:22px;line-height:1.3;color:#0f172a;">Расход <span style="color:#2563eb;">{safe_id}</span></h1>
+            {extra_line}
           </td>
         </tr>
         <tr>
@@ -178,9 +208,10 @@ def _build_interactive_html(
 </html>"""
 
 
-async def notify_expense_submitted(
+async def _send_moderation_message(
     settings: Settings,
     *,
+    stage: Literal["draft", "submitted"],
     expense_id: str,
     description: str | None,
     amount_uzs: Decimal | None,
@@ -190,9 +221,14 @@ async def notify_expense_submitted(
     author_email: str | None,
     author_name: str | None,
 ) -> None:
-    if not settings.expense_notify_on_submit:
+    if stage == "draft":
+        if not settings.expense_notify_on_create:
+            _log.debug("expense notify: EXPENSE_NOTIFY_ON_CREATE=false, skip")
+            return
+    elif not settings.expense_notify_on_submit:
         _log.debug("expense notify: EXPENSE_NOTIFY_ON_SUBMIT=false, skip")
         return
+
     if not _smtp_ready(settings):
         _log.warning(
             "expense notify: SMTP не настроен (EXPENSE_SMTP_HOST / USER / PASSWORD), письмо не отправлено"
@@ -221,29 +257,51 @@ async def notify_expense_submitted(
     link_plain = open_link or "(задайте FRONTEND_URL в env сервиса expenses)"
     intent_param = (settings.expense_notify_intent_param or "intent").strip() or "intent"
 
-    plain_lines = [
-        f"Заявка: {expense_id}",
-        f"Автор: {author_line}",
-        f"Дата расхода: {expense_date_fmt}",
-        f"Тип: {et}",
-        f"Сумма (UZS): {money_fmt}",
-        f"Возмещаемый: {reimb}",
-        f"Описание: {desc}",
-        "",
-        "Ссылки (нужен вход в приложение, роль модерации):",
-        f"Открыть: {link_plain}",
-    ]
-    if open_link:
-        plain_lines.extend(
-            [
-                f"Утвердить ({intent_param}=approve): {append_url_intent(open_link, intent_param, 'approve')}",
-                f"Отклонить ({intent_param}=reject): {append_url_intent(open_link, intent_param, 'reject')}",
-            ]
-        )
-    plain_lines.extend(["", "— Kosta Legal / расходы"])
+    if stage == "draft":
+        subject = f"Заявка на расход {expense_id} — черновик"
+        plain_lines = [
+            f"Создан черновик заявки: {expense_id}",
+            f"Автор: {author_line}",
+            f"Дата расхода: {expense_date_fmt}",
+            f"Тип: {et}",
+            f"Сумма (UZS): {money_fmt}",
+            f"Возмещаемый: {reimb}",
+            f"Описание: {desc}",
+            "",
+            "Открыть заявку:",
+            link_plain,
+            "",
+            "После отправки автором на согласование вы получите письмо с действиями «Утвердить» / «Отклонить».",
+            "",
+            "— Kosta Legal / расходы",
+        ]
+    else:
+        subject = f"Заявка на расход {expense_id} — на согласование"
+        plain_lines = [
+            f"Заявка на согласование: {expense_id}",
+            f"Автор: {author_line}",
+            f"Дата расхода: {expense_date_fmt}",
+            f"Тип: {et}",
+            f"Сумма (UZS): {money_fmt}",
+            f"Возмещаемый: {reimb}",
+            f"Описание: {desc}",
+            "",
+            "Ссылки (нужен вход в приложение, роль модерации):",
+            f"Открыть: {link_plain}",
+        ]
+        if open_link:
+            plain_lines.extend(
+                [
+                    f"Утвердить ({intent_param}=approve): {append_url_intent(open_link, intent_param, 'approve')}",
+                    f"Отклонить ({intent_param}=reject): {append_url_intent(open_link, intent_param, 'reject')}",
+                ]
+            )
+        plain_lines.extend(["", "— Kosta Legal / расходы"])
+
     text_body = "\n".join(plain_lines)
 
     html_body = _build_interactive_html(
+        stage=stage,
         safe_id=safe_id,
         safe_author=safe_author,
         expense_date_fmt=expense_date_fmt,
@@ -255,7 +313,6 @@ async def notify_expense_submitted(
         intent_param=intent_param,
     )
 
-    subject = f"Новая заявка на расход {expense_id}"
     msg = EmailMessage()
     msg["Subject"] = subject
     from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
@@ -273,16 +330,69 @@ async def notify_expense_submitted(
         start_tls=bool(settings.smtp_use_tls),
     )
     _log.info(
-        "expense submit notification sent to %s for expense_id=%s",
+        "expense moderation mail (%s) sent to %s expense_id=%s",
+        stage,
         recipients,
         expense_id,
     )
 
 
+async def notify_expense_created(
+    settings: Settings,
+    *,
+    expense_id: str,
+    description: str | None,
+    amount_uzs: Decimal | None,
+    expense_date: date | datetime | None,
+    expense_type: str | None,
+    is_reimbursable: bool,
+    author_email: str | None,
+    author_name: str | None,
+) -> None:
+    """Письмо модераторам при POST /expenses (черновик)."""
+    await _send_moderation_message(
+        settings,
+        stage="draft",
+        expense_id=expense_id,
+        description=description,
+        amount_uzs=amount_uzs,
+        expense_date=expense_date,
+        expense_type=expense_type,
+        is_reimbursable=is_reimbursable,
+        author_email=author_email,
+        author_name=author_name,
+    )
+
+
+async def notify_expense_submitted(
+    settings: Settings,
+    *,
+    expense_id: str,
+    description: str | None,
+    amount_uzs: Decimal | None,
+    expense_date: date | datetime | None,
+    expense_type: str | None,
+    is_reimbursable: bool,
+    author_email: str | None,
+    author_name: str | None,
+) -> None:
+    """Письмо модераторам при отправке на согласование (submit → pending_approval)."""
+    await _send_moderation_message(
+        settings,
+        stage="submitted",
+        expense_id=expense_id,
+        description=description,
+        amount_uzs=amount_uzs,
+        expense_date=expense_date,
+        expense_type=expense_type,
+        is_reimbursable=is_reimbursable,
+        author_email=author_email,
+        author_name=author_name,
+    )
+
+
 async def send_expense_smtp_test(settings: Settings) -> list[str]:
-    """
-    Тест SMTP: интерактивное HTML-письмо с кнопками (как в уведомлении о заявке).
-    """
+    """Тест SMTP: письмо «на согласование» с полным набором кнопок."""
     if not _smtp_ready(settings):
         raise ValueError("Задайте EXPENSE_SMTP_HOST, EXPENSE_SMTP_USER, EXPENSE_SMTP_PASSWORD")
     recipients = _parse_recipients(settings.expense_notify_to)
@@ -293,6 +403,7 @@ async def send_expense_smtp_test(settings: Settings) -> list[str]:
     open_link = _build_open_link(settings, "TEST-EXPENSE")
     safe_id = html.escape("TEST-EXPENSE")
     html_body = _build_interactive_html(
+        stage="submitted",
         safe_id=safe_id,
         safe_author=html.escape("Тестовый автор (SMTP)"),
         expense_date_fmt="2099-01-01",

@@ -36,8 +36,11 @@ class Settings(BaseSettings):
     # Если задано — submit и create с суммой выше лимита получают ошибку (доп. согласование)
     expense_amount_limit_uzs: Decimal | None = None
 
-    # Почта: уведомление о новой заявке (submit → pending_approval). Microsoft 365: SMTP AUTH,
-    # smtp.office365.com:587 + STARTTLS, учётная запись с включённой SMTP-аутентификацией (или app password).
+    # Почта: Microsoft 365: SMTP AUTH, smtp.office365.com:587 + STARTTLS.
+    expense_notify_on_create: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_NOTIFY_ON_CREATE"),
+    )
     expense_notify_on_submit: bool = Field(
         default=True,
         validation_alias=AliasChoices("EXPENSE_NOTIFY_ON_SUBMIT"),
