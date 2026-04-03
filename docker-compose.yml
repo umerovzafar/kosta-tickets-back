@@ -365,32 +365,21 @@ services:
 
   # В Docker Swarm / Portainer stacks depends_on не соблюдается — приложение само ждёт БД при старте.
   expenses:
+    # Иначе в контейнере нет корневого .env (образ только из ./expenses) — SMTP и EXPENSE_* не подхватываются из файла.
+    env_file:
+      - .env
     build:
       context: ./expenses
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
+      # Только то, что должно переопределить .env для сети Docker. Остальное (SMTP, EXPENSE_*, FRONTEND_URL, GATEWAY_*) — из env_file.
+      # Раньше строки вида EXPENSE_SMTP_HOST=${EXPENSE_SMTP_HOST:-} при пустой подстановке затирали значения из env_file — письма не уходили.
       - DATABASE_URL=${EXPENSES_DATABASE_URL:-postgresql://expenses:expenses@expenses_db:5432/kosta_expenses}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
       - EXPENSE_AMOUNT_LIMIT_UZS=${EXPENSE_AMOUNT_LIMIT_UZS:-}
       - LOG_LEVEL=${EXPENSES_LOG_LEVEL:-info}
-      # Письмо при submit заявки (см. .env.example — EXPENSE_SMTP_*)
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
-      - EXPENSE_ALLOW_SELF_MODERATION=${EXPENSE_ALLOW_SELF_MODERATION:-true}
-      - EXPENSE_NOTIFY_ON_SUBMIT=${EXPENSE_NOTIFY_ON_SUBMIT:-true}
-      - EXPENSE_NOTIFY_TO=${EXPENSE_NOTIFY_TO:-zumerov@kostalegal.com}
-      - EXPENSE_NOTIFY_ROUTING_JSON=${EXPENSE_NOTIFY_ROUTING_JSON:-}
-      - EXPENSE_SMTP_HOST=${EXPENSE_SMTP_HOST:-}
-      - EXPENSE_SMTP_PORT=${EXPENSE_SMTP_PORT:-587}
-      - EXPENSE_SMTP_USER=${EXPENSE_SMTP_USER:-}
-      - EXPENSE_SMTP_PASSWORD=${EXPENSE_SMTP_PASSWORD:-}
-      - EXPENSE_SMTP_USE_TLS=${EXPENSE_SMTP_USE_TLS:-true}
-      - EXPENSE_MAIL_FROM=${EXPENSE_MAIL_FROM:-}
-      - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://localhost:1234}
-      - EXPENSE_EMAIL_ACTION_SECRET=${EXPENSE_EMAIL_ACTION_SECRET:-}
-      - EXPENSE_EMAIL_ACTION_TTL_SECONDS=${EXPENSE_EMAIL_ACTION_TTL_SECONDS:-604800}
-      - EXPENSE_EMAIL_ACTION_CONFIRM_STEP=${EXPENSE_EMAIL_ACTION_CONFIRM_STEP:-true}
     volumes:
       - media_storage:/app/media
     healthcheck:

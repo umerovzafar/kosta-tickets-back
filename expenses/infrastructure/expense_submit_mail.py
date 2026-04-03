@@ -154,11 +154,11 @@ def _button_row_html(href: str, label: str, bg: str) -> str:
     safe_href = html.escape(href, quote=True)
     safe_label = html.escape(label)
     return f"""
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 12px 0;width:100%;max-width:320px;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:0 0 8px 0;width:100%;">
   <tr>
-    <td align="center" style="border-radius:10px;background:{bg};">
+    <td align="center" style="border-radius:8px;background:{bg};">
       <a href="{safe_href}" target="_blank" rel="noopener noreferrer"
-         style="display:block;padding:16px 24px;font-family:Segoe UI,Arial,sans-serif;font-size:16px;color:#ffffff !important;text-decoration:none;font-weight:700;border-radius:10px;">
+         style="display:block;padding:11px 16px;font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#ffffff !important;text-decoration:none;font-weight:700;border-radius:8px;">
         {safe_label}
       </a>
     </td>
@@ -169,8 +169,8 @@ def _button_row_html(href: str, label: str, bg: str) -> str:
 def _detail_row(label: str, value_html: str) -> str:
     return f"""
 <tr>
-  <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:14px;width:38%;vertical-align:top;">{html.escape(label)}</td>
-  <td style="padding:10px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:14px;vertical-align:top;">{value_html}</td>
+  <td style="padding:5px 10px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;width:32%;vertical-align:top;">{html.escape(label)}</td>
+  <td style="padding:5px 10px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:13px;vertical-align:top;">{value_html}</td>
 </tr>"""
 
 
@@ -201,7 +201,7 @@ def _build_moderation_html(
     footer_link_html = ""
     if open_link:
         footer_link_html = (
-            f'<p style="margin:0 0 8px 0;"><a href="{html.escape(open_link, quote=True)}" '
+            f'<p style="margin:0 0 6px 0;font-size:11px;"><a href="{html.escape(open_link, quote=True)}" '
             f'style="color:#2563eb;">Открыть заявку в веб-приложении</a> (по желанию).</p>'
         )
     return f"""<!DOCTYPE html>
@@ -212,21 +212,21 @@ def _build_moderation_html(
 <title>Заявка {safe_id}</title>
 </head>
 <body style="margin:0;padding:0;background:#e2e8f0;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:linear-gradient(180deg,#1e3a8a 0%,#e2e8f0 220px);">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:linear-gradient(180deg,#1e3a8a 0%,#e2e8f0 180px);">
   <tr>
-    <td align="center" style="padding:28px 12px 40px 12px;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 20px 40px rgba(15,23,42,.12);">
+    <td align="center" style="padding:10px 8px 20px 8px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 12px 28px rgba(15,23,42,.1);">
         <tr>
-          <td style="padding:28px 28px 20px 28px;background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 50%,#3b82f6 100%);color:#fff;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 6px 0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.9;">Согласование расхода</p>
-            <h1 style="margin:0;font-size:26px;font-weight:700;letter-spacing:-.02em;">{safe_id}</h1>
-            <p style="margin:12px 0 0 0;font-size:15px;opacity:.95;line-height:1.45;">Нужно решение модератора. Ниже — полные данные заявки и вложения.</p>
+          <td style="padding:14px 16px 12px 16px;background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 50%,#3b82f6 100%);color:#fff;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 4px 0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.9;">Согласование расхода</p>
+            <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em;line-height:1.15;">{safe_id}</h1>
+            <p style="margin:8px 0 0 0;font-size:14px;opacity:.95;line-height:1.4;">Нужно решение модератора. Ниже — полные данные заявки и вложения.</p>
           </td>
         </tr>
         <tr>
-          <td style="padding:24px 28px 8px 28px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.04em;">Автор и сроки</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f8fafc;border-radius:12px;overflow:hidden;">
+          <td style="padding:8px 14px 4px 14px;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Автор и сроки</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f8fafc;border-radius:8px;overflow:hidden;">
               {_detail_row("Автор", safe_author)}
               {_detail_row("Дата расхода", html.escape(expense_date_fmt))}
               {_detail_row("Срок оплаты", html.escape(pd_fmt))}
@@ -234,9 +234,9 @@ def _build_moderation_html(
           </td>
         </tr>
         <tr>
-          <td style="padding:8px 28px 8px 28px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.04em;">Суммы</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f1f5f9;border-radius:12px;overflow:hidden;">
+          <td style="padding:4px 14px 4px 14px;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Суммы</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f1f5f9;border-radius:8px;overflow:hidden;">
               {_detail_row("Сумма (UZS)", html.escape(money_fmt))}
               {_detail_row("Курс", html.escape(rate_fmt))}
               {_detail_row("Эквивалент", html.escape(eq_fmt))}
@@ -246,9 +246,9 @@ def _build_moderation_html(
           </td>
         </tr>
         <tr>
-          <td style="padding:8px 28px 8px 28px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.04em;">Классификация</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f8fafc;border-radius:12px;overflow:hidden;">
+          <td style="padding:4px 14px 4px 14px;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Классификация</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#f8fafc;border-radius:8px;overflow:hidden;">
               {_detail_row("Тип", safe_et)}
               {_detail_row("Подтип", safe_sub)}
               {_detail_row("Подразделение", html.escape(dept))}
@@ -257,9 +257,9 @@ def _build_moderation_html(
           </td>
         </tr>
         <tr>
-          <td style="padding:8px 28px 8px 28px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.04em;">Содержание</p>
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#fffbeb;border-radius:12px;overflow:hidden;border:1px solid #fde68a;">
+          <td style="padding:4px 14px 4px 14px;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Содержание</p>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#fffbeb;border-radius:8px;overflow:hidden;border:1px solid #fde68a;">
               {_detail_row("Описание", safe_desc)}
               {_detail_row("Контрагент", safe_vendor)}
               {_detail_row("Цель / назначение", safe_bp)}
@@ -268,18 +268,18 @@ def _build_moderation_html(
           </td>
         </tr>
         <tr>
-          <td style="padding:8px 28px 20px 28px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.04em;">Вложения</p>
+          <td style="padding:4px 14px 10px 14px;font-family:Segoe UI,Arial,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Вложения</p>
             {attachments_block}
           </td>
         </tr>
         <tr>
-          <td style="padding:0 28px 28px 28px;">
+          <td style="padding:0 14px 14px 14px;">
             {actions_block}
           </td>
         </tr>
         <tr>
-          <td style="padding:16px 28px;background:#f1f5f9;border-top:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#64748b;">
+          <td style="padding:10px 14px;background:#f1f5f9;border-top:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#64748b;">
             {footer_link_html}
             <p style="margin:0;">Письмо отправлено автоматически сервисом расходов Kosta Legal.</p>
           </td>
@@ -444,20 +444,20 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
                 sub_m = mt.split("/")[-1] if "/" in mt else "jpeg"
                 inline_images.append((cid, data, sub_m))
                 att_html_chunks.append(
-                    f'<div style="margin:0 0 16px 0;padding:12px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">'
-                    f'<p style="margin:0 0 8px 0;font-size:13px;color:#64748b;">{label} · {html.escape(kind_ru)}</p>'
-                    f'<img src="cid:{cid}" alt="{label}" style="max-width:100%;height:auto;border-radius:8px;display:block;"/>'
+                    f'<div style="margin:0 0 8px 0;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
+                    f'<p style="margin:0 0 6px 0;font-size:12px;color:#64748b;">{label} · {html.escape(kind_ru)}</p>'
+                    f'<img src="cid:{cid}" alt="{label}" style="max-width:100%;height:auto;border-radius:6px;display:block;"/>'
                     f"</div>"
                 )
                 continue
         link_block = ""
         if view_u:
             su = html.escape(view_u, quote=True)
-            link_block = f'<p style="margin:8px 0 0 0;"><a href="{su}" style="color:#2563eb;font-weight:600;">Открыть / скачать файл</a></p>'
+            link_block = f'<p style="margin:6px 0 0 0;"><a href="{su}" style="color:#2563eb;font-weight:600;font-size:13px;">Открыть / скачать файл</a></p>'
         att_html_chunks.append(
-            f'<div style="margin:0 0 12px 0;padding:14px;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">'
-            f'<p style="margin:0;font-size:15px;font-weight:600;color:#0f172a;">{label}</p>'
-            f'<p style="margin:6px 0 0 0;font-size:13px;color:#64748b;">{html.escape(kind_ru)} · ~{sz_kb} KB</p>'
+            f'<div style="margin:0 0 8px 0;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
+            f'<p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;">{label}</p>'
+            f'<p style="margin:4px 0 0 0;font-size:12px;color:#64748b;">{html.escape(kind_ru)} · ~{sz_kb} KB</p>'
             f"{link_block}"
             f"</div>"
         )
@@ -491,33 +491,33 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
         attachments_block = "".join(att_html_chunks)
     else:
         attachments_block = (
-            '<p style="margin:0;padding:16px;background:#f8fafc;border-radius:12px;color:#64748b;font-size:14px;">'
+            '<p style="margin:0;padding:10px 12px;background:#f8fafc;border-radius:8px;color:#64748b;font-size:13px;">'
             "Файлы не прикреплены.</p>"
         )
 
     if email_ap and email_rj:
         actions_block = f"""
-<div style="padding:24px;background:linear-gradient(180deg,#eef2ff 0%,#e0e7ff 100%);border-radius:16px;border:1px solid #c7d2fe;">
-  <p style="margin:0 0 8px 0;font-family:Segoe UI,Arial,sans-serif;font-size:16px;font-weight:700;color:#1e1b4b;">Решение</p>
-  <p style="margin:0 0 18px 0;font-size:14px;color:#475569;line-height:1.5;">
-    Нажмите кнопку ниже: откроется короткая страница подтверждения на сервере (не приложение), затем действие будет выполнено. Отдельный вход не нужен.
+<div style="padding:12px 14px;background:linear-gradient(180deg,#eef2ff 0%,#e0e7ff 100%);border-radius:10px;border:1px solid #c7d2fe;">
+  <p style="margin:0 0 4px 0;font-family:Segoe UI,Arial,sans-serif;font-size:15px;font-weight:700;color:#1e1b4b;">Решение</p>
+  <p style="margin:0 0 10px 0;font-size:13px;color:#475569;line-height:1.45;">
+    Нажмите кнопку: откроется короткая страница подтверждения на сервере, затем действие выполнится. Вход в приложение не нужен.
   </p>
   {_button_row_html(email_ap, "✓ Утвердить", "#16a34a")}
   {_button_row_html(email_rj, "✕ Отклонить", "#dc2626")}
-  <p style="margin:16px 0 0 0;font-size:12px;color:#64748b;line-height:1.45;">
-    Если кнопки не активны в почтовом клиенте, скопируйте ссылку в браузер:<br/>
+  <p style="margin:10px 0 0 0;font-size:11px;color:#64748b;line-height:1.4;">
+    Если кнопки не активны, скопируйте ссылку в браузер:<br/>
     <span style="word-break:break-all;color:#334155;">{html.escape(email_ap, quote=False)}</span>
   </p>
 </div>"""
     else:
         actions_block = f"""
-<div style="padding:22px;background:#fff7ed;border-radius:16px;border:1px solid #fdba74;">
-  <p style="margin:0 0 8px 0;font-size:15px;font-weight:700;color:#9a3412;">Согласование по ссылке недоступно</p>
-  <p style="margin:0;font-size:14px;color:#7c2d12;line-height:1.55;">
-    Задайте в env сервиса <strong>EXPENSE_EMAIL_ACTION_SECRET</strong> и публичный URL API <strong>GATEWAY_BASE_URL</strong> (как в браузере для <code>/api/v1/...</code>).
-    Тогда в письме появятся кнопки «Утвердить» / «Отклонить» без входа в SPA.
+<div style="padding:12px 14px;background:#fff7ed;border-radius:10px;border:1px solid #fdba74;">
+  <p style="margin:0 0 6px 0;font-size:14px;font-weight:700;color:#9a3412;">Согласование по ссылке недоступно</p>
+  <p style="margin:0;font-size:13px;color:#7c2d12;line-height:1.45;">
+    Задайте в env сервиса <strong>EXPENSE_EMAIL_ACTION_SECRET</strong> и <strong>GATEWAY_BASE_URL</strong>.
+    Тогда появятся кнопки «Утвердить» / «Отклонить» без входа в SPA.
   </p>
-  {"<p style=\"margin:12px 0 0 0;font-size:14px;\"><a href=\"" + html.escape(open_link, quote=True) + "\" style=\"color:#2563eb;font-weight:600;\">Открыть заявку в приложении</a></p>" if open_link else ""}
+  {"<p style=\"margin:8px 0 0 0;font-size:13px;\"><a href=\"" + html.escape(open_link, quote=True) + "\" style=\"color:#2563eb;font-weight:600;\">Открыть заявку в приложении</a></p>" if open_link else ""}
 </div>"""
 
     html_body = _build_moderation_html(

@@ -105,6 +105,8 @@ def resolve_expense_notify_recipients(
     }
     """
     raw = (settings.expense_notify_routing_json or "").strip()
+    if raw.startswith("\ufeff"):
+        raw = raw.lstrip("\ufeff").strip()
     if not raw:
         return _dedupe_preserve(_parse_csv_emails(settings.expense_notify_to))
 

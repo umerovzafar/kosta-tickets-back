@@ -55,6 +55,13 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("EXPENSE_NOTIFY_ROUTING_JSON"),
     )
+
+    @field_validator("expense_notify_routing_json", mode="before")
+    @classmethod
+    def _strip_bom_routing_json(cls, v: object) -> object:
+        if isinstance(v, str) and v.startswith("\ufeff"):
+            return v.lstrip("\ufeff")
+        return v
     smtp_host: str = Field(default="", validation_alias=AliasChoices("EXPENSE_SMTP_HOST", "SMTP_HOST"))
     smtp_port: int = Field(default=587, validation_alias=AliasChoices("EXPENSE_SMTP_PORT", "SMTP_PORT"))
     smtp_user: str = Field(default="", validation_alias=AliasChoices("EXPENSE_SMTP_USER", "SMTP_USER"))
