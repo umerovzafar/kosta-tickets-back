@@ -26,6 +26,18 @@ def _smtp_ready(settings: Settings) -> bool:
     )
 
 
+def _smtp_missing_env_names(settings: Settings) -> list[str]:
+    """Имена переменных (без секретов) — для логов, если письмо не уходит."""
+    out: list[str] = []
+    if not (settings.smtp_host or "").strip():
+        out.append("EXPENSE_SMTP_HOST")
+    if not (settings.smtp_user or "").strip():
+        out.append("EXPENSE_SMTP_USER")
+    if not (settings.smtp_password or "").strip():
+        out.append("EXPENSE_SMTP_PASSWORD")
+    return out
+
+
 def _parse_recipients(raw: str) -> list[str]:
     return [x.strip() for x in (raw or "").split(",") if x.strip()]
 
@@ -230,8 +242,14 @@ async def _send_moderation_message(
         return
 
     if not _smtp_ready(settings):
+        missing = _smtp_missing_env_names(settings)
         _log.warning(
-            "expense notify: SMTP не настроен (EXPENSE_SMTP_HOST / USER / PASSWORD), письмо не отправлено"
+            "expense notify: в контейнере/процессе expenses не заданы переменные %s — письмо не отправлено. "
+            "Для Docker: задайте их в .env у корня compose и передавайте в сервис expenses (см. docker-compose.yml), "
+            "либо env_file. Текущий EXPENSE_SMTP_HOST=%r (пустой=%s)",
+            ", ".join(missing) if missing else "(неизвестно)",
+            (settings.smtp_host or "")[:80],
+            not bool((settings.smtp_host or "").strip()),
         )
         return
     recipients = _parse_recipients(settings.expense_notify_to)
@@ -321,14 +339,31 @@ async def _send_moderation_message(
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
-    await aiosmtplib.send(
-        msg,
-        hostname=settings.smtp_host.strip(),
-        port=int(settings.smtp_port),
-        username=settings.smtp_user.strip(),
-        password=settings.smtp_password,
-        start_tls=bool(settings.smtp_use_tls),
+    _log.info(
+        "expense notify: отправка SMTP stage=%s expense_id=%s to=%s host=%s",
+        stage,
+        expense_id,
+        recipients,
+        settings.smtp_host.strip(),
     )
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host.strip(),
+            port=int(settings.smtp_port),
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            start_tls=bool(settings.smtp_use_tls),
+        )
+    except Exception as e:
+        _log.error(
+            "expense notify: ошибка SMTP stage=%s expense_id=%s: %s: %s",
+            stage,
+            expense_id,
+            type(e).__name__,
+            e,
+        )
+        raise
     _log.info(
         "expense moderation mail (%s) sent to %s expense_id=%s",
         stage,

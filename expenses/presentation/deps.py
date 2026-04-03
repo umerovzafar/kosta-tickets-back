@@ -85,7 +85,9 @@ def created_by_filter_for_user(user: dict) -> int | None:
 
 
 def ensure_not_moderating_own_expense(user: dict, created_by_user_id: int) -> None:
-    """Модератор не может одобрять/отклонять/возвращать свою заявку (§12)."""
+    """При EXPENSE_ALLOW_SELF_MODERATION=false модератор не может модерировать свою заявку."""
+    if get_settings().expense_allow_self_moderation:
+        return
     if is_moderator(user) and int(user["id"]) == int(created_by_user_id):
         raise HTTPException(
             status_code=403,

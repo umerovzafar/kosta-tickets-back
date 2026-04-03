@@ -1,5 +1,6 @@
 """Заявки на расход по ТЗ: /expenses."""
 
+import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timezone
@@ -7,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.expense_service import (
@@ -51,8 +52,39 @@ _log = logging.getLogger(__name__)
 
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
 
+# Отправка в том же запросе (не BackgroundTasks): иначе за gateway/прокси фоновая задача может не выполниться.
+_MODERATION_MAIL_TIMEOUT_SEC = 45.0
 
-async def _moderation_mail_task(
+
+async def _moderation_mail_send(
+    kind: str,
+    expense_id: str,
+    description: str | None,
+    amount_uzs: Decimal | None,
+    expense_date: date | datetime | None,
+    expense_type: str | None,
+    is_reimbursable: bool,
+    author_email: str | None,
+    author_name: str | None,
+) -> None:
+    settings = get_settings()
+    kwargs = dict(
+        expense_id=expense_id,
+        description=description,
+        amount_uzs=amount_uzs,
+        expense_date=expense_date,
+        expense_type=expense_type,
+        is_reimbursable=is_reimbursable,
+        author_email=author_email,
+        author_name=author_name,
+    )
+    if kind == "draft":
+        await notify_expense_created(settings, **kwargs)
+    else:
+        await notify_expense_submitted(settings, **kwargs)
+
+
+async def _run_moderation_mail(
     kind: str,
     expense_id: str,
     description: str | None,
@@ -64,21 +96,27 @@ async def _moderation_mail_task(
     author_name: str | None,
 ) -> None:
     try:
-        settings = get_settings()
-        kwargs = dict(
-            expense_id=expense_id,
-            description=description,
-            amount_uzs=amount_uzs,
-            expense_date=expense_date,
-            expense_type=expense_type,
-            is_reimbursable=is_reimbursable,
-            author_email=author_email,
-            author_name=author_name,
+        await asyncio.wait_for(
+            _moderation_mail_send(
+                kind,
+                expense_id,
+                description,
+                amount_uzs,
+                expense_date,
+                expense_type,
+                is_reimbursable,
+                author_email,
+                author_name,
+            ),
+            timeout=_MODERATION_MAIL_TIMEOUT_SEC,
         )
-        if kind == "draft":
-            await notify_expense_created(settings, **kwargs)
-        else:
-            await notify_expense_submitted(settings, **kwargs)
+    except asyncio.TimeoutError:
+        _log.error(
+            "expense moderation mail: timeout after %ss kind=%s expense_id=%s",
+            _MODERATION_MAIL_TIMEOUT_SEC,
+            kind,
+            expense_id,
+        )
     except Exception:
         _log.exception("expense moderation mail failed kind=%s expense_id=%s", kind, expense_id)
 
@@ -319,7 +357,6 @@ async def list_expenses(
 @router.post("", response_model=ExpenseRequestDetailOut)
 async def create_expense(
     body: ExpenseCreateBody,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
@@ -364,8 +401,7 @@ async def create_expense(
     )
     await session.commit()
     row = await repo.get_by_id(row.id, load_children=True)
-    background_tasks.add_task(
-        _moderation_mail_task,
+    await _run_moderation_mail(
         "draft",
         row.id,
         row.description,
@@ -506,7 +542,6 @@ async def update_expense(
 @router.post("/{expense_id}/submit", response_model=ExpenseRequestDetailOut)
 async def submit_expense(
     expense_id: str,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
@@ -563,8 +598,7 @@ async def submit_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    background_tasks.add_task(
-        _moderation_mail_task,
+    await _run_moderation_mail(
         "submitted",
         row.id,
         row.description,

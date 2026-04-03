@@ -33,6 +33,11 @@ class Settings(BaseSettings):
             return "http://auth:1236"
         return v
     max_upload_mb: int = 15
+    # True — модератор может утверждать/отклонять свою заявку; false — как раньше (запрет)
+    expense_allow_self_moderation: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_ALLOW_SELF_MODERATION"),
+    )
     # Если задано — submit и create с суммой выше лимита получают ошибку (доп. согласование)
     expense_amount_limit_uzs: Decimal | None = None
 
