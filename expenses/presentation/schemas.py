@@ -127,6 +127,8 @@ class ExpenseRequestListItemOut(BaseModel):
     closed_at: Optional[datetime] = Field(None, serialization_alias="closedAt")
     withdrawn_at: Optional[datetime] = Field(None, serialization_alias="withdrawnAt")
     attachments_count: int = Field(0, serialization_alias="attachmentsCount")
+    payment_document_uploaded: bool = Field(False, serialization_alias="paymentDocumentUploaded")
+    payment_receipt_uploaded: bool = Field(False, serialization_alias="paymentReceiptUploaded")
 
 
 class ExpenseRequestDetailOut(ExpenseRequestListItemOut):

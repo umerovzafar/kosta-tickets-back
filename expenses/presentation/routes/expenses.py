@@ -1,17 +1,24 @@
 """Заявки на расход по ТЗ: /expenses."""
 
+import logging
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.expense_service import calc_equivalent, validate_submit_fields
+from application.expense_service import (
+    assert_attachment_upload_allowed,
+    calc_equivalent,
+    reimbursable_requires_receipt_before_close,
+    validate_submit_fields,
+)
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
+from infrastructure.expense_submit_mail import notify_expense_submitted
 from infrastructure.auth_users import fetch_users_by_ids
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
@@ -40,7 +47,36 @@ from presentation.schemas import (
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
+_log = logging.getLogger(__name__)
+
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
+
+
+async def _submit_expense_notify_task(
+    expense_id: str,
+    description: str | None,
+    amount_uzs: Decimal | None,
+    expense_date: date | datetime | None,
+    expense_type: str | None,
+    is_reimbursable: bool,
+    author_email: str | None,
+    author_name: str | None,
+) -> None:
+    try:
+        settings = get_settings()
+        await notify_expense_submitted(
+            settings,
+            expense_id=expense_id,
+            description=description,
+            amount_uzs=amount_uzs,
+            expense_date=expense_date,
+            expense_type=expense_type,
+            is_reimbursable=is_reimbursable,
+            author_email=author_email,
+            author_name=author_name,
+        )
+    except Exception:
+        _log.exception("expense submit notification mail failed expense_id=%s", expense_id)
 
 
 def _utc_now() -> datetime:
@@ -78,8 +114,16 @@ def _ensure_can_edit(row: ExpenseRequestModel, user: dict) -> None:
         )
 
 
+def _typed_attachment_flags(row: ExpenseRequestModel) -> tuple[bool, bool]:
+    docs = row.attachments or []
+    pd = any((a.attachment_kind or "").strip() == "payment_document" for a in docs)
+    pr = any((a.attachment_kind or "").strip() == "payment_receipt" for a in docs)
+    return pd, pr
+
+
 def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestListItemOut:
     n = len(row.attachments or [])
+    pd_upl, pr_upl = _typed_attachment_flags(row)
     a = author or {}
     created_by = ExpenseAuthorSnippet(
         id=row.created_by_user_id,
@@ -119,6 +163,8 @@ def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseR
         closed_at=row.closed_at,
         withdrawn_at=row.withdrawn_at,
         attachments_count=n,
+        payment_document_uploaded=pd_upl,
+        payment_receipt_uploaded=pr_upl,
     )
 
 
@@ -443,6 +489,7 @@ async def update_expense(
 @router.post("/{expense_id}/submit", response_model=ExpenseRequestDetailOut)
 async def submit_expense(
     expense_id: str,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
@@ -499,6 +546,17 @@ async def submit_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
+    background_tasks.add_task(
+        _submit_expense_notify_task,
+        row.id,
+        row.description,
+        row.amount_uzs,
+        row.expense_date,
+        row.expense_type,
+        row.is_reimbursable,
+        user.get("email"),
+        user.get("display_name"),
+    )
     return await _detail_response(row, authorization)
 
 
@@ -710,6 +768,12 @@ async def close_expense(
             status_code=400,
             detail="Закрытие: из paid, not_reimbursable или approved (невозмещаемый) → not_reimbursable",
         )
+    if prev == "paid" and new_status == "closed" and row.is_reimbursable:
+        _, pr_count, _ = await repo.attachment_kind_metrics(row.id)
+        try:
+            reimbursable_requires_receipt_before_close(pr_count)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     row.status = new_status
     if new_status == "closed":
         row.closed_at = _utc_now()
@@ -819,17 +883,24 @@ async def upload_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    if not is_admin_editor(user):
-        if row.created_by_user_id != int(user["id"]):
-            raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
-        if row.status not in ("draft", "revision_required", "pending_approval"):
-            raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
     kind_norm: str | None = None
     if attachment_kind is not None and str(attachment_kind).strip():
         k = str(attachment_kind).strip()
         if k not in _ALLOWED_ATTACHMENT_KINDS:
             raise HTTPException(status_code=400, detail="Недопустимый тип вложения")
         kind_norm = k
+
+    if not is_admin_editor(user):
+        if row.created_by_user_id != int(user["id"]):
+            raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
+        try:
+            assert_attachment_upload_allowed(
+                status=row.status,
+                attachment_kind=kind_norm,
+                is_admin=False,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     content = await file.read()
     try:
@@ -875,14 +946,29 @@ async def delete_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    if not is_admin_editor(user):
-        if row.created_by_user_id != int(user["id"]):
-            raise HTTPException(status_code=403, detail="Только автор может удалять вложения")
-        if row.status not in ("draft", "revision_required"):
-            raise HTTPException(status_code=400, detail="Удаление вложений только в draft / revision_required")
     att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")
+    if not is_admin_editor(user):
+        if row.created_by_user_id != int(user["id"]):
+            raise HTTPException(status_code=403, detail="Только автор может удалять вложения")
+        kind = (att_row.attachment_kind or "").strip()
+        if row.status in ("draft", "revision_required"):
+            pass
+        elif row.status in ("paid", "closed"):
+            if kind != "payment_receipt":
+                raise HTTPException(
+                    status_code=400,
+                    detail="В этом статусе можно удалить только квитанцию (payment_receipt), чтобы заменить файл",
+                )
+        elif row.status in ("pending_approval", "approved"):
+            if kind == "payment_receipt":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Квитанцию можно удалить только после подтверждения выплаты",
+                )
+        else:
+            raise HTTPException(status_code=400, detail="Удаление вложений в этом статусе недоступно")
     storage_key = att_row.storage_key
     ok = await repo.delete_attachment(expense_id, attachment_id)
     if not ok:
