@@ -106,6 +106,50 @@
       return API_BASE + '/api/v1/auth/azure/logout';
     },
 
+    getMe: function () {
+      return apiFetch('/api/v1/users/me').then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (e) {
+          throw new Error(e.detail || 'Не удалось загрузить профиль');
+        });
+        return r.json();
+      });
+    },
+
+    /** Только «Главный администратор». Тело: { confirm: 'RESET_EXPENSES_DB' } */
+    resetExpensesDatabase: function () {
+      return apiFetch('/api/v1/admin/expenses-database/reset', {
+        method: 'POST',
+        body: { confirm: 'RESET_EXPENSES_DB' }
+      }).then(function (r) {
+        if (r.status === 401) {
+          clearToken();
+          window.location.href = 'index.html';
+          return Promise.reject(new Error('Unauthorized'));
+        }
+        if (r.status === 403) {
+          return r.json().catch(function () { return {}; }).then(function (e) {
+            throw new Error(e.detail || 'Доступ запрещён — только главный администратор');
+          });
+        }
+        if (r.status === 409) {
+          return r.json().catch(function () { return {}; }).then(function (e) {
+            throw new Error(e.detail || 'Сброс отключён на сервере');
+          });
+        }
+        if (!r.ok) {
+          return r.json().catch(function () { return {}; }).then(function (e) {
+            throw new Error(e.detail || e.message || 'Ошибка сброса БД');
+          });
+        }
+        return r.json();
+      });
+    },
+
     loadUsers: function () {
       return apiFetch('/api/v1/users?include_archived=false').then(function (r) {
         if (r.status === 401) {
@@ -234,6 +278,7 @@
       var items = [
         { id: 'dashboard', href: 'dashboard.html', label: 'Дашборд' },
         { id: 'users', href: 'users.html', label: 'Пользователи' },
+        { id: 'expenses-db', href: 'expenses-db.html', label: 'База расходов' },
         { id: 'hikvision', href: 'hikvision.html', label: 'Камеры Hikvision' }
       ];
       nav.innerHTML = items.map(function (item) {

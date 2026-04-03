@@ -100,6 +100,29 @@ body {
 .btn-success { background: #15803d; color: #fff; }
 .btn-success:hover { background: #166534; }
 .btn:disabled { opacity: 0.62; cursor: not-allowed; }
+.btn-danger { background: #b91c1c; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #991b1b; }
+.btn-ghost {
+  display: inline-block;
+  padding: 0.57rem 0.95rem;
+  border-radius: 9px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #1e3a8a;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+.btn-ghost:hover { background: #f8fafc; }
+.danger-zone {
+  border: 1px solid #fecaca;
+  background: #fffbeb;
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin-top: 0.75rem;
+}
+.danger-zone h3 { margin: 0 0 0.5rem; font-size: 0.95rem; color: #92400e; }
+.danger-zone ul { margin: 0.4rem 0 0; padding-left: 1.2rem; color: #78350f; font-size: 0.88rem; line-height: 1.45; }
 
 .error-msg {
   background: #fef2f2; color: #b91c1c; padding: 0.72rem 0.9rem;
