@@ -103,14 +103,14 @@ def validate_submit_fields(
     if expense_amount_limit_uzs is not None and amount_uzs > expense_amount_limit_uzs:
         raise ValueError("amountUzs exceeds allowed limit; additional approval may be required")
     if is_reimbursable:
-        has_typed = payment_document_count > 0 or payment_receipt_count > 0
-        if has_typed:
-            if payment_document_count < 1 or payment_receipt_count < 1:
-                raise ValueError(
-                    "Для возмещаемого расхода нужны оба вложения: документ для оплаты и квитанция об оплате"
-                )
-        elif attachment_count < 1:
-            raise ValueError("At least one attachment is required for reimbursable expenses")
+        # Документ для оплаты — при отправке на согласование; квитанция — только после оплаты (статус paid).
+        if payment_document_count >= 1:
+            pass
+        elif attachment_count >= 1 and payment_document_count == 0 and payment_receipt_count == 0:
+            # Старые заявки: вложения без attachmentKind
+            pass
+        else:
+            raise ValueError("Для возмещаемого расхода приложите документ для оплаты")
     if (
         is_reimbursable
         and (expense_type or "").strip() == "other"

@@ -853,14 +853,27 @@ async def upload_attachment(
     if not is_admin_editor(user):
         if row.created_by_user_id != int(user["id"]):
             raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
-        if row.status not in ("draft", "revision_required", "pending_approval"):
-            raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
     kind_norm: str | None = None
     if attachment_kind is not None and str(attachment_kind).strip():
         k = str(attachment_kind).strip()
         if k not in _ALLOWED_ATTACHMENT_KINDS:
             raise HTTPException(status_code=400, detail="Недопустимый тип вложения")
         kind_norm = k
+
+    if row.status == "paid":
+        if kind_norm != "payment_receipt":
+            raise HTTPException(
+                status_code=400,
+                detail="После оплаты можно добавлять только квитанцию об оплате (attachmentKind=payment_receipt)",
+            )
+    elif kind_norm == "payment_receipt":
+        raise HTTPException(
+            status_code=400,
+            detail="Квитанцию об оплате можно загрузить только после оплаты заявки",
+        )
+    elif not is_admin_editor(user):
+        if row.status not in ("draft", "revision_required", "pending_approval"):
+            raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
 
     content = await file.read()
     try:
@@ -909,11 +922,19 @@ async def delete_attachment(
     if not is_admin_editor(user):
         if row.created_by_user_id != int(user["id"]):
             raise HTTPException(status_code=403, detail="Только автор может удалять вложения")
-        if row.status not in ("draft", "revision_required"):
-            raise HTTPException(status_code=400, detail="Удаление вложений только в draft / revision_required")
     att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")
+    if not is_admin_editor(user):
+        ak = (att_row.attachment_kind or "").strip()
+        if ak == "payment_receipt":
+            if row.status not in ("draft", "revision_required", "paid"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Удаление квитанции в этом статусе недоступно",
+                )
+        elif row.status not in ("draft", "revision_required"):
+            raise HTTPException(status_code=400, detail="Удаление вложений только в draft / revision_required")
     storage_key = att_row.storage_key
     ok = await repo.delete_attachment(expense_id, attachment_id)
     if not ok:

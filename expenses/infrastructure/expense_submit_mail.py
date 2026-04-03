@@ -638,6 +638,12 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
     msg_root = MIMEMultipart("mixed")
     msg_root["Subject"] = subject
     from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
+    if not from_addr:
+        _log.warning(
+            "expense notify: пустой отправитель — задайте EXPENSE_MAIL_FROM или EXPENSE_SMTP_USER, expense_id=%s",
+            expense_id,
+        )
+        return
     msg_root["From"] = from_addr
     msg_root["To"] = ", ".join(recipients)
 
@@ -776,6 +782,12 @@ async def notify_expense_author_decision(
 {plain_lead}{link_block_plain}
 """
     from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
+    if not from_addr:
+        _log.warning(
+            "expense author notify: пустой отправитель — задайте EXPENSE_MAIL_FROM или EXPENSE_SMTP_USER, expense_id=%s",
+            expense_id,
+        )
+        return
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_addr

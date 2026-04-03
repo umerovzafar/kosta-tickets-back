@@ -157,6 +157,25 @@ class Settings(BaseSettings):
             return "{frontend_url}/expenses/{expense_id}"
         return v
 
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def _smtp_port_empty_to_default(cls, v: object) -> object:
+        # В Portainer часто задают EXPENSE_SMTP_PORT= без значения — иначе ошибка int
+        if v == "" or v is None:
+            return 587
+        return v
+
+    @field_validator("smtp_host", "smtp_user", "expense_mail_from", mode="after")
+    @classmethod
+    def _strip_smtp_identity(cls, v: str) -> str:
+        return (v or "").strip()
+
+    @field_validator("smtp_password", mode="after")
+    @classmethod
+    def _normalize_smtp_password(cls, v: str) -> str:
+        # CRLF в .env на Windows ломают SMTP AUTH
+        return (v or "").strip()
+
     @field_validator(
         "expense_allow_self_moderation",
         "expense_notify_on_submit",
