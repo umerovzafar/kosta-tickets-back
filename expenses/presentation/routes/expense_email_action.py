@@ -35,6 +35,24 @@ def _confirm_flag(raw: str | None) -> bool:
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _final_action_url_public(
+    settings,
+    *,
+    expense_id: str,
+    token: str,
+    request: Request,
+) -> str:
+    """
+    Публичный URL для второго шага (после confirm=1).
+    Нельзя брать request.url: за gateway приходит http://expenses:1242/... — в браузере не откроется.
+    """
+    final_q = f"token={quote(token, safe='')}"
+    pub = (settings.public_api_base_url or "").strip().rstrip("/")
+    if pub:
+        return f"{pub}/api/v1/expenses/{expense_id}/email-action?{final_q}"
+    return f"{request.url.scheme}://{request.url.netloc}{request.url.path}?{final_q}"
+
+
 def _page(title: str, message: str, ok: bool) -> str:
     color = "#16a34a" if ok else "#dc2626"
     return f"""<!DOCTYPE html>
@@ -110,8 +128,7 @@ async def expense_email_action(
         return HTMLResponse(_page("Заявка не найдена", f"Нет заявки {expense_id}.", False), status_code=404)
 
     if _confirm_flag(confirm) and settings.expense_email_action_confirm_step:
-        final_q = f"token={quote(token, safe='')}"
-        final_url = f"{request.url.scheme}://{request.url.netloc}{request.url.path}?{final_q}"
+        final_url = _final_action_url_public(settings, expense_id=expense_id, token=token, request=request)
         return HTMLResponse(
             _confirm_html(
                 expense_id=expense_id,
