@@ -42,10 +42,6 @@ class Settings(BaseSettings):
     expense_amount_limit_uzs: Decimal | None = None
 
     # Почта: Microsoft 365: SMTP AUTH, smtp.office365.com:587 + STARTTLS.
-    expense_notify_on_create: bool = Field(
-        default=True,
-        validation_alias=AliasChoices("EXPENSE_NOTIFY_ON_CREATE"),
-    )
     expense_notify_on_submit: bool = Field(
         default=True,
         validation_alias=AliasChoices("EXPENSE_NOTIFY_ON_SUBMIT"),
@@ -82,6 +78,22 @@ class Settings(BaseSettings):
     expense_notify_intent_param: str = Field(
         default="intent",
         validation_alias=AliasChoices("EXPENSE_NOTIFY_INTENT_PARAM"),
+    )
+    # Публичный URL gateway (https://… без слэша) — ссылки «одним кликом» в письме: /api/v1/expenses/.../email-action
+    public_api_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("GATEWAY_BASE_URL", "PUBLIC_API_BASE_URL", "EXPENSES_PUBLIC_API_BASE_URL"),
+    )
+    # Секрет HMAC для токена в письме; без него кнопки ведут только на фронт с ?intent=
+    expense_email_action_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("EXPENSE_EMAIL_ACTION_SECRET"),
+    )
+    expense_email_action_ttl_seconds: int = Field(
+        default=604800,
+        ge=60,
+        le=2592000,
+        validation_alias=AliasChoices("EXPENSE_EMAIL_ACTION_TTL_SECONDS"),
     )
 
     model_config = SettingsConfigDict(

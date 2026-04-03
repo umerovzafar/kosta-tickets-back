@@ -378,7 +378,6 @@ services:
       # Письмо при submit заявки (см. .env.example — EXPENSE_SMTP_*)
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - EXPENSE_ALLOW_SELF_MODERATION=${EXPENSE_ALLOW_SELF_MODERATION:-true}
-      - EXPENSE_NOTIFY_ON_CREATE=${EXPENSE_NOTIFY_ON_CREATE:-true}
       - EXPENSE_NOTIFY_ON_SUBMIT=${EXPENSE_NOTIFY_ON_SUBMIT:-true}
       - EXPENSE_NOTIFY_TO=${EXPENSE_NOTIFY_TO:-zumerov@kostalegal.com}
       - EXPENSE_SMTP_HOST=${EXPENSE_SMTP_HOST:-}
@@ -387,6 +386,9 @@ services:
       - EXPENSE_SMTP_PASSWORD=${EXPENSE_SMTP_PASSWORD:-}
       - EXPENSE_SMTP_USE_TLS=${EXPENSE_SMTP_USE_TLS:-true}
       - EXPENSE_MAIL_FROM=${EXPENSE_MAIL_FROM:-}
+      - GATEWAY_BASE_URL=${GATEWAY_BASE_URL:-http://localhost:1234}
+      - EXPENSE_EMAIL_ACTION_SECRET=${EXPENSE_EMAIL_ACTION_SECRET:-}
+      - EXPENSE_EMAIL_ACTION_TTL_SECONDS=${EXPENSE_EMAIL_ACTION_TTL_SECONDS:-604800}
     volumes:
       - media_storage:/app/media
     healthcheck:

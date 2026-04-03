@@ -19,7 +19,7 @@ from application.expense_service import (
 )
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
-from infrastructure.expense_submit_mail import notify_expense_created, notify_expense_submitted
+from infrastructure.expense_submit_mail import notify_expense_submitted
 from infrastructure.auth_users import fetch_users_by_ids
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
@@ -56,36 +56,7 @@ _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
 _MODERATION_MAIL_TIMEOUT_SEC = 45.0
 
 
-async def _moderation_mail_send(
-    kind: str,
-    expense_id: str,
-    description: str | None,
-    amount_uzs: Decimal | None,
-    expense_date: date | datetime | None,
-    expense_type: str | None,
-    is_reimbursable: bool,
-    author_email: str | None,
-    author_name: str | None,
-) -> None:
-    settings = get_settings()
-    kwargs = dict(
-        expense_id=expense_id,
-        description=description,
-        amount_uzs=amount_uzs,
-        expense_date=expense_date,
-        expense_type=expense_type,
-        is_reimbursable=is_reimbursable,
-        author_email=author_email,
-        author_name=author_name,
-    )
-    if kind == "draft":
-        await notify_expense_created(settings, **kwargs)
-    else:
-        await notify_expense_submitted(settings, **kwargs)
-
-
 async def _run_moderation_mail(
-    kind: str,
     expense_id: str,
     description: str | None,
     amount_uzs: Decimal | None,
@@ -97,28 +68,27 @@ async def _run_moderation_mail(
 ) -> None:
     try:
         await asyncio.wait_for(
-            _moderation_mail_send(
-                kind,
-                expense_id,
-                description,
-                amount_uzs,
-                expense_date,
-                expense_type,
-                is_reimbursable,
-                author_email,
-                author_name,
+            notify_expense_submitted(
+                get_settings(),
+                expense_id=expense_id,
+                description=description,
+                amount_uzs=amount_uzs,
+                expense_date=expense_date,
+                expense_type=expense_type,
+                is_reimbursable=is_reimbursable,
+                author_email=author_email,
+                author_name=author_name,
             ),
             timeout=_MODERATION_MAIL_TIMEOUT_SEC,
         )
     except asyncio.TimeoutError:
         _log.error(
-            "expense moderation mail: timeout after %ss kind=%s expense_id=%s",
+            "expense moderation mail: timeout after %ss expense_id=%s",
             _MODERATION_MAIL_TIMEOUT_SEC,
-            kind,
             expense_id,
         )
     except Exception:
-        _log.exception("expense moderation mail failed kind=%s expense_id=%s", kind, expense_id)
+        _log.exception("expense moderation mail failed expense_id=%s", expense_id)
 
 
 def _utc_now() -> datetime:
@@ -401,17 +371,6 @@ async def create_expense(
     )
     await session.commit()
     row = await repo.get_by_id(row.id, load_children=True)
-    await _run_moderation_mail(
-        "draft",
-        row.id,
-        row.description,
-        row.amount_uzs,
-        row.expense_date,
-        row.expense_type,
-        row.is_reimbursable,
-        user.get("email"),
-        user.get("display_name"),
-    )
     return await _detail_response(row, authorization)
 
 
@@ -599,7 +558,6 @@ async def submit_expense(
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
     await _run_moderation_mail(
-        "submitted",
         row.id,
         row.description,
         row.amount_uzs,

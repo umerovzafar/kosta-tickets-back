@@ -9,7 +9,7 @@ from sqlalchemy import text
 from infrastructure.database import Base, async_session_factory, engine
 from infrastructure import models  # noqa: F401
 from infrastructure.repositories import seed_reference_data
-from presentation.routes import expenses, health, reference
+from presentation.routes import expense_email_action, expenses, health, reference
 
 _log = logging.getLogger("expenses.startup")
 
@@ -104,4 +104,5 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(expenses.router)
+app.include_router(expense_email_action.router)
 app.include_router(reference.router)

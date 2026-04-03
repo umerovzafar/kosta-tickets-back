@@ -84,6 +84,15 @@ async def _forward(
 # --- Заявки /expenses ---
 
 
+@router.get("/expenses/{expense_id}/email-action")
+async def proxy_expense_email_action_public(
+    expense_id: str,
+    request: Request,
+):
+    """Публичная ссылка из письма (токен в query) — без Authorization."""
+    return await _forward(request, f"expenses/{expense_id}/email-action", None, timeout=60.0)
+
+
 @router.api_route("/expenses", methods=["GET", "POST"])
 async def proxy_expenses_root(
     request: Request,
