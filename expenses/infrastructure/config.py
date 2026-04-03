@@ -95,6 +95,11 @@ class Settings(BaseSettings):
         le=2592000,
         validation_alias=AliasChoices("EXPENSE_EMAIL_ACTION_TTL_SECONDS"),
     )
+    # Если true — ссылки в письме ведут на страницу подтверждения, затем одно нажатие выполняет действие (без SPA).
+    expense_email_action_confirm_step: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_EMAIL_ACTION_CONFIRM_STEP"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),

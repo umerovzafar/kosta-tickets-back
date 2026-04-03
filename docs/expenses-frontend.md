@@ -85,9 +85,21 @@ Authorization: Bearer <access_token>
 
 ### Почта модераторам
 
-Микросервис **`expenses`** отправляет HTML-письма на адреса **`EXPENSE_NOTIFY_TO`** (SMTP, см. `.env.example`) **только** при **`POST /api/v1/expenses/{id}/submit`** — когда заявка переходит в согласование (тема «… — на согласование»). При создании черновика **`POST /api/v1/expenses`** письмо **не** отправляется. Управление: **`EXPENSE_NOTIFY_ON_SUBMIT`** (по умолчанию `true`).
+Письма рассылает микросервис **`expenses`** (SMTP и все перечисленные переменные — в **окружении контейнера/процесса `expenses`**, не gateway). Подробные комментарии и примеры — в **`tickets-back/.env.example`**, код — `expenses/infrastructure/expense_submit_mail.py`.
 
-**«Утвердить / Отклонить» без входа в SPA:** задайте в env сервиса **`expenses`** публичный URL API **`GATEWAY_BASE_URL`** (например `https://ticketsback.kostalegal.com`) и секрет **`EXPENSE_EMAIL_ACTION_SECRET`** (длинная случайная строка). В письме тогда кнопки «Утвердить сразу» / «Отклонить сразу» ведут на **`GET /api/v1/expenses/{id}/email-action?token=...`** (через gateway, **без** заголовка `Authorization`): сервер выполняет действие и отдаёт короткую HTML-страницу результата. Иначе остаются ссылки на фронт с параметром **`intent`** (нужен вход). Встроенное действие **внутри окна Outlook без браузера** — это отдельная интеграция (Outlook Actionable Messages), здесь не реализовано.
+| Вопрос | Ответ |
+|--------|--------|
+| **Когда уходит письмо** | Только при **`POST /api/v1/expenses/{id}/submit`** (заявка переходит на согласование). При **`POST /api/v1/expenses`** (черновик) письмо **не** отправляется. |
+| **Вкл/выкл** | **`EXPENSE_NOTIFY_ON_SUBMIT`** (по умолчанию `true`). |
+| **Кому** | **`EXPENSE_NOTIFY_TO`** — один или несколько адресов через **запятую**. |
+| **SMTP** | Нужны **`EXPENSE_SMTP_HOST`**, **`EXPENSE_SMTP_USER`**, **`EXPENSE_SMTP_PASSWORD`** (и при необходимости порт **`EXPENSE_SMTP_PORT`**, **`EXPENSE_SMTP_USE_TLS`**). Отправитель: **`EXPENSE_MAIL_FROM`** или учётная запись SMTP. Без полного набора в логах `expenses` будет предупреждение `expense notify:` и письмо не уйдёт. |
+| **Ссылка «открыть в приложении»** | **`FRONTEND_URL`** — тот же origin, что и для CORS SPA (без лишнего слэша в конце). Опционально **`EXPENSE_NOTIFY_LINK_TEMPLATE`**: плейсхолдеры `{frontend_url}`, `{expense_id}` (для hash-router, например: `{frontend_url}/#/expenses/{expense_id}`). |
+| **Кнопки без входа в SPA** | Задайте публичный URL API **`GATEWAY_BASE_URL`** (как в браузере, без завершающего `/`) и секрет **`EXPENSE_EMAIL_ACTION_SECRET`**. В письме — кнопки **Утвердить** / **Отклонить** → **`GET /api/v1/expenses/{id}/email-action?token=...&confirm=1`** (первый шаг: экран подтверждения на сервере, **не** SPA) → второй запрос **`.../email-action?token=...`** выполняет действие; ответ — короткая HTML-страница («можно закрыть вкладку»). Отключить экран подтверждения: **`EXPENSE_EMAIL_ACTION_CONFIRM_STEP=false`** — тогда одно нажатие сразу меняет статус. Срок токена: **`EXPENSE_EMAIL_ACTION_TTL_SECONDS`**. |
+| **Вложения в письме** | В теле письма — блок с файлами: превью **jpeg/png/gif/webp** (до ~2 MB каждый), остальное — ссылка **`GET /api/v1/expenses/{id}/attachments/{attachmentId}/email-file?token=...`** (без `Authorization`) и при необходимости файл как **вложение** MIME. Без **`GATEWAY_BASE_URL`** + секрета ссылки на файлы в письме не строятся. |
+| **Если секрет/API не заданы** | В письме **нет** кнопок «утвердить через фронт» — только предупреждение и опциональная ссылка «открыть в приложении» по **`FRONTEND_URL`**. |
+| **Тест SMTP** | В репозитории `tickets-back`: скрипт **`expenses/send_expense_smtp_test.py`** (см. комментарии в файле). |
+
+**Фронтенд:** маршрут к заявке должен совпадать с **`FRONTEND_URL`** / **`EXPENSE_NOTIFY_LINK_TEMPLATE`** для опциональной ссылки «открыть в приложении». Согласование по письму идёт через **API** (`email-action`), не через SPA. Встроенные действия внутри окна Outlook без браузера (Actionable Messages) **не** реализованы.
 
 ---
 
@@ -136,9 +148,9 @@ Authorization: Bearer <access_token>
 | CORS error | `FRONTEND_URL` на gateway, совпадение origin с SPA |
 | 503 на `/api/v1/expenses` | Контейнер `expenses` запущен, `EXPENSES_SERVICE_URL` в env gateway |
 | **500** на `/api/v1/expenses` | Смотрите логи **`docker compose logs expenses --tail 100`** (или Portainer → Logs). Частая причина после обновления кода — **в БД не хватает колонки** (например `payment_deadline`); в актуальном образе expenses при старте выполняется `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. Пересоберите и перезапустите `expenses`. Если ошибка остаётся — пришлите traceback из логов. |
+| Нет писем модераторам после submit | Переменные **`EXPENSE_SMTP_*`**, **`EXPENSE_NOTIFY_TO`** должны быть заданы в **Environment контейнера `expenses`** (Portainer / compose), а не только в локальном `.env`, если он не попадает в образ. Проверьте **`EXPENSE_NOTIFY_ON_SUBMIT`**. Логи: **`docker compose logs expenses --tail 200`** — строки `expense notify:` (пропуск из‑за env или ошибка SMTP). |
 | 401 | Передаётся ли `Authorization`, не истёк ли токен |
 | 403 | Роль пользователя (раздел расходов / модерация) |
-| Нет писем о заявках | В **контейнере `expenses`** должны быть **`EXPENSE_SMTP_HOST`**, **`EXPENSE_SMTP_USER`**, **`EXPENSE_SMTP_PASSWORD`** (и при необходимости **`FRONTEND_URL`**). В Portainer задайте их в **Environment** стека или в env-файле деплоя — подстановка только из локального `.env` при `docker compose` на сервере не сработает, если `.env` туда не попал. Логи: `docker compose logs expenses --tail 200` — ищите `expense notify:` (предупреждение о пустых переменных или ошибка SMTP). |
 
 ---
 

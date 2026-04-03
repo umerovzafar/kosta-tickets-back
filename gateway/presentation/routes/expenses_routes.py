@@ -93,6 +93,21 @@ async def proxy_expense_email_action_public(
     return await _forward(request, f"expenses/{expense_id}/email-action", None, timeout=60.0)
 
 
+@router.get("/expenses/{expense_id}/attachments/{attachment_id}/email-file")
+async def proxy_expense_attachment_email_file(
+    expense_id: str,
+    attachment_id: str,
+    request: Request,
+):
+    """Просмотр вложения по токену из письма — без Authorization."""
+    return await _forward(
+        request,
+        f"expenses/{expense_id}/attachments/{attachment_id}/email-file",
+        None,
+        timeout=120.0,
+    )
+
+
 @router.api_route("/expenses", methods=["GET", "POST"])
 async def proxy_expenses_root(
     request: Request,

@@ -19,7 +19,11 @@ from application.expense_service import (
 )
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
-from infrastructure.expense_submit_mail import notify_expense_submitted
+from infrastructure.expense_submit_mail import (
+    AttachmentEmailItem,
+    ExpenseModerationEmailContext,
+    notify_expense_submitted,
+)
 from infrastructure.auth_users import fetch_users_by_ids
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
@@ -53,42 +57,58 @@ _log = logging.getLogger(__name__)
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
 
 # Отправка в том же запросе (не BackgroundTasks): иначе за gateway/прокси фоновая задача может не выполниться.
-_MODERATION_MAIL_TIMEOUT_SEC = 45.0
+_MODERATION_MAIL_TIMEOUT_SEC = 90.0
 
 
-async def _run_moderation_mail(
-    expense_id: str,
-    description: str | None,
-    amount_uzs: Decimal | None,
-    expense_date: date | datetime | None,
-    expense_type: str | None,
-    is_reimbursable: bool,
-    author_email: str | None,
-    author_name: str | None,
-) -> None:
+def _moderation_email_context(row: ExpenseRequestModel, user: dict) -> ExpenseModerationEmailContext:
+    attachments = [
+        AttachmentEmailItem(
+            id=a.id,
+            file_name=a.file_name,
+            storage_key=a.storage_key,
+            mime_type=a.mime_type,
+            size_bytes=int(a.size_bytes or 0),
+            attachment_kind=a.attachment_kind,
+        )
+        for a in (row.attachments or [])
+    ]
+    return ExpenseModerationEmailContext(
+        expense_id=row.id,
+        description=row.description,
+        expense_date=row.expense_date,
+        payment_deadline=row.payment_deadline,
+        amount_uzs=row.amount_uzs,
+        exchange_rate=row.exchange_rate,
+        equivalent_amount=row.equivalent_amount,
+        expense_type=row.expense_type,
+        expense_subtype=row.expense_subtype,
+        is_reimbursable=row.is_reimbursable,
+        payment_method=row.payment_method,
+        department_id=row.department_id,
+        project_id=row.project_id,
+        vendor=row.vendor,
+        business_purpose=row.business_purpose,
+        comment=row.comment,
+        author_email=user.get("email"),
+        author_name=user.get("display_name"),
+        attachments=attachments,
+    )
+
+
+async def _run_moderation_mail(ctx: ExpenseModerationEmailContext) -> None:
     try:
         await asyncio.wait_for(
-            notify_expense_submitted(
-                get_settings(),
-                expense_id=expense_id,
-                description=description,
-                amount_uzs=amount_uzs,
-                expense_date=expense_date,
-                expense_type=expense_type,
-                is_reimbursable=is_reimbursable,
-                author_email=author_email,
-                author_name=author_name,
-            ),
+            notify_expense_submitted(get_settings(), ctx),
             timeout=_MODERATION_MAIL_TIMEOUT_SEC,
         )
     except asyncio.TimeoutError:
         _log.error(
             "expense moderation mail: timeout after %ss expense_id=%s",
             _MODERATION_MAIL_TIMEOUT_SEC,
-            expense_id,
+            ctx.expense_id,
         )
     except Exception:
-        _log.exception("expense moderation mail failed expense_id=%s", expense_id)
+        _log.exception("expense moderation mail failed expense_id=%s", ctx.expense_id)
 
 
 def _utc_now() -> datetime:
@@ -557,16 +577,7 @@ async def submit_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    await _run_moderation_mail(
-        row.id,
-        row.description,
-        row.amount_uzs,
-        row.expense_date,
-        row.expense_type,
-        row.is_reimbursable,
-        user.get("email"),
-        user.get("display_name"),
-    )
+    await _run_moderation_mail(_moderation_email_context(row, user))
     return await _detail_response(row, authorization)
 
 
