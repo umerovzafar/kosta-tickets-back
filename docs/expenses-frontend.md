@@ -27,6 +27,8 @@
 | **`FRONTEND_URL`** | Origin SPA для **CORS**. Прод: `https://tickets.kostalegal.com` |
 | **`EXPENSES_SERVICE_URL`** | Внутри Docker: `http://expenses:1242` (не подставлять в фронт) |
 
+Значения **`FRONTEND_URL`** и **`GATEWAY_BASE_URL`** на gateway часто **дублируют** (или согласуются с) одноимёнными переменными в env **сервиса `expenses`**, чтобы ссылки в письмах и CORS указывали на те же URL.
+
 После изменения `.env` перезапустите gateway: `docker compose up -d gateway`.
 
 Если CORS блокирует запросы — проверьте, что **`FRONTEND_URL`** точно совпадает с origin в браузере (схема, хост, порт, без лишнего слэша).
@@ -51,13 +53,20 @@ VITE_API_URL=https://ticketsback.kostalegal.com
 
 ## 4. Авторизация
 
-Все эндпоинты расходов на gateway **требуют** заголовок:
+Для маршрутов **`/api/v1/expenses/...`** на gateway в обычном случае нужен заголовок:
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-Токен тот же, что для остального приложения (вход через Azure AD / ваш auth). Без токена — **401**.
+Токен тот же, что для остального приложения (вход через Azure AD / ваш auth). Без токена типичный ответ — **401**.
+
+**Исключения (без `Authorization`):** два публичных **GET** (подписанный токен только в query):
+
+- **`GET /api/v1/expenses/{id}/email-action?token=...`** — одноразовое утверждение / отклонение из письма (параметр **`confirm=1`** и шаг подтверждения — в таблице **«Почта модераторам»** ниже).
+- **`GET /api/v1/expenses/{id}/attachments/{attachment_id}/email-file?token=...`** — скачивание / просмотр вложения по токену из письма.
+
+Остальные маршруты **`/api/v1/expenses/...`** по-прежнему требуют Bearer.
 
 ---
 
@@ -70,7 +79,9 @@ Authorization: Bearer <access_token>
 - Типы: `GET https://ticketsback.kostalegal.com/api/v1/expense-types`
 - Курс: `GET https://ticketsback.kostalegal.com/api/v1/exchange-rates?date=2026-04-02`
 
-Контракт полей (camelCase / деньги) согласован с ТЗ и нормализацией на фронте (`coerceExpense.ts` и см. `TZ-expenses-backend.md` во фронт-репозитории).
+Контракт полей (camelCase / деньги) согласован с ТЗ и нормализацией на фронте (`coerceExpense.ts`, `expenseAuthor.ts`; см. **`TZ-expenses-backend.md`** во фронт-репозитории).
+
+Переменные **gateway** — в **§2**. Отдельно в **окружении контейнера `expenses`** задаются SMTP, ссылки в письмах и публичный URL API — см. **«Почта модераторам»** ниже и **`tickets-back/.env.example`**.
 
 ### Автор заявки
 
@@ -85,21 +96,23 @@ Authorization: Bearer <access_token>
 
 ### Почта модераторам
 
-Письма рассылает микросервис **`expenses`** (SMTP и все перечисленные переменные — в **окружении контейнера/процесса `expenses`**, не gateway). Подробные комментарии и примеры — в **`tickets-back/.env.example`**, код — `expenses/infrastructure/expense_submit_mail.py`.
+Письма рассылает микросервис **`expenses`** (SMTP и перечисленные ниже переменные — в **окружении контейнера/процесса `expenses`**). Полный список и комментарии — **`tickets-back/.env.example`**, код письма — `expenses/infrastructure/expense_submit_mail.py`, публичные GET — `expenses/presentation/routes/expense_email_action.py`. Имена полей настроек в коде — `expenses/infrastructure/config.py` (алиасы переменных окружения см. там же).
 
 | Вопрос | Ответ |
-|--------|--------|
+|--------|-------|
 | **Когда уходит письмо** | Только при **`POST /api/v1/expenses/{id}/submit`** (заявка переходит на согласование). При **`POST /api/v1/expenses`** (черновик) письмо **не** отправляется. |
 | **Вкл/выкл** | **`EXPENSE_NOTIFY_ON_SUBMIT`** (по умолчанию `true`). |
 | **Кому** | **`EXPENSE_NOTIFY_TO`** — один или несколько адресов через **запятую**. |
-| **SMTP** | Нужны **`EXPENSE_SMTP_HOST`**, **`EXPENSE_SMTP_USER`**, **`EXPENSE_SMTP_PASSWORD`** (и при необходимости порт **`EXPENSE_SMTP_PORT`**, **`EXPENSE_SMTP_USE_TLS`**). Отправитель: **`EXPENSE_MAIL_FROM`** или учётная запись SMTP. Без полного набора в логах `expenses` будет предупреждение `expense notify:` и письмо не уйдёт. |
-| **Ссылка «открыть в приложении»** | **`FRONTEND_URL`** — тот же origin, что и для CORS SPA (без лишнего слэша в конце). Опционально **`EXPENSE_NOTIFY_LINK_TEMPLATE`**: плейсхолдеры `{frontend_url}`, `{expense_id}` (для hash-router, например: `{frontend_url}/#/expenses/{expense_id}`). |
-| **Кнопки без входа в SPA** | Задайте публичный URL API **`GATEWAY_BASE_URL`** (как в браузере, без завершающего `/`) и секрет **`EXPENSE_EMAIL_ACTION_SECRET`**. В письме — кнопки **Утвердить** / **Отклонить** → **`GET /api/v1/expenses/{id}/email-action?token=...&confirm=1`** (первый шаг: экран подтверждения на сервере, **не** SPA) → второй запрос **`.../email-action?token=...`** выполняет действие; ответ — короткая HTML-страница («можно закрыть вкладку»). Отключить экран подтверждения: **`EXPENSE_EMAIL_ACTION_CONFIRM_STEP=false`** — тогда одно нажатие сразу меняет статус. Срок токена: **`EXPENSE_EMAIL_ACTION_TTL_SECONDS`**. |
-| **Вложения в письме** | В теле письма — блок с файлами: превью **jpeg/png/gif/webp** (до ~2 MB каждый), остальное — ссылка **`GET /api/v1/expenses/{id}/attachments/{attachmentId}/email-file?token=...`** (без `Authorization`) и при необходимости файл как **вложение** MIME. Без **`GATEWAY_BASE_URL`** + секрета ссылки на файлы в письме не строятся. |
-| **Если секрет/API не заданы** | В письме **нет** кнопок «утвердить через фронт» — только предупреждение и опциональная ссылка «открыть в приложении» по **`FRONTEND_URL`**. |
-| **Тест SMTP** | В репозитории `tickets-back`: скрипт **`expenses/send_expense_smtp_test.py`** (см. комментарии в файле). |
+| **SMTP** | **`EXPENSE_SMTP_HOST`**, **`EXPENSE_SMTP_USER`**, **`EXPENSE_SMTP_PASSWORD`**; опционально **`EXPENSE_SMTP_PORT`**, **`EXPENSE_SMTP_USE_TLS`**. Допустимы укороченные имена **`SMTP_HOST`**, **`SMTP_USER`**, **`SMTP_PASSWORD`**, **`SMTP_PORT`**, **`SMTP_USE_TLS`** (те же поля настроек). Отправитель: **`EXPENSE_MAIL_FROM`** или **`EXPENSE_SMTP_FROM`**, иначе подставляется SMTP-user. Без host/user/password в логах будет **`expense notify:`** и письмо не уйдёт. |
+| **Ссылка «открыть в приложении»** | **`FRONTEND_URL`** или **`EXPENSES_FRONTEND_URL`** — origin SPA (без `/` в конце). Шаблон пути: **`EXPENSE_NOTIFY_LINK_TEMPLATE`** с плейсхолдерами `{frontend_url}`, `{expense_id}`; по умолчанию в коде `{frontend_url}/expenses/{expense_id}`. Для hash-router, например: `{frontend_url}/#/expenses/{expense_id}`. |
+| **Публичный URL API (одноразовые ссылки)** | **`GATEWAY_BASE_URL`** или **`PUBLIC_API_BASE_URL`** или **`EXPENSES_PUBLIC_API_BASE_URL`** — тот же базовый URL gateway, что видит браузер (`https://…` **без** завершающего `/`). Нужен вместе с **`EXPENSE_EMAIL_ACTION_SECRET`** для кнопок «Утвердить сразу» / «Отклонить сразу» и ссылок на файлы. |
+| **Одноразовое согласование** | **`GET /api/v1/expenses/{id}/email-action?token=...`** через gateway, **без** `Authorization`. Срок токена: **`EXPENSE_EMAIL_ACTION_TTL_SECONDS`** (по умолчанию 604800 с = 7 суток). Если **`EXPENSE_EMAIL_ACTION_CONFIRM_STEP=true`** (по умолчанию), ссылка из письма содержит **`confirm=1`**: открывается страница подтверждения, затем действие выполняется переходом по кнопке (**тот же** `token`, **без** `confirm`). Если **`false`**, одно открытие ссылки из письма сразу выполняет approve/reject. |
+| **Вложения в письме** | Для каждого файла может быть ссылка **`GET /api/v1/expenses/{id}/attachments/{attachment_id}/email-file?token=...`** (**без** Bearer) — выдача файла по подписанному токену. |
+| **Кнопки с входом в SPA** | Если секрет или базовый URL API не заданы, в ссылки на фронт добавляется **`EXPENSE_NOTIFY_INTENT_PARAM`** (по умолчанию `intent`) со значениями **`approve`** / **`reject`**; для hash-router — во **fragment** URL. |
+| **Прочее (expenses)** | **`EXPENSE_ALLOW_SELF_MODERATION`** — может ли модератор утверждать/отклонять **свою** заявку (по умолчанию `true`). **`EXPENSE_AMOUNT_LIMIT_UZS`** — при превышении суммы ошибка при create/submit (опционально). |
+| **Тест SMTP** | **`expenses/send_expense_smtp_test.py`** в репозитории `tickets-back`. |
 
-**Фронтенд:** маршрут к заявке должен совпадать с **`FRONTEND_URL`** / **`EXPENSE_NOTIFY_LINK_TEMPLATE`** для опциональной ссылки «открыть в приложении». Согласование по письму идёт через **API** (`email-action`), не через SPA. Встроенные действия внутри окна Outlook без браузера (Actionable Messages) **не** реализованы.
+**Фронтенд:** маршрут к заявке должен совпадать с шаблоном ссылки; при необходимости обработайте **`intent`**. Встроенные действия Outlook без браузера (Actionable Messages) **не** реализованы.
 
 ---
 
