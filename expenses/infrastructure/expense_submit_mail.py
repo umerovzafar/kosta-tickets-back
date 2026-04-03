@@ -7,7 +7,6 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
@@ -175,6 +174,48 @@ def _detail_row(label: str, value_html: str) -> str:
 </tr>"""
 
 
+def _attachment_item_html(
+    *,
+    kind_ru: str,
+    safe_filename: str,
+    sz_kb: int,
+    href: str | None,
+    preview_html: str = "",
+) -> str:
+    """Блок вложения: подпись по типу + строка «иконка · имя · размер» (вся строка — ссылка, если есть href)."""
+    kind_esc = html.escape(kind_ru)
+    size_esc = html.escape(f"~{sz_kb} КБ")
+    row_tbl = f"""<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+  <tr>
+    <td style="padding:0;vertical-align:middle;">
+      <span style="font-size:15px;line-height:1;vertical-align:middle;">&#128196;</span>
+      <span style="margin-left:8px;font-size:14px;font-weight:600;color:#0f172a;vertical-align:middle;">{safe_filename}</span>
+    </td>
+    <td align="right" style="padding:0 0 0 12px;vertical-align:middle;white-space:nowrap;font-size:12px;color:#64748b;">{size_esc}</td>
+  </tr>
+</table>"""
+    box = (
+        "box-sizing:border-box;padding:10px 12px;background:#ffffff;"
+        "border:1px solid #e2e8f0;border-radius:8px;"
+    )
+    if href:
+        su = html.escape(href, quote=True)
+        row_block = (
+            f'<a href="{su}" target="_blank" rel="noopener noreferrer" '
+            f'style="display:block;{box}text-decoration:none;color:inherit;">'
+            f"{row_tbl}</a>"
+        )
+    else:
+        row_block = f'<div style="{box}">{row_tbl}</div>'
+    prev = f'<div style="margin-top:8px;">{preview_html}</div>' if preview_html else ""
+    return (
+        f'<div style="margin:0 0 10px 0;">'
+        f'<p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#334155;">{kind_esc}</p>'
+        f"{row_block}{prev}"
+        f"</div>"
+    )
+
+
 def _build_moderation_html(
     *,
     ctx: ExpenseModerationEmailContext,
@@ -270,7 +311,7 @@ def _build_moderation_html(
         </tr>
         <tr>
           <td style="padding:4px 14px 10px 14px;font-family:Segoe UI,Arial,sans-serif;">
-            <p style="margin:0 0 6px 0;font-size:11px;font-weight:700;color:#0f172a;text-transform:uppercase;letter-spacing:.05em;">Вложения</p>
+            <p style="margin:0 0 8px 0;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">Документы</p>
             {attachments_block}
           </td>
         </tr>
@@ -444,23 +485,34 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
                 cid_counter += 1
                 sub_m = mt.split("/")[-1] if "/" in mt else "jpeg"
                 inline_images.append((cid, data, sub_m))
+                img_tag = (
+                    f'<img src="cid:{cid}" alt="{label}" '
+                    f'style="max-width:100%;height:auto;border-radius:6px;display:block;border:1px solid #e2e8f0;"/>'
+                )
+                preview = img_tag
+                if view_u:
+                    su = html.escape(view_u, quote=True)
+                    preview = (
+                        f'<a href="{su}" target="_blank" rel="noopener noreferrer" '
+                        f'style="display:block;text-decoration:none;">{img_tag}</a>'
+                    )
                 att_html_chunks.append(
-                    f'<div style="margin:0 0 8px 0;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
-                    f'<p style="margin:0 0 6px 0;font-size:12px;color:#64748b;">{label} · {html.escape(kind_ru)}</p>'
-                    f'<img src="cid:{cid}" alt="{label}" style="max-width:100%;height:auto;border-radius:6px;display:block;"/>'
-                    f"</div>"
+                    _attachment_item_html(
+                        kind_ru=kind_ru,
+                        safe_filename=label,
+                        sz_kb=sz_kb,
+                        href=view_u,
+                        preview_html=preview,
+                    )
                 )
                 continue
-        link_block = ""
-        if view_u:
-            su = html.escape(view_u, quote=True)
-            link_block = f'<p style="margin:6px 0 0 0;"><a href="{su}" style="color:#2563eb;font-weight:600;font-size:13px;">Открыть / скачать файл</a></p>'
         att_html_chunks.append(
-            f'<div style="margin:0 0 8px 0;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
-            f'<p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;">{label}</p>'
-            f'<p style="margin:4px 0 0 0;font-size:12px;color:#64748b;">{html.escape(kind_ru)} · ~{sz_kb} KB</p>'
-            f"{link_block}"
-            f"</div>"
+            _attachment_item_html(
+                kind_ru=kind_ru,
+                safe_filename=label,
+                sz_kb=sz_kb,
+                href=view_u,
+            )
         )
         if (
             not is_any_image
@@ -489,7 +541,11 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
                 file_attachments.append((fn, data, att.mime_type or "application/octet-stream"))
 
     if att_html_chunks:
-        attachments_block = "".join(att_html_chunks)
+        attachments_block = (
+            '<div style="padding:12px 14px;border:1px solid #c7d2fe;border-radius:10px;background:#fafaff;">'
+            + "".join(att_html_chunks)
+            + "</div>"
+        )
     else:
         attachments_block = (
             '<p style="margin:0;padding:10px 12px;background:#f8fafc;border-radius:8px;color:#64748b;font-size:13px;">'
@@ -641,119 +697,6 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
 async def notify_expense_submitted(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
     """Письмо модераторам при отправке на согласование (submit → pending_approval)."""
     await _send_moderation_message(settings, ctx)
-
-
-async def notify_expense_author_decision(
-    settings: Settings,
-    *,
-    to_email: str,
-    display_name: str | None,
-    expense_id: str,
-    decision: Literal["approved", "rejected"],
-    reject_reason: str | None,
-) -> None:
-    """Письмо автору заявки с результатом согласования."""
-    if not _smtp_ready(settings):
-        _log.warning(
-            "expense author notify: SMTP не настроен (%s), expense_id=%s",
-            ", ".join(_smtp_missing_env_names(settings)),
-            expense_id,
-        )
-        return
-    to = (to_email or "").strip()
-    if not to:
-        _log.warning("expense author notify: пустой email, expense_id=%s", expense_id)
-        return
-
-    safe_id = html.escape(expense_id)
-    greeting = (display_name or "").strip() or "Здравствуйте"
-    safe_greeting = html.escape(greeting)
-
-    comment_html = ""
-    if decision == "approved":
-        subject = f"Заявка {expense_id} утверждена"
-        lead = f"Ваша заявка на расход <strong>{safe_id}</strong> <strong>утверждена</strong>."
-        plain_lead = f"Ваша заявка на расход {expense_id} утверждена."
-    else:
-        subject = f"Заявка {expense_id} отклонена"
-        lead = f"Ваша заявка на расход <strong>{safe_id}</strong> <strong>отклонена</strong>."
-        plain_lead = f"Ваша заявка на расход {expense_id} отклонена."
-        if reject_reason and str(reject_reason).strip():
-            r = html.escape(str(reject_reason).strip())
-            comment_html = (
-                f'<p style="margin:16px 0 0 0;color:#0f172a;font-size:14px;">'
-                f"<strong>Комментарий:</strong> {r}</p>"
-            )
-            plain_lead += f"\n\nКомментарий: {str(reject_reason).strip()}"
-
-    open_link = _build_open_link(settings, expense_id)
-    link_block_html = ""
-    link_block_plain = ""
-    if open_link:
-        safe_link = html.escape(open_link, quote=True)
-        link_block_html = f"""
-<p style="margin:20px 0 0 0;">
-  <a href="{safe_link}" style="color:#2563eb;font-weight:600;">Открыть заявку в системе</a>
-</p>"""
-        link_block_plain = f"\n\nСсылка: {open_link}"
-    else:
-        link_block_plain = ""
-
-    html_body = f"""<!DOCTYPE html>
-<html lang="ru"><head><meta charset="utf-8"/></head>
-<body style="margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;padding:24px 12px;">
-  <tr><td align="center">
-    <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;padding:28px 24px;">
-      <tr><td>
-        <p style="margin:0 0 12px 0;font-size:15px;color:#0f172a;">{safe_greeting},</p>
-        <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#334155;">{lead}</p>
-        {comment_html}
-        {link_block_html}
-        <p style="margin:24px 0 0 0;font-size:13px;color:#64748b;">Kosta Legal · расходы</p>
-      </td></tr>
-    </table>
-  </td></tr>
-</table>
-</body></html>"""
-
-    plain_body = f"""{greeting},
-
-{plain_lead}{link_block_plain}
-"""
-    from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to
-    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-
-    _log.info(
-        "expense author notify: отправка SMTP expense_id=%s decision=%s to=%s host=%s",
-        expense_id,
-        decision,
-        to,
-        settings.smtp_host.strip(),
-    )
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=settings.smtp_host.strip(),
-            port=int(settings.smtp_port),
-            username=settings.smtp_user.strip(),
-            password=settings.smtp_password,
-            start_tls=bool(settings.smtp_use_tls),
-        )
-    except Exception as e:
-        _log.error(
-            "expense author notify: ошибка SMTP expense_id=%s: %s: %s",
-            expense_id,
-            type(e).__name__,
-            e,
-        )
-        raise
-    _log.info("expense author notify: отправлено expense_id=%s to=%s", expense_id, to)
 
 
 async def send_expense_smtp_test(settings: Settings) -> list[str]:

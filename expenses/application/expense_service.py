@@ -103,51 +103,17 @@ def validate_submit_fields(
     if expense_amount_limit_uzs is not None and amount_uzs > expense_amount_limit_uzs:
         raise ValueError("amountUzs exceeds allowed limit; additional approval may be required")
     if is_reimbursable:
-        # Этап 1: до отправки нужен документ на оплату. Квитанция — после подтверждения выплаты (статус paid).
         has_typed = payment_document_count > 0 or payment_receipt_count > 0
         if has_typed:
-            if payment_document_count < 1:
+            if payment_document_count < 1 or payment_receipt_count < 1:
                 raise ValueError(
-                    "Для возмещаемого расхода загрузите документ на оплату (attachmentKind=payment_document) перед отправкой на согласование"
+                    "Для возмещаемого расхода нужны оба вложения: документ для оплаты и квитанция об оплате"
                 )
         elif attachment_count < 1:
             raise ValueError("At least one attachment is required for reimbursable expenses")
-    if (expense_type or "").strip() == "other" and not (comment or "").strip():
-        raise ValueError("comment is required when expenseType is other")
-
-
-def assert_attachment_upload_allowed(
-    *,
-    status: str,
-    attachment_kind: str | None,
-    is_admin: bool,
-) -> None:
-    """Правила двухэтапных вложений: документ на оплату до выплаты; квитанция — после подтверждения оплаты."""
-    if is_admin:
-        return
-    kind = (attachment_kind or "").strip() or None
-    if kind == "payment_document":
-        if status not in ("draft", "revision_required", "pending_approval", "approved"):
-            raise ValueError(
-                "Документ на оплату можно загрузить до подтверждения выплаты (статусы: черновик, на согласовании, утверждена)."
-            )
-    elif kind == "payment_receipt":
-        if status not in ("paid", "closed"):
-            raise ValueError(
-                "Квитанцию об оплате загружают после того, как модератор подтвердит выплату (статус «Выплачено»)."
-            )
-    else:
-        if status in ("paid", "closed"):
-            raise ValueError(
-                "После оплаты загружайте только квитанцию и укажите attachmentKind=payment_receipt"
-            )
-        if status not in ("draft", "revision_required", "pending_approval", "approved"):
-            raise ValueError("Вложения в этом статусе недоступны")
-
-
-def reimbursable_requires_receipt_before_close(payment_receipt_count: int) -> None:
-    """После выплаты автор должен приложить квитанцию; закрытие — только с квитанцией."""
-    if payment_receipt_count < 1:
-        raise ValueError(
-            "Загрузите квитанцию об оплате (attachmentKind=payment_receipt) перед закрытием возмещаемой заявки"
-        )
+    if (
+        is_reimbursable
+        and (expense_type or "").strip() == "other"
+        and not (comment or "").strip()
+    ):
+        raise ValueError("comment is required when expenseType is other and the expense is reimbursable")

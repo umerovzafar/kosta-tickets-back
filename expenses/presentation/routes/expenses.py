@@ -1,7 +1,5 @@
 """Заявки на расход по ТЗ: /expenses."""
 
-import asyncio
-import logging
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -10,21 +8,11 @@ from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import FileResponse
 
-from application.expense_service import (
-    assert_attachment_upload_allowed,
-    calc_equivalent,
-    reimbursable_requires_receipt_before_close,
-    validate_submit_fields,
-)
+from application.expense_service import calc_equivalent, validate_submit_fields
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
-from infrastructure.expense_author_decision_notify import run_author_decision_notification_safe
-from infrastructure.expense_submit_mail import (
-    AttachmentEmailItem,
-    ExpenseModerationEmailContext,
-    notify_expense_submitted,
-)
 from infrastructure.auth_users import fetch_users_by_ids
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
@@ -53,63 +41,7 @@ from presentation.schemas import (
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
-_log = logging.getLogger(__name__)
-
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
-
-# Отправка в том же запросе (не BackgroundTasks): иначе за gateway/прокси фоновая задача может не выполниться.
-_MODERATION_MAIL_TIMEOUT_SEC = 90.0
-
-
-def _moderation_email_context(row: ExpenseRequestModel, user: dict) -> ExpenseModerationEmailContext:
-    attachments = [
-        AttachmentEmailItem(
-            id=a.id,
-            file_name=a.file_name,
-            storage_key=a.storage_key,
-            mime_type=a.mime_type,
-            size_bytes=int(a.size_bytes or 0),
-            attachment_kind=a.attachment_kind,
-        )
-        for a in (row.attachments or [])
-    ]
-    return ExpenseModerationEmailContext(
-        expense_id=row.id,
-        description=row.description,
-        expense_date=row.expense_date,
-        payment_deadline=row.payment_deadline,
-        amount_uzs=row.amount_uzs,
-        exchange_rate=row.exchange_rate,
-        equivalent_amount=row.equivalent_amount,
-        expense_type=row.expense_type,
-        expense_subtype=row.expense_subtype,
-        is_reimbursable=row.is_reimbursable,
-        payment_method=row.payment_method,
-        department_id=row.department_id,
-        project_id=row.project_id,
-        vendor=row.vendor,
-        business_purpose=row.business_purpose,
-        comment=row.comment,
-        author_email=user.get("email"),
-        author_name=user.get("display_name"),
-        attachments=attachments,
-    )
-
-
-async def _run_moderation_mail(ctx: ExpenseModerationEmailContext) -> None:
-    try:
-        await asyncio.wait_for(
-            notify_expense_submitted(get_settings(), ctx),
-            timeout=_MODERATION_MAIL_TIMEOUT_SEC,
-        )
-    except asyncio.TimeoutError:
-        _log.error(
-            "expense moderation mail: timeout after %ss expense_id=%s",
-            _MODERATION_MAIL_TIMEOUT_SEC,
-            ctx.expense_id,
-        )
-    except Exception:
-        _log.exception("expense moderation mail failed expense_id=%s", ctx.expense_id)
 
 
 def _utc_now() -> datetime:
@@ -147,16 +79,8 @@ def _ensure_can_edit(row: ExpenseRequestModel, user: dict) -> None:
         )
 
 
-def _typed_attachment_flags(row: ExpenseRequestModel) -> tuple[bool, bool]:
-    docs = row.attachments or []
-    pd = any((a.attachment_kind or "").strip() == "payment_document" for a in docs)
-    pr = any((a.attachment_kind or "").strip() == "payment_receipt" for a in docs)
-    return pd, pr
-
-
 def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestListItemOut:
     n = len(row.attachments or [])
-    pd_upl, pr_upl = _typed_attachment_flags(row)
     a = author or {}
     created_by = ExpenseAuthorSnippet(
         id=row.created_by_user_id,
@@ -196,8 +120,6 @@ def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseR
         closed_at=row.closed_at,
         withdrawn_at=row.withdrawn_at,
         attachments_count=n,
-        payment_document_uploaded=pd_upl,
-        payment_receipt_uploaded=pr_upl,
     )
 
 
@@ -578,7 +500,6 @@ async def submit_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    await _run_moderation_mail(_moderation_email_context(row, user))
     return await _detail_response(row, authorization)
 
 
@@ -625,14 +546,6 @@ async def approve_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    await run_author_decision_notification_safe(
-        get_settings(),
-        authorization=authorization,
-        author_user_id=row.created_by_user_id,
-        expense_id=row.id,
-        decision="approved",
-        reject_reason=None,
-    )
     return await _detail_response(row, authorization)
 
 
@@ -681,14 +594,6 @@ async def reject_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
-    await run_author_decision_notification_safe(
-        get_settings(),
-        authorization=authorization,
-        author_user_id=row.created_by_user_id,
-        expense_id=row.id,
-        decision="rejected",
-        reject_reason=reason,
-    )
     return await _detail_response(row, authorization)
 
 
@@ -806,12 +711,6 @@ async def close_expense(
             status_code=400,
             detail="Закрытие: из paid, not_reimbursable или approved (невозмещаемый) → not_reimbursable",
         )
-    if prev == "paid" and new_status == "closed" and row.is_reimbursable:
-        _, pr_count, _ = await repo.attachment_kind_metrics(row.id)
-        try:
-            reimbursable_requires_receipt_before_close(pr_count)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
     row.status = new_status
     if new_status == "closed":
         row.closed_at = _utc_now()
@@ -906,6 +805,36 @@ async def list_attachments(
     ]
 
 
+@router.get("/{expense_id}/attachments/{attachment_id}/file")
+async def download_attachment_file(
+    expense_id: str,
+    attachment_id: str,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Открыть / скачать файл вложения (Bearer). Для ссылок из письма без входа — /email-file с токеном."""
+    check_view_role(user)
+    settings = get_settings()
+    repo = ExpenseRepository(session)
+    row = await repo.get_by_id(expense_id, load_children=True)
+    if not row:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    _ensure_access(row, user)
+    att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
+    if not att_row:
+        raise HTTPException(status_code=404, detail="Вложение не найдено")
+    p = Path(settings.media_path) / att_row.storage_key
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Файл на диске не найден")
+    media = (att_row.mime_type or "").strip() or "application/octet-stream"
+    return FileResponse(
+        path=p,
+        filename=att_row.file_name or "attachment",
+        media_type=media,
+        content_disposition_type="inline",
+    )
+
+
 @router.post("/{expense_id}/attachments", response_model=ExpenseRequestDetailOut)
 async def upload_attachment(
     expense_id: str,
@@ -921,24 +850,17 @@ async def upload_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
+    if not is_admin_editor(user):
+        if row.created_by_user_id != int(user["id"]):
+            raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
+        if row.status not in ("draft", "revision_required", "pending_approval"):
+            raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
     kind_norm: str | None = None
     if attachment_kind is not None and str(attachment_kind).strip():
         k = str(attachment_kind).strip()
         if k not in _ALLOWED_ATTACHMENT_KINDS:
             raise HTTPException(status_code=400, detail="Недопустимый тип вложения")
         kind_norm = k
-
-    if not is_admin_editor(user):
-        if row.created_by_user_id != int(user["id"]):
-            raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
-        try:
-            assert_attachment_upload_allowed(
-                status=row.status,
-                attachment_kind=kind_norm,
-                is_admin=False,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
 
     content = await file.read()
     try:
@@ -984,29 +906,14 @@ async def delete_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
-    if not att_row:
-        raise HTTPException(status_code=404, detail="Вложение не найдено")
     if not is_admin_editor(user):
         if row.created_by_user_id != int(user["id"]):
             raise HTTPException(status_code=403, detail="Только автор может удалять вложения")
-        kind = (att_row.attachment_kind or "").strip()
-        if row.status in ("draft", "revision_required"):
-            pass
-        elif row.status in ("paid", "closed"):
-            if kind != "payment_receipt":
-                raise HTTPException(
-                    status_code=400,
-                    detail="В этом статусе можно удалить только квитанцию (payment_receipt), чтобы заменить файл",
-                )
-        elif row.status in ("pending_approval", "approved"):
-            if kind == "payment_receipt":
-                raise HTTPException(
-                    status_code=400,
-                    detail="Квитанцию можно удалить только после подтверждения выплаты",
-                )
-        else:
-            raise HTTPException(status_code=400, detail="Удаление вложений в этом статусе недоступно")
+        if row.status not in ("draft", "revision_required"):
+            raise HTTPException(status_code=400, detail="Удаление вложений только в draft / revision_required")
+    att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
+    if not att_row:
+        raise HTTPException(status_code=404, detail="Вложение не найдено")
     storage_key = att_row.storage_key
     ok = await repo.delete_attachment(expense_id, attachment_id)
     if not ok:
