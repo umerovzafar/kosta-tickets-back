@@ -152,6 +152,21 @@ class Settings(BaseSettings):
             return "{frontend_url}/expenses/{expense_id}"
         return v
 
+    @field_validator(
+        "expense_allow_self_moderation",
+        "expense_notify_on_submit",
+        "smtp_use_tls",
+        "expense_email_action_confirm_step",
+        "expense_notify_author_on_decision",
+        mode="before",
+    )
+    @classmethod
+    def _empty_env_bool_as_default(cls, v: object) -> object:
+        # В Portainer / .env часто задают VAR= без значения — приходит "", Pydantic падает на bool
+        if v == "":
+            return True
+        return v
+
 
 def get_settings() -> Settings:
     return Settings()
