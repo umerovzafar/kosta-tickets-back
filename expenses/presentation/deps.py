@@ -16,6 +16,8 @@ ROLES_VIEW = {
 ROLES_MODERATE = {"Главный администратор", "Администратор", "Партнер"}
 ROLES_ADMIN_EDIT = {"Главный администратор", "Администратор"}
 
+MAIN_ADMIN_ROLE = "Главный администратор"
+
 
 def _normalize_role_key(role: str) -> str:
     """Регистронезависимо; ё/е в «Партнёр» (ТЗ §2)."""
@@ -71,6 +73,15 @@ def check_moderate_role(user: dict) -> None:
 
 def is_admin_editor(user: dict) -> bool:
     return _role_in_set(user.get("role") or "", ROLES_ADMIN_EDIT)
+
+
+def check_main_admin(user: dict) -> None:
+    """Сброс БД и аналогичные операции — только главный администратор."""
+    if (user.get("role") or "").strip() != MAIN_ADMIN_ROLE:
+        raise HTTPException(
+            status_code=403,
+            detail="Действие доступно только главному администратору",
+        )
 
 
 def is_moderator(user: dict) -> bool:

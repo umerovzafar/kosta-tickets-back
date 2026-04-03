@@ -122,6 +122,11 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("EXPENSE_AUTH_BEARER_FOR_AUTHOR_EMAIL"),
     )
+    # Сброс БД через POST /admin/expenses-database/reset (только главный администратор)
+    expense_allow_database_reset: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_ALLOW_DATABASE_RESET"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),
@@ -158,6 +163,7 @@ class Settings(BaseSettings):
         "smtp_use_tls",
         "expense_email_action_confirm_step",
         "expense_notify_author_on_decision",
+        "expense_allow_database_reset",
         mode="before",
     )
     @classmethod
