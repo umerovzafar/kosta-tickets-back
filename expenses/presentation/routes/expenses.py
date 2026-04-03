@@ -19,6 +19,7 @@ from application.expense_service import (
 )
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
+from infrastructure.expense_author_decision_notify import run_author_decision_notification_safe
 from infrastructure.expense_submit_mail import (
     AttachmentEmailItem,
     ExpenseModerationEmailContext,
@@ -624,6 +625,14 @@ async def approve_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
+    await run_author_decision_notification_safe(
+        get_settings(),
+        authorization=authorization,
+        author_user_id=row.created_by_user_id,
+        expense_id=row.id,
+        decision="approved",
+        reject_reason=None,
+    )
     return await _detail_response(row, authorization)
 
 
@@ -672,6 +681,14 @@ async def reject_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
+    await run_author_decision_notification_safe(
+        get_settings(),
+        authorization=authorization,
+        author_user_id=row.created_by_user_id,
+        expense_id=row.id,
+        decision="rejected",
+        reject_reason=reason,
+    )
     return await _detail_response(row, authorization)
 
 

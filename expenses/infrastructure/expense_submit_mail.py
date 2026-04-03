@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
@@ -640,6 +641,119 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
 async def notify_expense_submitted(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
     """Письмо модераторам при отправке на согласование (submit → pending_approval)."""
     await _send_moderation_message(settings, ctx)
+
+
+async def notify_expense_author_decision(
+    settings: Settings,
+    *,
+    to_email: str,
+    display_name: str | None,
+    expense_id: str,
+    decision: Literal["approved", "rejected"],
+    reject_reason: str | None,
+) -> None:
+    """Письмо автору заявки с результатом согласования."""
+    if not _smtp_ready(settings):
+        _log.warning(
+            "expense author notify: SMTP не настроен (%s), expense_id=%s",
+            ", ".join(_smtp_missing_env_names(settings)),
+            expense_id,
+        )
+        return
+    to = (to_email or "").strip()
+    if not to:
+        _log.warning("expense author notify: пустой email, expense_id=%s", expense_id)
+        return
+
+    safe_id = html.escape(expense_id)
+    greeting = (display_name or "").strip() or "Здравствуйте"
+    safe_greeting = html.escape(greeting)
+
+    comment_html = ""
+    if decision == "approved":
+        subject = f"Заявка {expense_id} утверждена"
+        lead = f"Ваша заявка на расход <strong>{safe_id}</strong> <strong>утверждена</strong>."
+        plain_lead = f"Ваша заявка на расход {expense_id} утверждена."
+    else:
+        subject = f"Заявка {expense_id} отклонена"
+        lead = f"Ваша заявка на расход <strong>{safe_id}</strong> <strong>отклонена</strong>."
+        plain_lead = f"Ваша заявка на расход {expense_id} отклонена."
+        if reject_reason and str(reject_reason).strip():
+            r = html.escape(str(reject_reason).strip())
+            comment_html = (
+                f'<p style="margin:16px 0 0 0;color:#0f172a;font-size:14px;">'
+                f"<strong>Комментарий:</strong> {r}</p>"
+            )
+            plain_lead += f"\n\nКомментарий: {str(reject_reason).strip()}"
+
+    open_link = _build_open_link(settings, expense_id)
+    link_block_html = ""
+    link_block_plain = ""
+    if open_link:
+        safe_link = html.escape(open_link, quote=True)
+        link_block_html = f"""
+<p style="margin:20px 0 0 0;">
+  <a href="{safe_link}" style="color:#2563eb;font-weight:600;">Открыть заявку в системе</a>
+</p>"""
+        link_block_plain = f"\n\nСсылка: {open_link}"
+    else:
+        link_block_plain = ""
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"/></head>
+<body style="margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;padding:24px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;padding:28px 24px;">
+      <tr><td>
+        <p style="margin:0 0 12px 0;font-size:15px;color:#0f172a;">{safe_greeting},</p>
+        <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#334155;">{lead}</p>
+        {comment_html}
+        {link_block_html}
+        <p style="margin:24px 0 0 0;font-size:13px;color:#64748b;">Kosta Legal · расходы</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+    plain_body = f"""{greeting},
+
+{plain_lead}{link_block_plain}
+"""
+    from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to
+    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    _log.info(
+        "expense author notify: отправка SMTP expense_id=%s decision=%s to=%s host=%s",
+        expense_id,
+        decision,
+        to,
+        settings.smtp_host.strip(),
+    )
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host.strip(),
+            port=int(settings.smtp_port),
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            start_tls=bool(settings.smtp_use_tls),
+        )
+    except Exception as e:
+        _log.error(
+            "expense author notify: ошибка SMTP expense_id=%s: %s: %s",
+            expense_id,
+            type(e).__name__,
+            e,
+        )
+        raise
+    _log.info("expense author notify: отправлено expense_id=%s to=%s", expense_id, to)
 
 
 async def send_expense_smtp_test(settings: Settings) -> list[str]:

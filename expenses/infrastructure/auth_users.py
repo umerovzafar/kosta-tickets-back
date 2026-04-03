@@ -12,6 +12,47 @@ _log = logging.getLogger(__name__)
 _MAX_CONCURRENT = 12
 
 
+def _normalize_authorization_header(raw: str | None) -> str | None:
+    a = (raw or "").strip()
+    if not a:
+        return None
+    if a.lower().startswith("bearer "):
+        return a
+    return f"Bearer {a}"
+
+
+async def fetch_user_by_id(
+    auth_base_url: str,
+    authorization: str | None,
+    user_id: int,
+    *,
+    fallback_bearer: str | None = None,
+) -> dict | None:
+    """
+    GET {auth}/users/{id}. Сначала используется заголовок Authorization запроса;
+    если его нет — optional fallback (например EXPENSE_AUTH_BEARER_FOR_AUTHOR_EMAIL для ссылок из письма).
+    Ответ: JSON с полями email, display_name и т.д.
+    """
+    hdr = _normalize_authorization_header(authorization)
+    if not hdr:
+        hdr = _normalize_authorization_header(fallback_bearer)
+    if not hdr:
+        return None
+    base = auth_base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                f"{base}/users/{user_id}",
+                headers={"Authorization": hdr},
+            )
+        if r.status_code == 200:
+            return r.json()
+        _log.debug("auth users/%s status=%s", user_id, r.status_code)
+    except httpx.RequestError as e:
+        _log.debug("auth users/%s err=%s", user_id, e)
+    return None
+
+
 async def fetch_users_by_ids(
     auth_base_url: str,
     authorization: Optional[str],

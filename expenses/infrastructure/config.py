@@ -112,6 +112,16 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("EXPENSE_EMAIL_ACTION_CONFIRM_STEP"),
     )
+    # Письмо автору заявки после утверждения / отклонения
+    expense_notify_author_on_decision: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_NOTIFY_AUTHOR_ON_DECISION"),
+    )
+    # Опционально: Bearer JWT для GET /users/{id}, когда нет заголовка (согласование по ссылке из письма)
+    expense_auth_bearer_for_author_email: str = Field(
+        default="",
+        validation_alias=AliasChoices("EXPENSE_AUTH_BEARER_FOR_AUTHOR_EMAIL"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),

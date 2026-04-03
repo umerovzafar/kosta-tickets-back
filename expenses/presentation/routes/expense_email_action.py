@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import FileResponse
 
 from infrastructure.config import get_settings
+from infrastructure.expense_author_decision_notify import run_author_decision_notification_safe
 from infrastructure.database import get_session
 from infrastructure.email_action_token import verify_attachment_view_token, verify_email_action_token
 from infrastructure.repositories import ExpenseRepository
@@ -183,6 +184,14 @@ async def expense_email_action(
             performed_by_user_id=uid,
         )
         await session.commit()
+        await run_author_decision_notification_safe(
+            settings,
+            authorization=None,
+            author_user_id=row.created_by_user_id,
+            expense_id=row.id,
+            decision="approved",
+            reject_reason=None,
+        )
         return HTMLResponse(
             _page("Заявка утверждена", f"Расход {expense_id} отмечен как утверждённый.", True),
             status_code=200,
@@ -209,6 +218,14 @@ async def expense_email_action(
         performed_by_user_id=uid,
     )
     await session.commit()
+    await run_author_decision_notification_safe(
+        settings,
+        authorization=None,
+        author_user_id=row.created_by_user_id,
+        expense_id=row.id,
+        decision="rejected",
+        reject_reason=reason,
+    )
     return HTMLResponse(
         _page("Заявка отклонена", f"Расход {expense_id} отклонён.", True),
         status_code=200,
