@@ -1,8 +1,9 @@
 """Модели БД time_tracking."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.database import Base
@@ -21,5 +22,28 @@ class TimeTrackingUserModel(Base):
     role: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserHourlyRateModel(Base):
+    """Почасовая ставка пользователя по умолчанию: оплачиваемая (billable) или себестоимость (cost)."""
+
+    __tablename__ = "time_tracking_user_hourly_rates"
+    __table_args__ = (
+        Index("ix_tt_hourly_rates_user_kind", "auth_user_id", "rate_kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auth_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("time_tracking_users.auth_user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    rate_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

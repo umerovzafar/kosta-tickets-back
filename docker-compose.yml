@@ -427,12 +427,33 @@ services:
       timeout: 5s
       retries: 5
 
-  # Общий справочник проектов (пока без БД; бизнес-API добавят позже).
+  # Общий справочник проектов (БД kosta_projects по умолчанию).
+  projects_db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ["postgres", "-c", "log_min_messages=warning"]
+    environment:
+      POSTGRES_USER: ${PROJECTS_DB_USER:-projects}
+      POSTGRES_PASSWORD: ${PROJECTS_DB_PASSWORD:-projects}
+      POSTGRES_DB: ${PROJECTS_DB_NAME:-kosta_projects}
+    volumes:
+      - projects_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   projects:
     build:
       context: ./projects
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      - DATABASE_URL=${PROJECTS_DATABASE_URL:-postgresql://projects:projects@projects_db:5432/kosta_projects}
+    depends_on:
+      projects_db:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -462,3 +483,4 @@ volumes:
   todos_db_data:
   time_tracking_db_data:
   expenses_db_data:
+  projects_db_data:

@@ -1,17 +1,31 @@
 """
 Сервис проектов (общий справочник для нескольких микросервисов).
-Сейчас — заглушка: без БД и бизнес-API; дальше — модели и маршруты.
+БД: kosta_projects (см. PROJECTS_DATABASE_URL / PROJECTS_DB_NAME).
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from infrastructure.database import Base, engine
+from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
 from presentation.routes.health import router as health_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if engine is not None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    yield
+
 
 app = FastAPI(
     title="Kosta Projects",
     version="0.1.0",
-    description="Справочник проектов. Пока только health; логику и БД добавим позже.",
+    description="Справочник проектов. Подключение к БД; доменная модель — далее.",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
