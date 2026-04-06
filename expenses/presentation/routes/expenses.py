@@ -57,6 +57,8 @@ _log = logging.getLogger(__name__)
 _MODERATION_MAIL_TIMEOUT_SEC = 90.0
 
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
+# Документ для оплаты — до отметки «Выплачено» (в т.ч. пока заявка одобрена, но ещё не оплачена).
+_AUTHOR_ATTACHMENT_STATUSES = frozenset({"draft", "revision_required", "pending_approval", "approved"})
 
 
 def _moderation_email_context(row: ExpenseRequestModel, user: dict) -> ExpenseModerationEmailContext:
@@ -999,16 +1001,25 @@ async def upload_attachment(
         if kind_norm != "payment_receipt":
             raise HTTPException(
                 status_code=400,
-                detail="После оплаты можно добавлять только квитанцию об оплате (attachmentKind=payment_receipt)",
+                detail=(
+                    "После отметки оплаты можно добавлять только квитанцию об оплате "
+                    "(attachmentKind=payment_receipt) — подтверждение, что платёж прошёл."
+                ),
             )
     elif kind_norm == "payment_receipt":
         raise HTTPException(
             status_code=400,
-            detail="Квитанцию об оплате можно загрузить только после оплаты заявки",
+            detail=(
+                "Квитанцию об оплате загружайте после одобрения заявки и после отметки оплаты "
+                "(статус «Выплачено»)."
+            ),
         )
     elif not is_admin_editor(user):
-        if row.status not in ("draft", "revision_required", "pending_approval"):
-            raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
+        if row.status not in _AUTHOR_ATTACHMENT_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail="Вложения в этом статусе недоступны",
+            )
 
     content = await file.read()
     try:
@@ -1068,8 +1079,11 @@ async def delete_attachment(
                     status_code=400,
                     detail="Удаление квитанции в этом статусе недоступно",
                 )
-        elif row.status not in ("draft", "revision_required"):
-            raise HTTPException(status_code=400, detail="Удаление вложений только в draft / revision_required")
+        elif row.status not in ("draft", "revision_required", "approved"):
+            raise HTTPException(
+                status_code=400,
+                detail="Удаление документа для оплаты доступно до отметки оплаты (черновик, на согласовании, одобрено)",
+            )
     storage_key = att_row.storage_key
     ok = await repo.delete_attachment(expense_id, attachment_id)
     if not ok:

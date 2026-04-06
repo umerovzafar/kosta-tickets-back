@@ -10,6 +10,7 @@ _DEFAULT_SERVICE_URLS: dict[str, str] = {
     "todos_service_url": "http://todos:1240",
     "time_tracking_service_url": "http://time_tracking:1241",
     "expenses_service_url": "http://expenses:1242",
+    "projects_service_url": "http://projects:1243",
     "attendance_service_url": "http://attendance:1239",
 }
 
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     inventory_service_url: str = ""
     time_tracking_service_url: str = ""
     expenses_service_url: str = ""
+    projects_service_url: str = ""
     attendance_service_url: str = ""
     attendance_hikvision_allowed_ips: str = ""
     todos_service_url: str = ""

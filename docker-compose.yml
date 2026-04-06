@@ -29,6 +29,7 @@ services:
       - TODOS_SERVICE_URL=${TODOS_SERVICE_URL:-http://todos:1240}
       - TIME_TRACKING_SERVICE_URL=${TIME_TRACKING_SERVICE_URL:-http://time_tracking:1241}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
+      - PROJECTS_SERVICE_URL=${PROJECTS_SERVICE_URL:-http://projects:1243}
       - ATTENDANCE_SERVICE_URL=${ATTENDANCE_SERVICE_URL:-http://attendance:1239}
       - ATTENDANCE_HIKVISION_ALLOWED_IPS=${ATTENDANCE_HIKVISION_ALLOWED_IPS:-}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
@@ -61,6 +62,8 @@ services:
       time_tracking:
         condition: service_started
       expenses:
+        condition: service_started
+      projects:
         condition: service_started
       attendance:
         condition: service_started
@@ -423,6 +426,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Общий справочник проектов (пока без БД; бизнес-API добавят позже).
+  projects:
+    build:
+      context: ./projects
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1243/health\", timeout=3)"',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   telegram_bot:
     build:
