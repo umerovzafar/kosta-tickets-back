@@ -1,6 +1,7 @@
 """Маршруты пользователей учёта времени (список из БД и синхронизация)."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
@@ -93,17 +94,35 @@ async def upsert_user(
 ) -> dict:
     """Добавляет или обновляет пользователя в БД time_tracking. Вызывать из auth или скрипта синхронизации."""
     repo = TimeTrackingUserRepository(session)
-    await repo.upsert_user(
-        auth_user_id=body.auth_user_id,
-        email=body.email,
-        display_name=body.display_name,
-        picture=body.picture,
-        role=body.role,
-        is_blocked=body.is_blocked,
-        is_archived=body.is_archived,
-        weekly_capacity_hours=body.weekly_capacity_hours,
-    )
-    await session.commit()
+    try:
+        await repo.upsert_user(
+            auth_user_id=body.auth_user_id,
+            email=body.email,
+            display_name=body.display_name,
+            picture=body.picture,
+            role=body.role,
+            is_blocked=body.is_blocked,
+            is_archived=body.is_archived,
+            weekly_capacity_hours=body.weekly_capacity_hours,
+        )
+        await session.commit()
+    except ProgrammingError as e:
+        await session.rollback()
+        orig = getattr(e, "orig", None)
+        hint = (
+            "Проверьте, что в БД применён скрипт scripts/add_time_tracking_team_workload.sql "
+            "(колонка weekly_capacity_hours и таблица time_tracking_entries)."
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=f"{hint} Ошибка СУБД: {orig or e}",
+        ) from e
+    except IntegrityError as e:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=str(getattr(e, "orig", None) or e)) from e
+    except DBAPIError as e:
+        await session.rollback()
+        raise HTTPException(status_code=503, detail=str(getattr(e, "orig", None) or e)) from e
     return {"ok": True}
 
 

@@ -1,5 +1,6 @@
 """Прокси к сервису time_tracking. Требует аутентификации."""
 
+import json
 from decimal import Decimal
 from typing import Optional
 
@@ -197,11 +198,12 @@ async def upsert_user(
     if not base:
         raise HTTPException(status_code=503, detail="Time tracking service not configured")
     try:
+        payload = json.loads(body.model_dump_json(by_alias=False))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid user upsert payload: {e}") from e
+    try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{base}/users",
-                json=body.model_dump(mode="json", by_alias=False),
-            )
+            r = await client.post(f"{base}/users", json=payload)
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Time tracking service unavailable")
     if r.status_code >= 400:
