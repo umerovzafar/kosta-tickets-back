@@ -17,6 +17,7 @@ from presentation.routes import (
     media,
     attendance_routes,
     time_tracking_routes,
+    time_tracking_users_hourly_alias,
     expenses_routes,
 )
 
@@ -69,6 +70,7 @@ app.include_router(health.router)
 app.include_router(auth_azure.router)
 app.include_router(auth_admin.router)
 app.include_router(users.router)
+app.include_router(time_tracking_users_hourly_alias.router)
 app.include_router(tickets.router)
 app.include_router(notifications.router)
 app.include_router(notifications_rest.router)

@@ -43,7 +43,9 @@ async def list_hourly_rates(
     kind: RateKindQuery = Query(..., alias="kind"),
     session: AsyncSession = Depends(get_session),
 ) -> list[HourlyRateOut]:
-    await _ensure_user(session, auth_user_id)
+    ur = TimeTrackingUserRepository(session)
+    if not await ur.get_by_auth_user_id(auth_user_id):
+        return []
     repo = HourlyRateRepository(session)
     rows = await repo.list_by_user_and_kind(auth_user_id, kind.value)
     return [HourlyRateOut.model_validate(r) for r in rows]
