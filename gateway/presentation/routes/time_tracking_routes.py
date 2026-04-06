@@ -9,6 +9,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
+from presentation.schemas.time_manager_clients import (
+    TimeManagerClientCreateBody,
+    TimeManagerClientPatchBody,
+)
 
 from presentation.routes.time_tracking_hourly_proxy import (
     HourlyRateCreateBody,
@@ -209,6 +213,96 @@ async def upsert_user(
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
     return r.json()
+
+
+def _time_tracking_base_url() -> str:
+    settings = get_settings()
+    base = (settings.time_tracking_service_url or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(status_code=503, detail="Time tracking service not configured")
+    return base
+
+
+@router.get("/clients")
+async def list_time_manager_clients(_: dict = Depends(require_view_role)):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{base}/clients")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.get("/clients/{client_id}")
+async def get_time_manager_client(client_id: str, _: dict = Depends(require_view_role)):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{base}/clients/{client_id}")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.post("/clients")
+async def create_time_manager_client(
+    body: TimeManagerClientCreateBody,
+    _: dict = Depends(require_manage_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        payload = json.loads(body.model_dump_json(by_alias=False))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid client payload: {e}") from e
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(f"{base}/clients", json=payload)
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.patch("/clients/{client_id}")
+async def patch_time_manager_client(
+    client_id: str,
+    body: TimeManagerClientPatchBody,
+    _: dict = Depends(require_manage_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        payload = json.loads(body.model_dump_json(by_alias=False))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid client payload: {e}") from e
+    if not payload:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.patch(f"{base}/clients/{client_id}", json=payload)
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.delete("/clients/{client_id}", status_code=204)
+async def delete_time_manager_client(client_id: str, _: dict = Depends(require_manage_role)):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.delete(f"{base}/clients/{client_id}")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return None
 
 
 @router.delete("/users/{auth_user_id}")

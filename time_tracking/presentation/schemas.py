@@ -150,3 +150,57 @@ class TimeEntryPatchBody(BaseModel):
     is_billable: Optional[bool] = None
     project_id: Optional[str] = None
     description: Optional[str] = None
+
+
+class TimeManagerClientOut(BaseModel):
+    """Клиент time manager (настройки биллинга)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    address: Optional[str] = None
+    currency: str
+    invoice_due_mode: str
+    invoice_due_days_after_issue: Optional[int] = None
+    tax_percent: Optional[Decimal] = None
+    tax2_percent: Optional[Decimal] = None
+    discount_percent: Optional[Decimal] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class TimeManagerClientCreateBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(..., min_length=1, max_length=500)
+    address: Optional[str] = None
+    currency: str = Field("USD", max_length=10)
+    invoice_due_mode: str = Field("custom", alias="invoiceDueMode", max_length=50)
+    invoice_due_days_after_issue: Optional[int] = Field(
+        None,
+        alias="invoiceDueDaysAfterIssue",
+        ge=0,
+        le=3650,
+    )
+    tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
+    tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
+    discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)
+
+
+class TimeManagerClientPatchBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: Optional[str] = Field(None, max_length=500)
+    address: Optional[str] = None
+    currency: Optional[str] = Field(None, max_length=10)
+    invoice_due_mode: Optional[str] = Field(None, alias="invoiceDueMode", max_length=50)
+    invoice_due_days_after_issue: Optional[int] = Field(
+        None,
+        alias="invoiceDueDaysAfterIssue",
+        ge=0,
+        le=3650,
+    )
+    tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
+    tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
+    discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)

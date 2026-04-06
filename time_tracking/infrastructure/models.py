@@ -74,3 +74,22 @@ class TimeEntryModel(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeManagerClientModel(Base):
+    """Клиент для time manager: биллинг, валюта, срок оплаты, налоги, скидка."""
+
+    __tablename__ = "time_tracking_clients"
+    __table_args__ = (Index("ix_tt_clients_name", "name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
+    invoice_due_mode: Mapped[str] = mapped_column(String(50), nullable=False, default="custom")
+    invoice_due_days_after_issue: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tax_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    tax2_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import intervals_overlap, validate_range_order
 from application.ports import HealthRepositoryPort
-from infrastructure.models import TimeEntryModel, TimeTrackingUserModel, UserHourlyRateModel
+from infrastructure.models import (
+    TimeEntryModel,
+    TimeManagerClientModel,
+    TimeTrackingUserModel,
+    UserHourlyRateModel,
+)
 
 
 def _now_utc() -> datetime:
@@ -376,4 +381,83 @@ class TimeEntryRepository:
                 TimeEntryModel.id == entry_id,
             )
         )
+        return True
+
+
+class ClientRepository:
+    """Клиенты time manager (настройки биллинга)."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def list_all(self) -> list[TimeManagerClientModel]:
+        q = select(TimeManagerClientModel).order_by(TimeManagerClientModel.name.asc())
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(self, client_id: str) -> TimeManagerClientModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id)
+        )
+        return r.scalars().one_or_none()
+
+    async def create(
+        self,
+        *,
+        name: str,
+        address: str | None,
+        currency: str,
+        invoice_due_mode: str,
+        invoice_due_days_after_issue: int | None,
+        tax_percent: Decimal | None,
+        tax2_percent: Decimal | None,
+        discount_percent: Decimal | None,
+    ) -> TimeManagerClientModel:
+        cid = str(uuid.uuid4())
+        now = _now_utc()
+        row = TimeManagerClientModel(
+            id=cid,
+            name=name.strip(),
+            address=address,
+            currency=(currency or "USD").strip().upper()[:10],
+            invoice_due_mode=(invoice_due_mode or "custom").strip()[:50],
+            invoice_due_days_after_issue=invoice_due_days_after_issue,
+            tax_percent=tax_percent,
+            tax2_percent=tax2_percent,
+            discount_percent=discount_percent,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(self, client_id: str, patch: dict[str, Any]) -> TimeManagerClientModel | None:
+        row = await self.get_by_id(client_id)
+        if not row:
+            return None
+        if "name" in patch and patch["name"] is not None:
+            row.name = str(patch["name"]).strip()
+        if "address" in patch:
+            row.address = patch["address"]
+        if "currency" in patch and patch["currency"] is not None:
+            row.currency = str(patch["currency"]).strip().upper()[:10]
+        if "invoice_due_mode" in patch and patch["invoice_due_mode"] is not None:
+            row.invoice_due_mode = str(patch["invoice_due_mode"]).strip()[:50]
+        if "invoice_due_days_after_issue" in patch:
+            row.invoice_due_days_after_issue = patch["invoice_due_days_after_issue"]
+        if "tax_percent" in patch:
+            row.tax_percent = patch["tax_percent"]
+        if "tax2_percent" in patch:
+            row.tax2_percent = patch["tax2_percent"]
+        if "discount_percent" in patch:
+            row.discount_percent = patch["discount_percent"]
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, client_id: str) -> bool:
+        row = await self.get_by_id(client_id)
+        if not row:
+            return False
+        await self._session.execute(delete(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id))
         return True
