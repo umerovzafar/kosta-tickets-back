@@ -312,6 +312,7 @@ class TimeManagerClientProjectOut(BaseModel):
     send_budget_alerts: bool = False
     budget_alert_threshold_percent: Optional[Decimal] = None
     fixed_fee_amount: Optional[Decimal] = None
+    is_archived: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
     usage_count: int = 0
@@ -345,6 +346,7 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         alias="budgetAlertThresholdPercent",
     )
     fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    is_archived: bool = Field(False, alias="isArchived")
 
 
 class TimeManagerClientProjectPatchBody(BaseModel):
@@ -371,6 +373,7 @@ class TimeManagerClientProjectPatchBody(BaseModel):
         alias="budgetAlertThresholdPercent",
     )
     fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    is_archived: Optional[bool] = Field(None, alias="isArchived")
 
 
 class TimeManagerClientProjectCodeHintOut(BaseModel):

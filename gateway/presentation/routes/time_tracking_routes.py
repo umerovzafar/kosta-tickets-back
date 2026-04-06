@@ -2,10 +2,11 @@
 
 import json
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from starlette.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
@@ -458,12 +459,64 @@ async def get_client_project_code_hint(
     return r.json()
 
 
-@router.get("/clients/{client_id}/projects")
-async def list_client_projects(client_id: str, _: dict = Depends(require_view_role)):
+@router.post("/clients/{client_id}/projects/{project_id}/duplicate")
+async def duplicate_client_project(
+    client_id: str,
+    project_id: str,
+    _: dict = Depends(require_manage_role),
+):
     base = _time_tracking_base_url()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/projects")
+            r = await client.post(
+                f"{base}/clients/{client_id}/projects/{project_id}/duplicate",
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.get("/clients/{client_id}/projects/{project_id}/export")
+async def export_client_project(
+    client_id: str,
+    project_id: str,
+    export_format: Literal["json", "csv"] = Query("json", alias="format"),
+    _: dict = Depends(require_view_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{base}/clients/{client_id}/projects/{project_id}/export",
+                params={"format": export_format},
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    out_headers: dict[str, str] = {}
+    if ct := r.headers.get("content-type"):
+        out_headers["Content-Type"] = ct
+    if cd := r.headers.get("content-disposition"):
+        out_headers["Content-Disposition"] = cd
+    return Response(content=r.content, status_code=r.status_code, headers=out_headers)
+
+
+@router.get("/clients/{client_id}/projects")
+async def list_client_projects(
+    client_id: str,
+    include_archived: bool = Query(False, alias="includeArchived"),
+    _: dict = Depends(require_view_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{base}/clients/{client_id}/projects",
+                params={"includeArchived": "true" if include_archived else "false"},
+            )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Time tracking service unavailable")
     if r.status_code >= 400:

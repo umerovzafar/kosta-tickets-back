@@ -707,12 +707,18 @@ class ClientProjectRepository:
         s = str(code).strip()
         return s if s else None
 
-    async def list_for_client(self, client_id: str) -> list[TimeManagerClientProjectModel]:
-        q = (
-            select(TimeManagerClientProjectModel)
-            .where(TimeManagerClientProjectModel.client_id == client_id)
-            .order_by(TimeManagerClientProjectModel.name.asc())
+    async def list_for_client(
+        self,
+        client_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[TimeManagerClientProjectModel]:
+        q = select(TimeManagerClientProjectModel).where(
+            TimeManagerClientProjectModel.client_id == client_id,
         )
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientProjectModel.name.asc())
         r = await self._session.execute(q)
         return list(r.scalars().all())
 
@@ -771,6 +777,58 @@ class ClientProjectRepository:
         n = r.scalar_one()
         return int(n or 0) > 0
 
+    async def allocate_duplicate_code(self, client_id: str, base: str | None) -> str | None:
+        """Уникальный код для копии: `code-copy`, `code-copy-2`, … в пределах 64 символов."""
+        norm = self._normalize_code(base)
+        if not norm:
+            return None
+        for i in range(0, 200):
+            suffix = "-copy" if i == 0 else f"-copy-{i + 1}"
+            max_prefix = max(1, 64 - len(suffix))
+            prefix = norm[:max_prefix]
+            cand = f"{prefix}{suffix}"
+            if not await self.has_code_conflict(client_id, cand):
+                return cand
+        return None
+
+    @staticmethod
+    def _name_with_copy_suffix(name: str) -> str:
+        suffix = " (копия)"
+        n = name.strip()
+        if len(n) + len(suffix) <= 500:
+            return n + suffix
+        return n[: 500 - len(suffix)] + suffix
+
+    async def duplicate_from(
+        self,
+        client_id: str,
+        project_id: str,
+    ) -> TimeManagerClientProjectModel | None:
+        src = await self.get_by_id(client_id, project_id)
+        if not src:
+            return None
+        new_code = await self.allocate_duplicate_code(client_id, src.code)
+        return await self.create(
+            client_id=client_id,
+            name=self._name_with_copy_suffix(src.name),
+            code=new_code,
+            start_date=src.start_date,
+            end_date=src.end_date,
+            notes=src.notes,
+            report_visibility=src.report_visibility,
+            project_type=src.project_type,
+            billable_rate_type=src.billable_rate_type,
+            budget_type=src.budget_type,
+            budget_amount=src.budget_amount,
+            budget_hours=src.budget_hours,
+            budget_resets_every_month=src.budget_resets_every_month,
+            budget_includes_expenses=src.budget_includes_expenses,
+            send_budget_alerts=src.send_budget_alerts,
+            budget_alert_threshold_percent=src.budget_alert_threshold_percent,
+            fixed_fee_amount=src.fixed_fee_amount,
+            is_archived=False,
+        )
+
     async def time_entries_count(self, project_id: str) -> int:
         q = select(func.count()).select_from(TimeEntryModel).where(
             TimeEntryModel.project_id == project_id,
@@ -799,6 +857,7 @@ class ClientProjectRepository:
         send_budget_alerts: bool = False,
         budget_alert_threshold_percent: Decimal | None = None,
         fixed_fee_amount: Decimal | None = None,
+        is_archived: bool = False,
     ) -> TimeManagerClientProjectModel:
         pid = str(uuid.uuid4())
         now = _now_utc()
@@ -823,6 +882,7 @@ class ClientProjectRepository:
             send_budget_alerts=send_budget_alerts,
             budget_alert_threshold_percent=budget_alert_threshold_percent,
             fixed_fee_amount=fixed_fee_amount,
+            is_archived=bool(is_archived),
             created_at=now,
             updated_at=None,
         )
@@ -873,6 +933,8 @@ class ClientProjectRepository:
             row.budget_alert_threshold_percent = _decimal_none(patch["budget_alert_threshold_percent"])
         if "fixed_fee_amount" in patch:
             row.fixed_fee_amount = _decimal_none(patch["fixed_fee_amount"])
+        if "is_archived" in patch and patch["is_archived"] is not None:
+            row.is_archived = bool(patch["is_archived"])
         row.updated_at = _now_utc()
         self._session.add(row)
         return row

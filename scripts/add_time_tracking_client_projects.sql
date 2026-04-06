@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS time_tracking_client_projects (
     send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE,
     budget_alert_threshold_percent NUMERIC(8, 2),
     fixed_fee_amount NUMERIC(18, 4),
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ
 );

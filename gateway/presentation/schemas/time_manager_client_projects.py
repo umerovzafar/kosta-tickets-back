@@ -34,6 +34,7 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         alias="budgetAlertThresholdPercent",
     )
     fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    is_archived: bool = Field(False, alias="isArchived")
 
 
 class TimeManagerClientProjectPatchBody(BaseModel):
@@ -60,3 +61,4 @@ class TimeManagerClientProjectPatchBody(BaseModel):
         alias="budgetAlertThresholdPercent",
     )
     fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    is_archived: Optional[bool] = Field(None, alias="isArchived")

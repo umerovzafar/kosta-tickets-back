@@ -161,6 +161,7 @@ async def apply_client_projects_schema_patch(conn: AsyncConnection) -> None:
                 send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE,
                 budget_alert_threshold_percent NUMERIC(8, 2),
                 fixed_fee_amount NUMERIC(18, 4),
+                is_archived BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMPTZ NOT NULL,
                 updated_at TIMESTAMPTZ
             )
@@ -185,6 +186,19 @@ async def apply_client_projects_schema_patch(conn: AsyncConnection) -> None:
         )
     )
     await apply_client_projects_billing_columns_patch(conn)
+    await apply_client_projects_is_archived_patch(conn)
+
+
+async def apply_client_projects_is_archived_patch(conn: AsyncConnection) -> None:
+    """Флаг архива проекта (скрытие из списков по умолчанию)."""
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_client_projects
+            ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE
+            """
+        )
+    )
 
 
 async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> None:

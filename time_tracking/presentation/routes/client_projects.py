@@ -1,8 +1,12 @@
 """Проекты клиента time manager."""
 
+import csv
+import json
 from datetime import date
+from io import StringIO
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
@@ -54,6 +58,7 @@ def _project_out(row, usage: int) -> TimeManagerClientProjectOut:
         send_budget_alerts=row.send_budget_alerts,
         budget_alert_threshold_percent=row.budget_alert_threshold_percent,
         fixed_fee_amount=row.fixed_fee_amount,
+        is_archived=row.is_archived,
         created_at=row.created_at,
         updated_at=row.updated_at,
         usage_count=usage,
@@ -90,11 +95,88 @@ async def get_client_project_code_hint(
     )
 
 
-@router.get("/{client_id}/projects", response_model=list[TimeManagerClientProjectOut])
-async def list_client_projects(client_id: str, session: AsyncSession = Depends(get_session)):
+def _export_filename_stub(code: str | None, project_id: str) -> str:
+    if code and str(code).strip():
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(code).strip()[:48])
+        return safe or project_id
+    return project_id
+
+
+@router.post(
+    "/{client_id}/projects/{project_id}/duplicate",
+    response_model=TimeManagerClientProjectOut,
+)
+async def duplicate_client_project(
+    client_id: str,
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+):
     await _require_client(session, client_id)
     repo = ClientProjectRepository(session)
-    rows = await repo.list_for_client(client_id)
+    try:
+        row = await repo.duplicate_from(client_id, project_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Project not found")
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Could not duplicate project (code conflict)",
+        ) from None
+    await session.refresh(row)
+    usage = await repo.time_entries_count(row.id)
+    return _project_out(row, usage)
+
+
+@router.get("/{client_id}/projects/{project_id}/export")
+async def export_client_project(
+    client_id: str,
+    project_id: str,
+    export_format: Literal["json", "csv"] = Query("json", alias="format"),
+    session: AsyncSession = Depends(get_session),
+):
+    await _require_client(session, client_id)
+    repo = ClientProjectRepository(session)
+    row = await repo.get_by_id(client_id, project_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+    usage = await repo.time_entries_count(row.id)
+    data = _project_out(row, usage).model_dump(mode="json")
+    stub = _export_filename_stub(row.code, row.id)
+    if export_format == "json":
+        body = json.dumps(data, ensure_ascii=False, indent=2)
+        return Response(
+            content=body.encode("utf-8"),
+            media_type="application/json; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{stub}.json"',
+            },
+        )
+    buf = StringIO()
+    w = csv.writer(buf)
+    flat = {k: ("" if v is None else v) for k, v in data.items()}
+    w.writerow(list(flat.keys()))
+    w.writerow([str(flat[k]) for k in flat.keys()])
+    csv_text = "\ufeff" + buf.getvalue()
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{stub}.csv"',
+        },
+    )
+
+
+@router.get("/{client_id}/projects", response_model=list[TimeManagerClientProjectOut])
+async def list_client_projects(
+    client_id: str,
+    include_archived: bool = Query(False, alias="includeArchived"),
+    session: AsyncSession = Depends(get_session),
+):
+    await _require_client(session, client_id)
+    repo = ClientProjectRepository(session)
+    rows = await repo.list_for_client(client_id, include_archived=include_archived)
     out: list[TimeManagerClientProjectOut] = []
     for r in rows:
         usage = await repo.time_entries_count(r.id)
@@ -153,6 +235,7 @@ async def create_client_project(
             send_budget_alerts=body.send_budget_alerts,
             budget_alert_threshold_percent=body.budget_alert_threshold_percent,
             fixed_fee_amount=body.fixed_fee_amount,
+            is_archived=body.is_archived,
         )
         await session.commit()
     except IntegrityError:
@@ -207,6 +290,8 @@ async def patch_client_project(
     if "project_type" in patch and patch["project_type"] is not None:
         pt = patch["project_type"]
         patch["project_type"] = pt.value if hasattr(pt, "value") else str(pt)
+    if "is_archived" in patch and patch["is_archived"] is not None:
+        patch["is_archived"] = bool(patch["is_archived"])
 
     try:
         updated = await repo.update(client_id, project_id, patch)
