@@ -134,3 +134,39 @@ class TimeManagerClientExpenseCategoryModel(Base):
     sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeManagerClientProjectModel(Base):
+    """Проект time manager, привязанный к клиенту (справочник для записей времени и отчётов)."""
+
+    __tablename__ = "time_tracking_client_projects"
+    __table_args__ = (Index("ix_tt_client_projects_client", "client_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_clients.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_visibility: Mapped[str] = mapped_column(String(32), nullable=False, default="managers_only")
+    project_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="time_and_materials",
+    )
+    billable_rate_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    budget_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    budget_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    budget_hours: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    budget_resets_every_month: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    budget_includes_expenses: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    send_budget_alerts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    budget_alert_threshold_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    fixed_fee_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

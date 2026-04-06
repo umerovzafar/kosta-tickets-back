@@ -274,3 +274,107 @@ class TimeManagerClientExpenseCategoryPatchBody(BaseModel):
     has_unit_price: Optional[bool] = Field(None, alias="hasUnitPrice")
     is_archived: Optional[bool] = Field(None, alias="isArchived")
     sort_order: Optional[int] = Field(None, alias="sortOrder")
+
+
+class ProjectReportVisibility(str, Enum):
+    managers_only = "managers_only"
+    all_assigned = "all_assigned"
+
+
+class ProjectType(str, Enum):
+    """Тип биллинга проекта (вкладки на UI)."""
+
+    time_and_materials = "time_and_materials"
+    fixed_fee = "fixed_fee"
+    non_billable = "non_billable"
+
+
+class TimeManagerClientProjectOut(BaseModel):
+    """Проект клиента time manager."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    client_id: str
+    name: str
+    code: Optional[str] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    notes: Optional[str] = None
+    report_visibility: str
+    project_type: str
+    billable_rate_type: Optional[str] = None
+    budget_type: Optional[str] = None
+    budget_amount: Optional[Decimal] = None
+    budget_hours: Optional[Decimal] = None
+    budget_resets_every_month: bool = False
+    budget_includes_expenses: bool = False
+    send_budget_alerts: bool = False
+    budget_alert_threshold_percent: Optional[Decimal] = None
+    fixed_fee_amount: Optional[Decimal] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    usage_count: int = 0
+    deletable: bool = True
+
+
+class TimeManagerClientProjectCreateBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(..., min_length=1, max_length=500)
+    code: Optional[str] = Field(None, max_length=64)
+    start_date: Optional[date] = Field(None, alias="startDate")
+    end_date: Optional[date] = Field(None, alias="endDate")
+    notes: Optional[str] = None
+    report_visibility: ProjectReportVisibility = Field(
+        ProjectReportVisibility.managers_only,
+        alias="reportVisibility",
+    )
+    project_type: ProjectType = Field(ProjectType.time_and_materials, alias="projectType")
+    billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
+    budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
+    budget_hours: Optional[Decimal] = Field(None, ge=0, alias="budgetHours")
+    budget_resets_every_month: bool = Field(False, alias="budgetResetsEveryMonth")
+    budget_includes_expenses: bool = Field(False, alias="budgetIncludesExpenses")
+    send_budget_alerts: bool = Field(False, alias="sendBudgetAlerts")
+    budget_alert_threshold_percent: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        le=100,
+        alias="budgetAlertThresholdPercent",
+    )
+    fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+
+
+class TimeManagerClientProjectPatchBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: Optional[str] = Field(None, max_length=500)
+    code: Optional[str] = Field(None, max_length=64)
+    start_date: Optional[date] = Field(None, alias="startDate")
+    end_date: Optional[date] = Field(None, alias="endDate")
+    notes: Optional[str] = None
+    report_visibility: Optional[ProjectReportVisibility] = Field(None, alias="reportVisibility")
+    project_type: Optional[ProjectType] = Field(None, alias="projectType")
+    billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
+    budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
+    budget_hours: Optional[Decimal] = Field(None, ge=0, alias="budgetHours")
+    budget_resets_every_month: Optional[bool] = Field(None, alias="budgetResetsEveryMonth")
+    budget_includes_expenses: Optional[bool] = Field(None, alias="budgetIncludesExpenses")
+    send_budget_alerts: Optional[bool] = Field(None, alias="sendBudgetAlerts")
+    budget_alert_threshold_percent: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        le=100,
+        alias="budgetAlertThresholdPercent",
+    )
+    fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+
+
+class TimeManagerClientProjectCodeHintOut(BaseModel):
+    """Подсказка для поля кода проекта (последний код и простой следующий)."""
+
+    last_code: Optional[str] = None
+    suggested_next: Optional[str] = None

@@ -78,6 +78,12 @@ Content-Type: application/json
 | **Категории расходов** — создать | `POST /api/v1/time-tracking/clients/{clientId}/expense-categories` |
 | **Категории расходов** — изменить | `PATCH /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` |
 | **Категории расходов** — удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` → **204** (если `usage_count` > 0 — **409**) |
+| **Проекты клиента** — подсказка кода | `GET /api/v1/time-tracking/clients/{clientId}/projects/code-hint` |
+| **Проекты клиента** — список | `GET /api/v1/time-tracking/clients/{clientId}/projects` |
+| **Проекты клиента** — один | `GET /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` |
+| **Проекты клиента** — создать | `POST /api/v1/time-tracking/clients/{clientId}/projects` |
+| **Проекты клиента** — изменить | `PATCH /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` |
+| **Проекты клиента** — удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` → **204** (если есть записи времени — **409**) |
 
 Ответы API в основном в **snake_case**. В **телах запросов** gateway часто принимает **camelCase** (см. примеры ниже).
 
@@ -168,6 +174,43 @@ await apiFetch(`/api/v1/time-tracking/clients/${clientId}/tasks`, {
 | Порядок сортировки | `sort_order` | `sortOrder` |
 
 Имя **уникально среди активных** (не архивных) категорий одного клиента; при конфликте — **409**.
+
+---
+
+## 5.2. Проекты по клиентам
+
+Проект привязан к клиенту; в ответе: `usage_count`, `deletable` (удаление запрещено, если есть записи времени с этим `project_id`). Подробнее: **`docs/TIME_TRACKING_PROJECTS_DESIGN.md`**.
+
+| Назначение | Метод и путь |
+|------------|----------------|
+| Подсказка кода (`last_code`, `suggested_next`) | `GET /api/v1/time-tracking/clients/{clientId}/projects/code-hint` |
+| Список | `GET /api/v1/time-tracking/clients/{clientId}/projects` |
+| Один проект | `GET /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` |
+| Создать | `POST /api/v1/time-tracking/clients/{clientId}/projects` |
+| Изменить | `PATCH /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` |
+| Удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/projects/{projectId}` → **204** |
+
+**Поля** (форма «New project» ↔ API):
+
+| Поле в UI | Ответ (snake_case) | Тело запроса (camelCase) |
+|-----------|---------------------|---------------------------|
+| Project name | `name` | `name` |
+| Project code | `code` | `code` |
+| Starts on / Ends on | `start_date`, `end_date` | `startDate`, `endDate` |
+| Notes | `notes` | `notes` |
+| Видимость отчёта | `report_visibility` (`managers_only` \| `all_assigned`) | `reportVisibility` |
+| Тип проекта (T&M / Fixed / Non-billable) | `project_type` (`time_and_materials` \| `fixed_fee` \| `non_billable`) | `projectType` |
+| Тип ставок (напр. person billable rate) | `billable_rate_type` | `billableRateType` |
+| Тип бюджета (no budget, total fees, hours, …) | `budget_type` | `budgetType` |
+| Сумма бюджета | `budget_amount` | `budgetAmount` |
+| Бюджет в часах (если используете) | `budget_hours` | `budgetHours` |
+| Бюджет сбрасывается каждый месяц | `budget_resets_every_month` | `budgetResetsEveryMonth` |
+| В бюджет входят расходы | `budget_includes_expenses` | `budgetIncludesExpenses` |
+| Уведомления о превышении бюджета | `send_budget_alerts` | `sendBudgetAlerts` |
+| Порог алерта, % | `budget_alert_threshold_percent` | `budgetAlertThresholdPercent` |
+| Фиксированная сумма (вкладка Fixed fee) | `fixed_fee_amount` | `fixedFeeAmount` |
+
+Код **уникален среди непустых** значений в рамках одного клиента; при конфликте — **409**. Значения `billable_rate_type` и `budget_type` — строки по соглашению с UI (например `person_billable_rate`, `total_project_fees`, `no_budget`).
 
 ---
 
@@ -289,7 +332,7 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 | `…/time-tracking/users/{id}/hourly-rates…` | `…/users/{id}/hourly-rates…` |
 | `…/time-tracking/users/{id}/time-entries…` | `…/users/{id}/time-entries…` |
 
-**`team-workload`**, **`/clients`**, **`/clients/.../tasks`** и **`/clients/.../expense-categories`** доступны **только** под **`/api/v1/time-tracking/...`**.
+**`team-workload`**, **`/clients`**, **`/clients/.../tasks`**, **`/clients/.../expense-categories`** и **`/clients/.../projects`** доступны **только** под **`/api/v1/time-tracking/...`**.
 
 ---
 
@@ -297,9 +340,9 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 
 | Действие | Кто может |
 |----------|-----------|
-| Просмотр списка пользователей TT, team-workload, billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов** | Главный администратор, Администратор, Партнёр, IT, Офис-менеджер |
+| Просмотр списка пользователей TT, team-workload, billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов**, **проектов клиентов** | Главный администратор, Администратор, Партнёр, IT, Офис-менеджер |
 | Ставки **cost** (себестоимость) — просмотр и CRUD | Только Главный администратор и Администратор |
-| Создание / изменение / удаление billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов** | Главный администратор, Администратор, Партнёр |
+| Создание / изменение / удаление billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов**, **проектов клиентов** | Главный администратор, Администратор, Партнёр |
 | **`PATCH /users/me/weekly-capacity-hours`** | Любой авторизованный пользователь (свой профиль) |
 
 ---
@@ -327,4 +370,5 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 | `docs/TIME_TRACKING_TEAM_WORKLOAD.md` | Поля ответа team-workload, ёмкость |
 | `docs/FRONTEND_CONNECTION.md` | **Подключение фронта к API: env, proxy, прод, CORS, проверка** (копия: `Docs/FRONTEND_CONNECTION.md`) |
 | `docs/FRONTEND_TIME_MANAGER_CLIENTS.md` | **Чеклист фронта по клиентам Time Manager** (задачи, категории расходов, роли) |
+| `docs/TIME_TRACKING_PROJECTS_DESIGN.md` | **Проекты Time Tracker и связь с клиентом** (модель, API, внедрение) |
 | `docs/TIME_TRACKING_FRONTEND.md` | Эта инструкция по Time Manager (копия: `Docs/time_tracking_frontend.md`) |

@@ -135,3 +135,71 @@ async def apply_client_expense_categories_schema_patch(conn: AsyncConnection) ->
             """
         )
     )
+
+
+async def apply_client_projects_schema_patch(conn: AsyncConnection) -> None:
+    """Проекты по клиентам time manager — идемпотентно (PostgreSQL)."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_client_projects (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES time_tracking_clients (id) ON DELETE CASCADE,
+                name VARCHAR(500) NOT NULL,
+                code VARCHAR(64),
+                start_date DATE,
+                end_date DATE,
+                notes TEXT,
+                report_visibility VARCHAR(32) NOT NULL DEFAULT 'managers_only',
+                project_type VARCHAR(32) NOT NULL DEFAULT 'time_and_materials',
+                billable_rate_type VARCHAR(64),
+                budget_type VARCHAR(64),
+                budget_amount NUMERIC(18, 4),
+                budget_hours NUMERIC(12, 2),
+                budget_resets_every_month BOOLEAN NOT NULL DEFAULT FALSE,
+                budget_includes_expenses BOOLEAN NOT NULL DEFAULT FALSE,
+                send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE,
+                budget_alert_threshold_percent NUMERIC(8, 2),
+                fixed_fee_amount NUMERIC(18, 4),
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_client_projects_client
+                ON time_tracking_client_projects (client_id)
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_tt_client_project_code
+                ON time_tracking_client_projects (client_id, lower(trim(code)))
+                WHERE code IS NOT NULL AND trim(code) <> ''
+            """
+        )
+    )
+    await apply_client_projects_billing_columns_patch(conn)
+
+
+async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> None:
+    """Добавляет колонки биллинга/бюджета к уже существующей таблице проектов."""
+    stmts = [
+        "ADD COLUMN IF NOT EXISTS project_type VARCHAR(32) NOT NULL DEFAULT 'time_and_materials'",
+        "ADD COLUMN IF NOT EXISTS billable_rate_type VARCHAR(64)",
+        "ADD COLUMN IF NOT EXISTS budget_type VARCHAR(64)",
+        "ADD COLUMN IF NOT EXISTS budget_amount NUMERIC(18, 4)",
+        "ADD COLUMN IF NOT EXISTS budget_hours NUMERIC(12, 2)",
+        "ADD COLUMN IF NOT EXISTS budget_resets_every_month BOOLEAN NOT NULL DEFAULT FALSE",
+        "ADD COLUMN IF NOT EXISTS budget_includes_expenses BOOLEAN NOT NULL DEFAULT FALSE",
+        "ADD COLUMN IF NOT EXISTS send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE",
+        "ADD COLUMN IF NOT EXISTS budget_alert_threshold_percent NUMERIC(8, 2)",
+        "ADD COLUMN IF NOT EXISTS fixed_fee_amount NUMERIC(18, 4)",
+    ]
+    for col in stmts:
+        await conn.execute(text(f"ALTER TABLE time_tracking_client_projects {col}"))

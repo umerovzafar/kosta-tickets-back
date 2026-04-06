@@ -1,4 +1,4 @@
-# Фронтенд: клиенты Time Manager (задачи и категории расходов)
+# Фронтенд: клиенты Time Manager (задачи, категории расходов, проекты)
 
 Отдельный чеклист по разделу **клиентов** в учёте времени: что сделать в UI и как ходить в API. Общая схема подключения к gateway: **`docs/FRONTEND_CONNECTION.md`**. Полная таблица эндпоинтов учёта времени: **`docs/TIME_TRACKING_FRONTEND.md`**.
 
@@ -20,8 +20,8 @@
 
 | Действие в UI | Кто может |
 |---------------|-----------|
-| Просмотр списка клиентов, карточки клиента, задач, категорий расходов | Главный администратор, Администратор, Партнёр, IT отдел, Офис-менеджер |
-| Создание / редактирование / удаление клиента, задач, категорий расходов | Главный администратор, Администратор, Партнёр |
+| Просмотр списка клиентов, карточки клиента, задач, категорий расходов, проектов | Главный администратор, Администратор, Партнёр, IT отдел, Офис-менеджер |
+| Создание / редактирование / удаление клиента, задач, категорий расходов, проектов | Главный администратор, Администратор, Партнёр |
 
 **На фронте:** скрывайте кнопки «Создать / Сохранить / Удалить / Архивировать», если роль не из второй строки; при **403** показывайте понятное сообщение (текст из `detail` в ответе, если есть).
 
@@ -124,6 +124,21 @@
 
 ---
 
+## 5.1. Проекты клиента
+
+Проекты привязаны к клиенту; подробности домена — **`docs/TIME_TRACKING_PROJECTS_DESIGN.md`**.
+
+| № | Что сделать | API |
+|---|-------------|-----|
+| 1 | Подсказка кода («Last project code»): `last_code`, `suggested_next`. | `GET /api/v1/time-tracking/clients/{clientId}/projects/code-hint` |
+| 2 | Список проектов. | `GET /api/v1/time-tracking/clients/{clientId}/projects` |
+| 3 | Создание / правка формы «New project» (клиент, имя, код, даты, заметки, видимость отчёта). | `POST` / `PATCH .../projects/{projectId}` |
+| 4 | Удаление — только при `deletable`; иначе **409** (есть записи времени). | `DELETE .../projects/{projectId}` |
+
+В теле запроса: `startDate`, `endDate`, `reportVisibility` (`managers_only` \| `all_assigned`). В ответе: `usage_count`, `deletable`.
+
+---
+
 ## 6. Маршрутизация SPA (рекомендация)
 
 | Маршрут | Назначение |
@@ -133,6 +148,7 @@
 | `/time-manager/clients/:clientId` | Карточка / редактирование |
 | `/time-manager/clients/:clientId/tasks` | Задачи (или вкладка в карточке) |
 | `/time-manager/clients/:clientId/expense-categories` | Категории расходов (или вкладка) |
+| `/time-manager/clients/:clientId/projects` | Проекты (или вкладка) |
 
 Имена путей на ваше усмотрение; важно хранить **`clientId`** из API.
 
@@ -179,6 +195,31 @@ export interface TimeManagerClientExpenseCategory {
   created_at: string
   updated_at: string | null
 }
+
+export interface TimeManagerClientProject {
+  id: string
+  client_id: string
+  name: string
+  code: string | null
+  start_date: string | null
+  end_date: string | null
+  notes: string | null
+  report_visibility: 'managers_only' | 'all_assigned'
+  project_type: 'time_and_materials' | 'fixed_fee' | 'non_billable'
+  billable_rate_type: string | null
+  budget_type: string | null
+  budget_amount: string | number | null
+  budget_hours: string | number | null
+  budget_resets_every_month: boolean
+  budget_includes_expenses: boolean
+  send_budget_alerts: boolean
+  budget_alert_threshold_percent: string | number | null
+  fixed_fee_amount: string | number | null
+  usage_count: number
+  deletable: boolean
+  created_at: string
+  updated_at: string | null
+}
 ```
 
 Проценты и денежные поля с бэка иногда приходят строками из `Decimal` — при необходимости нормализуйте в числа на границе API.
@@ -201,7 +242,8 @@ export interface TimeManagerClientExpenseCategory {
 2. Реализовать **список / создание / просмотр / правка / удаление** клиента.  
 3. Для выбранного **`clientId`** — **задачи**: список, CRUD.  
 4. Для того же **`clientId`** — **категории расходов**: список (с опцией архива), создание, правка (включая архив), удаление с учётом `deletable`.  
-5. Ограничить действия по **ролям** (просмотр vs управление).  
-6. Обработать **403 / 404 / 409** и показывать `detail` пользователю.
+5. Для того же **`clientId`** — **проекты**: `code-hint`, список, CRUD; в форме записи времени использовать **`projectId`** из созданного проекта.  
+6. Ограничить действия по **ролям** (просмотр vs управление).  
+7. Обработать **403 / 404 / 409** и показывать `detail` пользователю.
 
 После реализации имеет смысл прогнать сценарии под учётными записями с ролями «Офис-менеджер» (только чтение по таблице) и «Администратор» (полный CRUD).

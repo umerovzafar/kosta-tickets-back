@@ -12,6 +12,7 @@ from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
     TimeManagerClientExpenseCategoryModel,
+    TimeManagerClientProjectModel,
     TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
@@ -669,6 +670,221 @@ class ClientExpenseCategoryRepository:
             delete(TimeManagerClientExpenseCategoryModel).where(
                 TimeManagerClientExpenseCategoryModel.client_id == client_id,
                 TimeManagerClientExpenseCategoryModel.id == category_id,
+            )
+        )
+        return True
+
+
+_REPORT_VISIBILITY = frozenset({"managers_only", "all_assigned"})
+_PROJECT_TYPES = frozenset({"time_and_materials", "fixed_fee", "non_billable"})
+
+
+def _strip_opt(v: str | None) -> str | None:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s if s else None
+
+
+def _decimal_none(v: Any) -> Decimal | None:
+    if v is None:
+        return None
+    if isinstance(v, Decimal):
+        return v
+    return Decimal(str(v))
+
+
+class ClientProjectRepository:
+    """Проекты клиента time manager."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    @staticmethod
+    def _normalize_code(code: str | None) -> str | None:
+        if code is None:
+            return None
+        s = str(code).strip()
+        return s if s else None
+
+    async def list_for_client(self, client_id: str) -> list[TimeManagerClientProjectModel]:
+        q = (
+            select(TimeManagerClientProjectModel)
+            .where(TimeManagerClientProjectModel.client_id == client_id)
+            .order_by(TimeManagerClientProjectModel.name.asc())
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(
+        self,
+        client_id: str,
+        project_id: str,
+    ) -> TimeManagerClientProjectModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientProjectModel).where(
+                TimeManagerClientProjectModel.client_id == client_id,
+                TimeManagerClientProjectModel.id == project_id,
+            )
+        )
+        return r.scalars().one_or_none()
+
+    async def get_last_project_with_code(
+        self,
+        client_id: str,
+    ) -> TimeManagerClientProjectModel | None:
+        q = (
+            select(TimeManagerClientProjectModel)
+            .where(
+                TimeManagerClientProjectModel.client_id == client_id,
+                TimeManagerClientProjectModel.code.isnot(None),
+                func.trim(TimeManagerClientProjectModel.code) != "",
+            )
+            .order_by(
+                TimeManagerClientProjectModel.updated_at.desc().nulls_last(),
+                TimeManagerClientProjectModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        r = await self._session.execute(q)
+        return r.scalars().one_or_none()
+
+    async def has_code_conflict(
+        self,
+        client_id: str,
+        code: str | None,
+        *,
+        exclude_project_id: str | None = None,
+    ) -> bool:
+        norm = self._normalize_code(code)
+        if not norm:
+            return False
+        key = norm.lower()
+        cond = and_(
+            TimeManagerClientProjectModel.client_id == client_id,
+            func.lower(func.trim(TimeManagerClientProjectModel.code)) == key,
+        )
+        if exclude_project_id:
+            cond = and_(cond, TimeManagerClientProjectModel.id != exclude_project_id)
+        q = select(func.count()).select_from(TimeManagerClientProjectModel).where(cond)
+        r = await self._session.execute(q)
+        n = r.scalar_one()
+        return int(n or 0) > 0
+
+    async def time_entries_count(self, project_id: str) -> int:
+        q = select(func.count()).select_from(TimeEntryModel).where(
+            TimeEntryModel.project_id == project_id,
+        )
+        r = await self._session.execute(q)
+        n = r.scalar_one()
+        return int(n or 0)
+
+    async def create(
+        self,
+        *,
+        client_id: str,
+        name: str,
+        code: str | None,
+        start_date: date | None,
+        end_date: date | None,
+        notes: str | None,
+        report_visibility: str,
+        project_type: str = "time_and_materials",
+        billable_rate_type: str | None = None,
+        budget_type: str | None = None,
+        budget_amount: Decimal | None = None,
+        budget_hours: Decimal | None = None,
+        budget_resets_every_month: bool = False,
+        budget_includes_expenses: bool = False,
+        send_budget_alerts: bool = False,
+        budget_alert_threshold_percent: Decimal | None = None,
+        fixed_fee_amount: Decimal | None = None,
+    ) -> TimeManagerClientProjectModel:
+        pid = str(uuid.uuid4())
+        now = _now_utc()
+        rv = report_visibility if report_visibility in _REPORT_VISIBILITY else "managers_only"
+        pt = project_type if project_type in _PROJECT_TYPES else "time_and_materials"
+        row = TimeManagerClientProjectModel(
+            id=pid,
+            client_id=client_id,
+            name=name.strip(),
+            code=self._normalize_code(code),
+            start_date=start_date,
+            end_date=end_date,
+            notes=notes,
+            report_visibility=rv,
+            project_type=pt,
+            billable_rate_type=(_strip_opt(billable_rate_type)),
+            budget_type=(_strip_opt(budget_type)),
+            budget_amount=budget_amount,
+            budget_hours=budget_hours,
+            budget_resets_every_month=budget_resets_every_month,
+            budget_includes_expenses=budget_includes_expenses,
+            send_budget_alerts=send_budget_alerts,
+            budget_alert_threshold_percent=budget_alert_threshold_percent,
+            fixed_fee_amount=fixed_fee_amount,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(
+        self,
+        client_id: str,
+        project_id: str,
+        patch: dict[str, Any],
+    ) -> TimeManagerClientProjectModel | None:
+        row = await self.get_by_id(client_id, project_id)
+        if not row:
+            return None
+        if "name" in patch and patch["name"] is not None:
+            row.name = str(patch["name"]).strip()
+        if "code" in patch:
+            v = patch["code"]
+            row.code = None if v is None else self._normalize_code(str(v))
+        if "start_date" in patch:
+            row.start_date = patch["start_date"]
+        if "end_date" in patch:
+            row.end_date = patch["end_date"]
+        if "notes" in patch:
+            row.notes = patch["notes"]
+        if "report_visibility" in patch and patch["report_visibility"] is not None:
+            rv = str(patch["report_visibility"])
+            row.report_visibility = rv if rv in _REPORT_VISIBILITY else row.report_visibility
+        if "project_type" in patch and patch["project_type"] is not None:
+            pt = str(patch["project_type"])
+            row.project_type = pt if pt in _PROJECT_TYPES else row.project_type
+        if "billable_rate_type" in patch:
+            row.billable_rate_type = _strip_opt(patch["billable_rate_type"])
+        if "budget_type" in patch:
+            row.budget_type = _strip_opt(patch["budget_type"])
+        if "budget_amount" in patch:
+            row.budget_amount = _decimal_none(patch["budget_amount"])
+        if "budget_hours" in patch:
+            row.budget_hours = _decimal_none(patch["budget_hours"])
+        if "budget_resets_every_month" in patch:
+            row.budget_resets_every_month = bool(patch["budget_resets_every_month"])
+        if "budget_includes_expenses" in patch:
+            row.budget_includes_expenses = bool(patch["budget_includes_expenses"])
+        if "send_budget_alerts" in patch:
+            row.send_budget_alerts = bool(patch["send_budget_alerts"])
+        if "budget_alert_threshold_percent" in patch:
+            row.budget_alert_threshold_percent = _decimal_none(patch["budget_alert_threshold_percent"])
+        if "fixed_fee_amount" in patch:
+            row.fixed_fee_amount = _decimal_none(patch["fixed_fee_amount"])
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, client_id: str, project_id: str) -> bool:
+        row = await self.get_by_id(client_id, project_id)
+        if not row:
+            return False
+        await self._session.execute(
+            delete(TimeManagerClientProjectModel).where(
+                TimeManagerClientProjectModel.client_id == client_id,
+                TimeManagerClientProjectModel.id == project_id,
             )
         )
         return True
