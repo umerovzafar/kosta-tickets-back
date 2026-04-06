@@ -87,6 +87,17 @@ class TimeTrackingUserRepository:
         self._session.add(row)
         return row
 
+    async def patch_weekly_capacity_hours(
+        self, auth_user_id: int, weekly_capacity_hours: Decimal
+    ) -> TimeTrackingUserModel | None:
+        row = await self.get_by_auth_user_id(auth_user_id)
+        if not row:
+            return None
+        row.weekly_capacity_hours = weekly_capacity_hours
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
     async def delete_by_auth_user_id(self, auth_user_id: int) -> bool:
         """Удаляет пользователя по auth_user_id. Возвращает True если запись была удалена."""
         from sqlalchemy import delete

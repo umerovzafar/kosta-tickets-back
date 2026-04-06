@@ -1,11 +1,11 @@
 """Маршруты пользователей учёта времени (список из БД и синхронизация)."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
 from infrastructure.repositories import TimeTrackingUserRepository
-from presentation.schemas import UserResponse, UserUpsertBody
+from presentation.schemas import UserResponse, UserUpsertBody, WeeklyCapacityPatchBody
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -32,6 +32,58 @@ async def list_users(
         )
         for row in rows
     ]
+
+
+@router.get("/{auth_user_id}", response_model=UserResponse, summary="Один пользователь учёта времени")
+async def get_user(
+    auth_user_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    repo = TimeTrackingUserRepository(session)
+    row = await repo.get_by_auth_user_id(auth_user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not in time tracking")
+    return UserResponse(
+        id=row.auth_user_id,
+        email=row.email,
+        display_name=row.display_name,
+        picture=row.picture,
+        role=row.role,
+        is_blocked=row.is_blocked,
+        is_archived=row.is_archived,
+        weekly_capacity_hours=row.weekly_capacity_hours,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.patch(
+    "/{auth_user_id}/weekly-capacity-hours",
+    response_model=UserResponse,
+    summary="Обновить только норму часов в неделю",
+)
+async def patch_weekly_capacity(
+    auth_user_id: int,
+    body: WeeklyCapacityPatchBody,
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    repo = TimeTrackingUserRepository(session)
+    row = await repo.patch_weekly_capacity_hours(auth_user_id, body.weekly_capacity_hours)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not in time tracking")
+    await session.commit()
+    return UserResponse(
+        id=row.auth_user_id,
+        email=row.email,
+        display_name=row.display_name,
+        picture=row.picture,
+        role=row.role,
+        is_blocked=row.is_blocked,
+        is_archived=row.is_archived,
+        weekly_capacity_hours=row.weekly_capacity_hours,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
 
 
 @router.post("", status_code=200, summary="Создать/обновить пользователя (синхронизация)")

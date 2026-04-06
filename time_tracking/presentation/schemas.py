@@ -30,6 +30,12 @@ class UserResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class WeeklyCapacityPatchBody(BaseModel):
+    """Только норма часов в неделю (для профиля / gateway)."""
+
+    weekly_capacity_hours: Decimal = Field(..., gt=0, le=168, description="Часов в неделю (ёмкость)")
+
+
 class UserUpsertBody(BaseModel):
     """Тело запроса для создания/обновления пользователя (синхронизация из auth)."""
 

@@ -1,6 +1,7 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserResponse(BaseModel):
@@ -16,6 +17,10 @@ class UserResponse(BaseModel):
     updated_at: Optional[datetime] = None
     time_tracking_role: Optional[str] = None
     desktop_background: Optional[str] = None
+    weekly_capacity_hours: Optional[float] = Field(
+        None,
+        description="Норма часов в неделю (учёт времени); null если пользователь не в БД time_tracking",
+    )
 
 
 class UserDetailResponse(BaseModel):
@@ -32,6 +37,10 @@ class UserDetailResponse(BaseModel):
     desktop_background: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    weekly_capacity_hours: Optional[float] = Field(
+        None,
+        description="Норма часов в неделю (учёт времени); null если не в БД time_tracking",
+    )
 
 
 class SetRoleRequest(BaseModel):
@@ -56,3 +65,9 @@ class SetPositionRequest(BaseModel):
     """Должность пользователя."""
 
     position: Optional[str] = None
+
+
+class WeeklyCapacityPatchBody(BaseModel):
+    """Норма часов в неделю для блока «Нагрузка» в профиле."""
+
+    weekly_capacity_hours: Decimal = Field(..., gt=0, le=168)

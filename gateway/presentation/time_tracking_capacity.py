@@ -1,0 +1,37 @@
+"""Чтение нормы часов из сервиса time_tracking (обогащение профиля в gateway)."""
+
+from typing import Any, Optional
+
+import httpx
+
+from infrastructure.config import get_settings
+
+
+def _time_tracking_base() -> str | None:
+    b = (get_settings().time_tracking_service_url or "").strip()
+    return b.rstrip("/") if b else None
+
+
+async def fetch_weekly_capacity_hours(auth_user_id: int) -> Optional[float]:
+    """Возвращает weekly_capacity_hours или None, если пользователя нет в TT или сервис недоступен."""
+    base = _time_tracking_base()
+    if not base:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{base}/users/{auth_user_id}")
+    except httpx.RequestError:
+        return None
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    return float(data["weekly_capacity_hours"])
+
+
+async def merge_weekly_capacity_into_user(user: dict[str, Any]) -> dict[str, Any]:
+    uid = user.get("id")
+    if uid is not None:
+        user["weekly_capacity_hours"] = await fetch_weekly_capacity_hours(int(uid))
+    else:
+        user["weekly_capacity_hours"] = None
+    return user

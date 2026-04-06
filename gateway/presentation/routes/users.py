@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
 
 from infrastructure.auth_upstream import auth_service_request, verify_bearer_and_get_user
@@ -14,7 +15,9 @@ from presentation.schemas.user_schemas import (
     ArchiveUserRequest,
     TimeTrackingRoleRequest,
     SetPositionRequest,
+    WeeklyCapacityPatchBody,
 )
+from presentation.time_tracking_capacity import fetch_weekly_capacity_hours, merge_weekly_capacity_into_user
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -79,7 +82,8 @@ DESKTOP_BG_SUBDIR = "desktop_backgrounds"
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(authorization: Optional[str] = Header(None, alias="Authorization")):
-    return await verify_bearer_and_get_user(authorization)
+    user = await verify_bearer_and_get_user(authorization)
+    return await merge_weekly_capacity_into_user(user)
 
 
 @router.post("/me/desktop-background", response_model=UserResponse)
@@ -132,7 +136,7 @@ async def upload_desktop_background(
     if r.status_code != 200:
         file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to save settings")
-    return r.json()
+    return await merge_weekly_capacity_into_user(r.json())
 
 
 @router.delete("/me/desktop-background", response_model=UserResponse)
@@ -162,7 +166,7 @@ async def delete_desktop_background(
     )
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to delete")
-    return r.json()
+    return await merge_weekly_capacity_into_user(r.json())
 
 
 @router.get("", response_model=list[UserResponse])
@@ -184,6 +188,55 @@ async def list_users(
     return r.json()
 
 
+@router.patch("/me/weekly-capacity-hours", response_model=UserResponse)
+async def patch_me_weekly_capacity(
+    body: WeeklyCapacityPatchBody,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    _: dict = Depends(require_auth),
+):
+    """Норма часов в неделю (блок «Нагрузка»). Создаёт запись в time_tracking при первом сохранении."""
+    user = await verify_bearer_and_get_user(authorization)
+    uid = user.get("id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="User not found")
+    settings = get_settings()
+    base = (settings.time_tracking_service_url or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(status_code=503, detail="Time tracking service not configured")
+    hours = float(body.weekly_capacity_hours)
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(f"{base}/users/{uid}")
+            if r.status_code == 200:
+                r2 = await client.patch(
+                    f"{base}/users/{uid}/weekly-capacity-hours",
+                    json={"weekly_capacity_hours": hours},
+                )
+            elif r.status_code == 404:
+                r2 = await client.post(
+                    f"{base}/users",
+                    json={
+                        "auth_user_id": uid,
+                        "email": user["email"],
+                        "display_name": user.get("display_name"),
+                        "picture": user.get("picture"),
+                        "role": user.get("role") or "",
+                        "is_blocked": user.get("is_blocked", False),
+                        "is_archived": user.get("is_archived", False),
+                        "weekly_capacity_hours": hours,
+                    },
+                )
+            else:
+                raise HTTPException(status_code=503, detail="Time tracking service error")
+            if r2.status_code >= 400:
+                detail = (r2.text or "Time tracking error")[:500]
+                raise HTTPException(status_code=r2.status_code, detail=detail)
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    user["weekly_capacity_hours"] = hours
+    return user
+
+
 @router.get("/{user_id}", response_model=UserDetailResponse)
 async def get_user_detail(
     user_id: int,
@@ -197,7 +250,10 @@ async def get_user_detail(
         raise HTTPException(status_code=404, detail="User not found")
     if r.status_code >= 400:
         raise HTTPException(status_code=503, detail="Auth service error")
-    return r.json()
+    detail = r.json()
+    cap = await fetch_weekly_capacity_hours(user_id)
+    detail["weekly_capacity_hours"] = cap
+    return detail
 
 
 @router.patch("/{user_id}/role", response_model=UserDetailResponse)
