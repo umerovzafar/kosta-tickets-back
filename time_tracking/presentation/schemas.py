@@ -39,15 +39,18 @@ class WeeklyCapacityPatchBody(BaseModel):
 class UserUpsertBody(BaseModel):
     """Тело запроса для создания/обновления пользователя (синхронизация из auth)."""
 
-    auth_user_id: int
+    model_config = ConfigDict(populate_by_name=True)
+
+    auth_user_id: int = Field(..., alias="authUserId")
     email: str
-    display_name: Optional[str] = None
+    display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
     role: str = ""
-    is_blocked: bool = False
-    is_archived: bool = False
+    is_blocked: bool = Field(False, alias="isBlocked")
+    is_archived: bool = Field(False, alias="isArchived")
     weekly_capacity_hours: Optional[Decimal] = Field(
         None,
+        alias="weeklyCapacityHours",
         description="Норма часов в неделю; по умолчанию 35 при создании",
     )
 

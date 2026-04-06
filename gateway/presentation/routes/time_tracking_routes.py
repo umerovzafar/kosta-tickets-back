@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
 
@@ -58,14 +58,18 @@ def require_manage_role(user: dict = Depends(get_current_user)):
 
 
 class UserUpsertBody(BaseModel):
-    auth_user_id: int
+    """Тело синхронизации пользователя. Принимает snake_case и camelCase; в time_tracking уходит JSON с snake_case."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    auth_user_id: int = Field(..., alias="authUserId")
     email: str
-    display_name: Optional[str] = None
+    display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
     role: str = ""
-    is_blocked: bool = False
-    is_archived: bool = False
-    weekly_capacity_hours: Optional[Decimal] = None
+    is_blocked: bool = Field(False, alias="isBlocked")
+    is_archived: bool = Field(False, alias="isArchived")
+    weekly_capacity_hours: Optional[Decimal] = Field(None, alias="weeklyCapacityHours")
 
 
 @router.get("/users/{auth_user_id}/hourly-rates")
@@ -194,7 +198,10 @@ async def upsert_user(
         raise HTTPException(status_code=503, detail="Time tracking service not configured")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/users", json=body.model_dump())
+            r = await client.post(
+                f"{base}/users",
+                json=body.model_dump(mode="json", by_alias=False),
+            )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Time tracking service unavailable")
     if r.status_code >= 400:
