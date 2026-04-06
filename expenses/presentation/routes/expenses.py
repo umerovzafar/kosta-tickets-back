@@ -35,6 +35,7 @@ from presentation.deps import (
     ensure_not_moderating_own_expense,
     get_current_user,
     is_admin_editor,
+    is_moderator,
 )
 from presentation.schemas import (
     AttachmentOut,
@@ -987,15 +988,26 @@ async def upload_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    if not is_admin_editor(user):
-        if row.created_by_user_id != int(user["id"]):
-            raise HTTPException(status_code=403, detail="Только автор может добавлять вложения")
     kind_norm: str | None = None
     if attachment_kind is not None and str(attachment_kind).strip():
         k = str(attachment_kind).strip()
         if k not in _ALLOWED_ATTACHMENT_KINDS:
             raise HTTPException(status_code=400, detail="Недопустимый тип вложения")
         kind_norm = k
+
+    if not is_admin_editor(user):
+        uid = int(user["id"])
+        is_author = row.created_by_user_id == uid
+        moderator_may_add_payment_receipt = (
+            is_moderator(user)
+            and row.status == "paid"
+            and kind_norm == "payment_receipt"
+        )
+        if not is_author and not moderator_may_add_payment_receipt:
+            raise HTTPException(
+                status_code=403,
+                detail="Добавлять вложения может автор заявки; квитанцию об оплате после «Выплачено» — также модератор",
+            )
 
     if row.status == "paid":
         if kind_norm != "payment_receipt":
@@ -1065,12 +1077,23 @@ async def delete_attachment(
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     _ensure_access(row, user)
-    if not is_admin_editor(user):
-        if row.created_by_user_id != int(user["id"]):
-            raise HTTPException(status_code=403, detail="Только автор может удалять вложения")
     att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")
+    if not is_admin_editor(user):
+        uid = int(user["id"])
+        is_author = row.created_by_user_id == uid
+        ak = (att_row.attachment_kind or "").strip()
+        moderator_may_delete_payment_receipt = (
+            is_moderator(user)
+            and row.status == "paid"
+            and ak == "payment_receipt"
+        )
+        if not is_author and not moderator_may_delete_payment_receipt:
+            raise HTTPException(
+                status_code=403,
+                detail="Удалять вложения может автор заявки; квитанцию об оплате после «Выплачено» — также модератор",
+            )
     if not is_admin_editor(user):
         ak = (att_row.attachment_kind or "").strip()
         if ak == "payment_receipt":
