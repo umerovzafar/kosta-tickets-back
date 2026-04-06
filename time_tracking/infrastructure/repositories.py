@@ -3,12 +3,12 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import intervals_overlap, validate_range_order
 from application.ports import HealthRepositoryPort
-from infrastructure.models import TimeTrackingUserModel, UserHourlyRateModel
+from infrastructure.models import TimeEntryModel, TimeTrackingUserModel, UserHourlyRateModel
 
 
 def _now_utc() -> datetime:
@@ -52,6 +52,7 @@ class TimeTrackingUserRepository:
         role: str = "",
         is_blocked: bool = False,
         is_archived: bool = False,
+        weekly_capacity_hours: Decimal | None = None,
     ) -> TimeTrackingUserModel:
         r = await self._session.execute(
             select(TimeTrackingUserModel).where(TimeTrackingUserModel.auth_user_id == auth_user_id)
@@ -65,9 +66,12 @@ class TimeTrackingUserRepository:
             row.role = role
             row.is_blocked = is_blocked
             row.is_archived = is_archived
+            if weekly_capacity_hours is not None:
+                row.weekly_capacity_hours = weekly_capacity_hours
             row.updated_at = now
             self._session.add(row)
             return row
+        cap = weekly_capacity_hours if weekly_capacity_hours is not None else Decimal("35")
         row = TimeTrackingUserModel(
             auth_user_id=auth_user_id,
             email=email,
@@ -76,6 +80,7 @@ class TimeTrackingUserRepository:
             role=role,
             is_blocked=is_blocked,
             is_archived=is_archived,
+            weekly_capacity_hours=cap,
             created_at=now,
             updated_at=None,
         )
@@ -219,6 +224,145 @@ class HourlyRateRepository:
             delete(UserHourlyRateModel).where(
                 UserHourlyRateModel.auth_user_id == auth_user_id,
                 UserHourlyRateModel.id == rate_id,
+            )
+        )
+        return True
+
+
+class TimeEntryRepository:
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def aggregate_by_user(
+        self,
+        date_from: date,
+        date_to: date,
+    ) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+        """auth_user_id -> (total_hours, billable_hours, non_billable_hours)."""
+        q = (
+            select(
+                TimeEntryModel.auth_user_id,
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("billable"),
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("non_bill"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
+            )
+            .where(
+                TimeEntryModel.work_date >= date_from,
+                TimeEntryModel.work_date <= date_to,
+            )
+            .group_by(TimeEntryModel.auth_user_id)
+        )
+        r = await self._session.execute(q)
+        out: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+        for row in r.all():
+            uid = int(row.auth_user_id)
+            bill = row.billable if isinstance(row.billable, Decimal) else Decimal(str(row.billable))
+            non = row.non_bill if isinstance(row.non_bill, Decimal) else Decimal(str(row.non_bill))
+            tot = row.total if isinstance(row.total, Decimal) else Decimal(str(row.total))
+            out[uid] = (tot, bill, non)
+        return out
+
+    async def list_for_user(
+        self,
+        auth_user_id: int,
+        date_from: date,
+        date_to: date,
+    ) -> list[TimeEntryModel]:
+        q = (
+            select(TimeEntryModel)
+            .where(
+                TimeEntryModel.auth_user_id == auth_user_id,
+                TimeEntryModel.work_date >= date_from,
+                TimeEntryModel.work_date <= date_to,
+            )
+            .order_by(TimeEntryModel.work_date.desc(), TimeEntryModel.id)
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(self, auth_user_id: int, entry_id: str) -> TimeEntryModel | None:
+        r = await self._session.execute(
+            select(TimeEntryModel).where(
+                TimeEntryModel.auth_user_id == auth_user_id,
+                TimeEntryModel.id == entry_id,
+            )
+        )
+        return r.scalars().one_or_none()
+
+    async def create(
+        self,
+        *,
+        entry_id: str,
+        auth_user_id: int,
+        work_date: date,
+        hours: Decimal,
+        is_billable: bool,
+        project_id: str | None,
+        description: str | None,
+    ) -> TimeEntryModel:
+        if hours <= 0:
+            raise ValueError("Количество часов должно быть больше нуля")
+        now = _now_utc()
+        row = TimeEntryModel(
+            id=entry_id,
+            auth_user_id=auth_user_id,
+            work_date=work_date,
+            hours=hours,
+            is_billable=is_billable,
+            project_id=project_id,
+            description=description,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(
+        self,
+        *,
+        auth_user_id: int,
+        entry_id: str,
+        patch: dict[str, Any],
+    ) -> TimeEntryModel:
+        row = await self.get_by_id(auth_user_id, entry_id)
+        if not row:
+            raise LookupError("not_found")
+        if "hours" in patch:
+            h = patch["hours"]
+            nh = h if isinstance(h, Decimal) else Decimal(str(h))
+            if nh <= 0:
+                raise ValueError("Количество часов должно быть больше нуля")
+            row.hours = nh
+        if "work_date" in patch:
+            row.work_date = patch["work_date"]
+        if "is_billable" in patch:
+            row.is_billable = bool(patch["is_billable"])
+        if "project_id" in patch:
+            row.project_id = patch["project_id"]
+        if "description" in patch:
+            row.description = patch["description"]
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, auth_user_id: int, entry_id: str) -> bool:
+        row = await self.get_by_id(auth_user_id, entry_id)
+        if not row:
+            return False
+        await self._session.execute(
+            delete(TimeEntryModel).where(
+                TimeEntryModel.auth_user_id == auth_user_id,
+                TimeEntryModel.id == entry_id,
             )
         )
         return True

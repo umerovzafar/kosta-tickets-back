@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.database import Base
@@ -22,6 +22,12 @@ class TimeTrackingUserModel(Base):
     role: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    weekly_capacity_hours: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
+        default=Decimal("35"),
+        server_default=text("35"),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -45,5 +51,26 @@ class UserHourlyRateModel(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeEntryModel(Base):
+    """Факт списания времени (загрузка команды: billable / non-billable)."""
+
+    __tablename__ = "time_tracking_entries"
+    __table_args__ = (Index("ix_tt_entries_user_date", "auth_user_id", "work_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auth_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("time_tracking_users.auth_user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    hours: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

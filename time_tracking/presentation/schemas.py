@@ -22,6 +22,10 @@ class UserResponse(BaseModel):
     role: str = ""
     is_blocked: bool = False
     is_archived: bool = False
+    weekly_capacity_hours: Decimal = Field(
+        default=Decimal("35"),
+        description="Норма часов в неделю (для ёмкости за период)",
+    )
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -36,6 +40,10 @@ class UserUpsertBody(BaseModel):
     role: str = ""
     is_blocked: bool = False
     is_archived: bool = False
+    weekly_capacity_hours: Optional[Decimal] = Field(
+        None,
+        description="Норма часов в неделю; по умолчанию 35 при создании",
+    )
 
 
 class RateKind(str, Enum):
@@ -76,3 +84,60 @@ class HourlyRatePatchBody(BaseModel):
     currency: Optional[str] = None
     valid_from: Optional[date] = Field(None, alias="validFrom")
     valid_to: Optional[date] = Field(None, alias="validTo")
+
+
+class TeamWorkloadSummaryOut(BaseModel):
+    total_hours: Decimal
+    team_capacity_hours: Decimal
+    billable_hours: Decimal
+    non_billable_hours: Decimal
+    team_workload_percent: int
+
+
+class TeamWorkloadMemberOut(BaseModel):
+    auth_user_id: int
+    display_name: Optional[str] = None
+    email: str
+    capacity_hours: Decimal
+    total_hours: Decimal
+    billable_hours: Decimal
+    non_billable_hours: Decimal
+    workload_percent: int
+
+
+class TeamWorkloadOut(BaseModel):
+    date_from: date
+    date_to: date
+    period_days: int
+    summary: TeamWorkloadSummaryOut
+    members: list[TeamWorkloadMemberOut]
+
+
+class TimeEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    auth_user_id: int
+    work_date: date
+    hours: Decimal
+    is_billable: bool
+    project_id: Optional[str] = None
+    description: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class TimeEntryCreateBody(BaseModel):
+    work_date: date
+    hours: Decimal
+    is_billable: bool = True
+    project_id: Optional[str] = None
+    description: Optional[str] = None
+
+
+class TimeEntryPatchBody(BaseModel):
+    work_date: Optional[date] = None
+    hours: Optional[Decimal] = None
+    is_billable: Optional[bool] = None
+    project_id: Optional[str] = None
+    description: Optional[str] = None

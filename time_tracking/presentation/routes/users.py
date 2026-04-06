@@ -26,6 +26,7 @@ async def list_users(
             role=row.role,
             is_blocked=row.is_blocked,
             is_archived=row.is_archived,
+            weekly_capacity_hours=row.weekly_capacity_hours,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
@@ -48,6 +49,7 @@ async def upsert_user(
         role=body.role,
         is_blocked=body.is_blocked,
         is_archived=body.is_archived,
+        weekly_capacity_hours=body.weekly_capacity_hours,
     )
     await session.commit()
     return {"ok": True}

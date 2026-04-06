@@ -1,9 +1,10 @@
 """Прокси к сервису time_tracking. Требует аутентификации."""
 
+from decimal import Decimal
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from infrastructure.config import get_settings
@@ -17,6 +18,14 @@ from presentation.routes.time_tracking_hourly_proxy import (
     hourly_rates_get_gateway,
     hourly_rates_list_gateway,
     hourly_rates_patch_gateway,
+)
+from presentation.routes.time_tracking_te_proxy import (
+    TimeEntryCreateBody,
+    TimeEntryPatchBody,
+    time_entries_create_gateway,
+    time_entries_delete_gateway,
+    time_entries_list_gateway,
+    time_entries_patch_gateway,
 )
 
 router = APIRouter(prefix="/api/v1/time-tracking", tags=["time_tracking"])
@@ -56,6 +65,7 @@ class UserUpsertBody(BaseModel):
     role: str = ""
     is_blocked: bool = False
     is_archived: bool = False
+    weekly_capacity_hours: Optional[Decimal] = None
 
 
 @router.get("/users/{auth_user_id}/hourly-rates")
@@ -102,6 +112,59 @@ async def delete_hourly_rate(
     user: dict = Depends(get_current_user),
 ):
     return await hourly_rates_delete_gateway(auth_user_id, rate_id, user)
+
+
+@router.get("/team-workload")
+async def proxy_team_workload(request: Request, _: dict = Depends(require_view_role)):
+    settings = get_settings()
+    base = (settings.time_tracking_service_url or "").rstrip("/")
+    if not base:
+        raise HTTPException(status_code=503, detail="Time tracking service not configured")
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(f"{base}/team-workload", params=request.query_params)
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.get("/users/{auth_user_id}/time-entries")
+async def proxy_list_time_entries(
+    auth_user_id: int,
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await time_entries_list_gateway(auth_user_id, request)
+
+
+@router.post("/users/{auth_user_id}/time-entries")
+async def proxy_create_time_entry(
+    auth_user_id: int,
+    body: TimeEntryCreateBody,
+    _: dict = Depends(require_manage_role),
+):
+    return await time_entries_create_gateway(auth_user_id, body)
+
+
+@router.patch("/users/{auth_user_id}/time-entries/{entry_id}")
+async def proxy_patch_time_entry(
+    auth_user_id: int,
+    entry_id: str,
+    body: TimeEntryPatchBody,
+    _: dict = Depends(require_manage_role),
+):
+    return await time_entries_patch_gateway(auth_user_id, entry_id, body)
+
+
+@router.delete("/users/{auth_user_id}/time-entries/{entry_id}")
+async def proxy_delete_time_entry(
+    auth_user_id: int,
+    entry_id: str,
+    _: dict = Depends(require_manage_role),
+):
+    return await time_entries_delete_gateway(auth_user_id, entry_id)
 
 
 @router.get("/users")

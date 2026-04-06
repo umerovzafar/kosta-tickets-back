@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
-from presentation.routes import health, hourly_rates, users
+from presentation.routes import health, hourly_rates, team_workload, time_entries, users
 
 
 @asynccontextmanager
@@ -22,5 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router)
+app.include_router(team_workload.router)
 app.include_router(hourly_rates.router)
+app.include_router(time_entries.router)
 app.include_router(users.router)
