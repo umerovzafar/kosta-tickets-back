@@ -17,12 +17,17 @@ SCOPES = ["Calendars.ReadWrite", "User.Read", "offline_access"]
 def get_authorize_url(state: str) -> str:
     """URL для редиректа пользователя на страницу входа Microsoft."""
     s = get_settings()
+    client_id = (s.microsoft_client_id or "").strip()
+    if not client_id:
+        raise ValueError(
+            "MICROSOFT_CLIENT_ID is empty. Set it in the todos service environment (Azure App Registration → Application ID)."
+        )
     redirect_uri = (s.microsoft_redirect_uri or "").strip()
     if not redirect_uri.startswith(("http://", "https://")) or " " in redirect_uri or "\n" in redirect_uri:
         raise ValueError(
-            "MICROSOFT_REDIRECT_URI must be a single valid URL, e.g. "
-            "https://ticketsback.kostalegal.com/api/v1/todos/calendar/callback "
-            "(or http://localhost:1234/... for local dev). Must match Azure app registration."
+            "MICROSOFT_REDIRECT_URI must be a single absolute URL (gateway callback), e.g. "
+            "http://localhost:1234/api/v1/todos/calendar/callback — not the Vite dev server (5173). "
+            "Must match Azure app «Redirect URIs» exactly."
         )
     scope_parts = [
         "https://graph.microsoft.com/Calendars.ReadWrite",
@@ -30,7 +35,7 @@ def get_authorize_url(state: str) -> str:
         "offline_access",
     ]
     params = {
-        "client_id": (s.microsoft_client_id or "").strip(),
+        "client_id": client_id,
         "response_type": "code",
         "redirect_uri": redirect_uri,
         "scope": " ".join(scope_parts),

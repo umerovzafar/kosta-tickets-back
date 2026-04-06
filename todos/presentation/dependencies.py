@@ -32,4 +32,7 @@ async def get_current_user_id(
     user_id = data.get("id")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user response")
-    return int(user_id)
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid user id in auth response") from None

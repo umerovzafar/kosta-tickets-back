@@ -1,5 +1,6 @@
 """Эндпоинты интеграции с календарём Microsoft Outlook."""
 
+import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import Annotated
@@ -23,6 +24,7 @@ from infrastructure.repositories import OutlookCalendarTokenRepository
 from presentation.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
+_log = logging.getLogger(__name__)
 
 
 def _encode_state(user_id: int) -> str:
@@ -71,16 +73,35 @@ async def calendar_connect(
     Редирект браузера выполняет клиент: window.location = data.url.
     """
     settings = get_settings()
-    if not (settings.microsoft_client_id and settings.microsoft_redirect_uri):
+    cid = (settings.microsoft_client_id or "").strip()
+    ruri = (settings.microsoft_redirect_uri or "").strip()
+    if not cid or not ruri:
         raise HTTPException(
             status_code=503,
-            detail="Calendar OAuth not configured. Set MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI in the todos service.",
+            detail=(
+                "Calendar OAuth is not configured: set MICROSOFT_CLIENT_ID and MICROSOFT_REDIRECT_URI "
+                "for the todos service (see docker-compose / .env). "
+                "MICROSOFT_REDIRECT_URI must be the gateway callback URL, e.g. "
+                "http://localhost:1234/api/v1/todos/calendar/callback (not http://localhost:5173/...)."
+            ),
         )
     try:
         state = _encode_state(user_id)
         url = get_authorize_url(state)
+    except ValueError as e:
+        _log.warning("calendar connect: invalid OAuth settings: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail=str(e),
+        ) from e
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to build calendar connect URL: {e!s}") from e
+        _log.exception("calendar connect: unexpected error building authorize URL")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not build Microsoft sign-in URL: {e!s}",
+        ) from e
     return JSONResponse(content={"url": url})
 
 
