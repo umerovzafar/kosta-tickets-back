@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
+from infrastructure.schema_patches import apply_team_workload_schema_patch
 from presentation.routes import health, hourly_rates, team_workload, time_entries, users
 
 
@@ -10,6 +11,7 @@ from presentation.routes import health, hourly_rates, team_workload, time_entrie
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await apply_team_workload_schema_patch(conn)
     yield
 
 
