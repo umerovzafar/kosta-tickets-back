@@ -4,11 +4,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
 from infrastructure.schema_patches import (
+    apply_client_expense_categories_schema_patch,
     apply_client_tasks_schema_patch,
     apply_team_workload_schema_patch,
     apply_time_manager_clients_schema_patch,
 )
-from presentation.routes import client_tasks, clients, health, hourly_rates, team_workload, time_entries, users
+from presentation.routes import (
+    client_expense_categories,
+    client_tasks,
+    clients,
+    health,
+    hourly_rates,
+    team_workload,
+    time_entries,
+    users,
+)
 
 
 @asynccontextmanager
@@ -18,6 +28,7 @@ async def lifespan(app: FastAPI):
         await apply_team_workload_schema_patch(conn)
         await apply_time_manager_clients_schema_patch(conn)
         await apply_client_tasks_schema_patch(conn)
+        await apply_client_expense_categories_schema_patch(conn)
     yield
 
 
@@ -31,6 +42,7 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(client_tasks.router)
+app.include_router(client_expense_categories.router)
 app.include_router(clients.router)
 app.include_router(team_workload.router)
 app.include_router(hourly_rates.router)

@@ -114,3 +114,23 @@ class TimeManagerClientTaskModel(Base):
     add_to_existing_projects: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeManagerClientExpenseCategoryModel(Base):
+    """Категория расхода по клиенту time manager (справочник для счетов и форм)."""
+
+    __tablename__ = "time_tracking_client_expense_categories"
+    __table_args__ = (Index("ix_tt_client_exp_cat_client", "client_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_clients.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    has_unit_price: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

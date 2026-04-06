@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import case, delete, func, select, text
+from sqlalchemy import case, delete, func, select, text, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import intervals_overlap, validate_range_order
@@ -11,6 +11,7 @@ from application.ports import HealthRepositoryPort
 from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
+    TimeManagerClientExpenseCategoryModel,
     TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
@@ -541,6 +542,133 @@ class ClientTaskRepository:
             delete(TimeManagerClientTaskModel).where(
                 TimeManagerClientTaskModel.client_id == client_id,
                 TimeManagerClientTaskModel.id == task_id,
+            )
+        )
+        return True
+
+
+class ClientExpenseCategoryRepository:
+    """Категории расходов по клиенту time manager."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return name.strip()
+
+    async def list_for_client(
+        self,
+        client_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[TimeManagerClientExpenseCategoryModel]:
+        q = select(TimeManagerClientExpenseCategoryModel).where(
+            TimeManagerClientExpenseCategoryModel.client_id == client_id,
+        )
+        if not include_archived:
+            q = q.where(TimeManagerClientExpenseCategoryModel.is_archived.is_(False))
+        q = q.order_by(
+            TimeManagerClientExpenseCategoryModel.sort_order.asc().nulls_last(),
+            TimeManagerClientExpenseCategoryModel.name.asc(),
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(
+        self,
+        client_id: str,
+        category_id: str,
+    ) -> TimeManagerClientExpenseCategoryModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientExpenseCategoryModel).where(
+                TimeManagerClientExpenseCategoryModel.client_id == client_id,
+                TimeManagerClientExpenseCategoryModel.id == category_id,
+            )
+        )
+        return r.scalars().one_or_none()
+
+    async def has_active_name_conflict(
+        self,
+        client_id: str,
+        name: str,
+        *,
+        exclude_category_id: str | None = None,
+    ) -> bool:
+        """Другая неархивная категория с тем же именем (без учёта регистра и краевых пробелов)."""
+        norm = self._normalize_name(name).lower()
+        if not norm:
+            return False
+        cond = and_(
+            TimeManagerClientExpenseCategoryModel.client_id == client_id,
+            TimeManagerClientExpenseCategoryModel.is_archived.is_(False),
+            func.lower(func.trim(TimeManagerClientExpenseCategoryModel.name)) == norm,
+        )
+        if exclude_category_id:
+            cond = and_(cond, TimeManagerClientExpenseCategoryModel.id != exclude_category_id)
+        q = select(func.count()).select_from(TimeManagerClientExpenseCategoryModel).where(cond)
+        r = await self._session.execute(q)
+        n = r.scalar_one()
+        return int(n or 0) > 0
+
+    async def usage_count(self, category_id: str) -> int:
+        """Число использований категории (строки расходов/счётов). Пока нет таблиц — всегда 0."""
+        _ = category_id
+        return 0
+
+    async def create(
+        self,
+        *,
+        client_id: str,
+        name: str,
+        has_unit_price: bool = False,
+        sort_order: int | None = None,
+    ) -> TimeManagerClientExpenseCategoryModel:
+        cid = str(uuid.uuid4())
+        now = _now_utc()
+        row = TimeManagerClientExpenseCategoryModel(
+            id=cid,
+            client_id=client_id,
+            name=self._normalize_name(name),
+            has_unit_price=has_unit_price,
+            is_archived=False,
+            sort_order=sort_order,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(
+        self,
+        client_id: str,
+        category_id: str,
+        patch: dict[str, Any],
+    ) -> TimeManagerClientExpenseCategoryModel | None:
+        row = await self.get_by_id(client_id, category_id)
+        if not row:
+            return None
+        if "name" in patch and patch["name"] is not None:
+            row.name = self._normalize_name(str(patch["name"]))
+        if "has_unit_price" in patch:
+            row.has_unit_price = bool(patch["has_unit_price"])
+        if "is_archived" in patch:
+            row.is_archived = bool(patch["is_archived"])
+        if "sort_order" in patch:
+            v = patch["sort_order"]
+            row.sort_order = None if v is None else int(v)
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, client_id: str, category_id: str) -> bool:
+        row = await self.get_by_id(client_id, category_id)
+        if not row:
+            return False
+        await self._session.execute(
+            delete(TimeManagerClientExpenseCategoryModel).where(
+                TimeManagerClientExpenseCategoryModel.client_id == client_id,
+                TimeManagerClientExpenseCategoryModel.id == category_id,
             )
         )
         return True

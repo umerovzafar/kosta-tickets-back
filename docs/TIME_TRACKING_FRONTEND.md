@@ -2,6 +2,8 @@
 
 Все запросы идут на **gateway** с префиксом **`/api/v1`**. Микросервис `time_tracking` с браузера **не** вызывается напрямую.
 
+Общая схема подключения фронта (Vite proxy, прод, CORS, nginx): **`docs/FRONTEND_CONNECTION.md`**.
+
 **Оглавление**
 
 1. [Базовый URL и авторизация](#1-базовый-url-и-авторизация)  
@@ -71,6 +73,11 @@ Content-Type: application/json
 | **Задачи клиента** — создать | `POST /api/v1/time-tracking/clients/{clientId}/tasks` |
 | **Задачи клиента** — изменить | `PATCH /api/v1/time-tracking/clients/{clientId}/tasks/{taskId}` |
 | **Задачи клиента** — удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/tasks/{taskId}` → **204** |
+| **Категории расходов** — список | `GET /api/v1/time-tracking/clients/{clientId}/expense-categories` (query `includeArchived`, по умолчанию `false`) |
+| **Категории расходов** — одна | `GET /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` |
+| **Категории расходов** — создать | `POST /api/v1/time-tracking/clients/{clientId}/expense-categories` |
+| **Категории расходов** — изменить | `PATCH /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` |
+| **Категории расходов** — удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` → **204** (если `usage_count` > 0 — **409**) |
 
 Ответы API в основном в **snake_case**. В **телах запросов** gateway часто принимает **camelCase** (см. примеры ниже).
 
@@ -136,6 +143,31 @@ await apiFetch(`/api/v1/time-tracking/clients/${clientId}/tasks`, {
 ```
 
 На экране списка задач сначала выберите **клиента** (`clientId` из `GET /clients`), затем грузите **`GET .../clients/{clientId}/tasks`**.
+
+---
+
+## 5.1. Категории расходов по клиентам
+
+Справочник **категорий расходов** привязан к клиенту (отдельный набор на каждого клиента). В ответе: `has_unit_price`, `is_archived`, `usage_count`, `deletable` (удаление возможно только при `usage_count === 0`; после появления строк расходов/счетов счётчик заполняется на бэкенде).
+
+| Назначение | Метод и путь |
+|------------|----------------|
+| Список | `GET /api/v1/time-tracking/clients/{clientId}/expense-categories` |
+| Одна категория | `GET /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` |
+| Создать | `POST /api/v1/time-tracking/clients/{clientId}/expense-categories` |
+| Изменить (в т.ч. архив: `isArchived`) | `PATCH /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` |
+| Удалить | `DELETE /api/v1/time-tracking/clients/{clientId}/expense-categories/{categoryId}` → **204** (если категория используется — **409**) |
+
+**Поля** (форма «New category» ↔ API):
+
+| Поле в UI | Ответ (snake_case) | Тело запроса (camelCase) |
+|-----------|---------------------|---------------------------|
+| Category name | `name` | `name` |
+| This expense has a unit price | `has_unit_price` | `hasUnitPrice` |
+| Архив | `is_archived` | `isArchived` (только в PATCH) |
+| Порядок сортировки | `sort_order` | `sortOrder` |
+
+Имя **уникально среди активных** (не архивных) категорий одного клиента; при конфликте — **409**.
 
 ---
 
@@ -257,7 +289,7 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 | `…/time-tracking/users/{id}/hourly-rates…` | `…/users/{id}/hourly-rates…` |
 | `…/time-tracking/users/{id}/time-entries…` | `…/users/{id}/time-entries…` |
 
-**`team-workload`**, **`/clients`** и **`/clients/.../tasks`** доступны **только** под **`/api/v1/time-tracking/...`**.
+**`team-workload`**, **`/clients`**, **`/clients/.../tasks`** и **`/clients/.../expense-categories`** доступны **только** под **`/api/v1/time-tracking/...`**.
 
 ---
 
@@ -265,9 +297,9 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 
 | Действие | Кто может |
 |----------|-----------|
-| Просмотр списка пользователей TT, team-workload, billable-ставок, записей времени, **клиентов**, **задач клиентов** | Главный администратор, Администратор, Партнёр, IT, Офис-менеджер |
+| Просмотр списка пользователей TT, team-workload, billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов** | Главный администратор, Администратор, Партнёр, IT, Офис-менеджер |
 | Ставки **cost** (себестоимость) — просмотр и CRUD | Только Главный администратор и Администратор |
-| Создание / изменение / удаление billable-ставок, записей времени, **клиентов**, **задач клиентов** | Главный администратор, Администратор, Партнёр |
+| Создание / изменение / удаление billable-ставок, записей времени, **клиентов**, **задач клиентов**, **категорий расходов клиентов** | Главный администратор, Администратор, Партнёр |
 | **`PATCH /users/me/weekly-capacity-hours`** | Любой авторизованный пользователь (свой профиль) |
 
 ---
@@ -293,5 +325,6 @@ await apiFetch('/api/v1/users/me/weekly-capacity-hours', {
 |------|------------|
 | `docs/TIME_TRACKING_HOURLY_RATES.md` | Почасовые ставки, интервалы, права |
 | `docs/TIME_TRACKING_TEAM_WORKLOAD.md` | Поля ответа team-workload, ёмкость |
-| `docs/FRONTEND_CONNECTION.md` | Общая связка фронта с API (не только TT) |
-| `docs/TIME_TRACKING_FRONTEND.md` | Эта инструкция (копия: `Docs/time_tracking_frontend.md`) |
+| `docs/FRONTEND_CONNECTION.md` | **Подключение фронта к API: env, proxy, прод, CORS, проверка** (копия: `Docs/FRONTEND_CONNECTION.md`) |
+| `docs/FRONTEND_TIME_MANAGER_CLIENTS.md` | **Чеклист фронта по клиентам Time Manager** (задачи, категории расходов, роли) |
+| `docs/TIME_TRACKING_FRONTEND.md` | Эта инструкция по Time Manager (копия: `Docs/time_tracking_frontend.md`) |

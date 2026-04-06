@@ -98,3 +98,40 @@ async def apply_client_tasks_schema_patch(conn: AsyncConnection) -> None:
             """
         )
     )
+
+
+async def apply_client_expense_categories_schema_patch(conn: AsyncConnection) -> None:
+    """Категории расходов по клиентам — идемпотентно (PostgreSQL)."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_client_expense_categories (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES time_tracking_clients (id) ON DELETE CASCADE,
+                name VARCHAR(500) NOT NULL,
+                has_unit_price BOOLEAN NOT NULL DEFAULT FALSE,
+                is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+                sort_order INTEGER,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_client_exp_cat_client
+                ON time_tracking_client_expense_categories (client_id)
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_tt_client_exp_cat_active_name
+                ON time_tracking_client_expense_categories (client_id, lower(trim(name)))
+                WHERE NOT is_archived
+            """
+        )
+    )

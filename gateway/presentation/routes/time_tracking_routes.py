@@ -13,6 +13,10 @@ from presentation.schemas.time_manager_clients import (
     TimeManagerClientCreateBody,
     TimeManagerClientPatchBody,
 )
+from presentation.schemas.time_manager_client_expense_categories import (
+    TimeManagerClientExpenseCategoryCreateBody,
+    TimeManagerClientExpenseCategoryPatchBody,
+)
 from presentation.schemas.time_manager_client_tasks import (
     TimeManagerClientTaskCreateBody,
     TimeManagerClientTaskPatchBody,
@@ -325,6 +329,108 @@ async def delete_client_task(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.delete(f"{base}/clients/{client_id}/tasks/{task_id}")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return None
+
+
+@router.get("/clients/{client_id}/expense-categories")
+async def list_client_expense_categories(
+    client_id: str,
+    include_archived: bool = Query(False, alias="includeArchived"),
+    _: dict = Depends(require_view_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                f"{base}/clients/{client_id}/expense-categories",
+                params={"includeArchived": "true" if include_archived else "false"},
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.get("/clients/{client_id}/expense-categories/{category_id}")
+async def get_client_expense_category(
+    client_id: str,
+    category_id: str,
+    _: dict = Depends(require_view_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{base}/clients/{client_id}/expense-categories/{category_id}")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.post("/clients/{client_id}/expense-categories")
+async def create_client_expense_category(
+    client_id: str,
+    body: TimeManagerClientExpenseCategoryCreateBody,
+    _: dict = Depends(require_manage_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        payload = json.loads(body.model_dump_json(by_alias=False))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid expense category payload: {e}") from e
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(f"{base}/clients/{client_id}/expense-categories", json=payload)
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.patch("/clients/{client_id}/expense-categories/{category_id}")
+async def patch_client_expense_category(
+    client_id: str,
+    category_id: str,
+    body: TimeManagerClientExpenseCategoryPatchBody,
+    _: dict = Depends(require_manage_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        payload = json.loads(body.model_dump_json(by_alias=False))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid expense category payload: {e}") from e
+    if not payload:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.patch(
+                f"{base}/clients/{client_id}/expense-categories/{category_id}",
+                json=payload,
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+@router.delete("/clients/{client_id}/expense-categories/{category_id}", status_code=204)
+async def delete_client_expense_category(
+    client_id: str,
+    category_id: str,
+    _: dict = Depends(require_manage_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.delete(f"{base}/clients/{client_id}/expense-categories/{category_id}")
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Time tracking service unavailable")
     if r.status_code >= 400:
