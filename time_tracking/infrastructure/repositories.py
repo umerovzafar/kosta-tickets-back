@@ -11,6 +11,7 @@ from application.ports import HealthRepositoryPort
 from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
+    TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
 )
@@ -460,4 +461,86 @@ class ClientRepository:
         if not row:
             return False
         await self._session.execute(delete(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id))
+        return True
+
+
+class ClientTaskRepository:
+    """Задачи клиента time manager."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def list_for_client(self, client_id: str) -> list[TimeManagerClientTaskModel]:
+        q = (
+            select(TimeManagerClientTaskModel)
+            .where(TimeManagerClientTaskModel.client_id == client_id)
+            .order_by(TimeManagerClientTaskModel.name.asc())
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(self, client_id: str, task_id: str) -> TimeManagerClientTaskModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientTaskModel).where(
+                TimeManagerClientTaskModel.client_id == client_id,
+                TimeManagerClientTaskModel.id == task_id,
+            )
+        )
+        return r.scalars().one_or_none()
+
+    async def create(
+        self,
+        *,
+        client_id: str,
+        name: str,
+        default_billable_rate: Decimal | None,
+        billable_by_default: bool,
+        common_for_future_projects: bool,
+        add_to_existing_projects: bool,
+    ) -> TimeManagerClientTaskModel:
+        tid = str(uuid.uuid4())
+        now = _now_utc()
+        row = TimeManagerClientTaskModel(
+            id=tid,
+            client_id=client_id,
+            name=name.strip(),
+            default_billable_rate=default_billable_rate,
+            billable_by_default=billable_by_default,
+            common_for_future_projects=common_for_future_projects,
+            add_to_existing_projects=add_to_existing_projects,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(self, client_id: str, task_id: str, patch: dict[str, Any]) -> TimeManagerClientTaskModel | None:
+        row = await self.get_by_id(client_id, task_id)
+        if not row:
+            return None
+        if "name" in patch and patch["name"] is not None:
+            row.name = str(patch["name"]).strip()
+        if "default_billable_rate" in patch:
+            v = patch["default_billable_rate"]
+            row.default_billable_rate = None if v is None else (v if isinstance(v, Decimal) else Decimal(str(v)))
+        if "billable_by_default" in patch:
+            row.billable_by_default = bool(patch["billable_by_default"])
+        if "common_for_future_projects" in patch:
+            row.common_for_future_projects = bool(patch["common_for_future_projects"])
+        if "add_to_existing_projects" in patch:
+            row.add_to_existing_projects = bool(patch["add_to_existing_projects"])
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, client_id: str, task_id: str) -> bool:
+        row = await self.get_by_id(client_id, task_id)
+        if not row:
+            return False
+        await self._session.execute(
+            delete(TimeManagerClientTaskModel).where(
+                TimeManagerClientTaskModel.client_id == client_id,
+                TimeManagerClientTaskModel.id == task_id,
+            )
+        )
         return True
