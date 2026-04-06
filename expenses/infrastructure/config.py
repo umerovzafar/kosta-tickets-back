@@ -117,6 +117,11 @@ class Settings(BaseSettings):
         default=True,
         validation_alias=AliasChoices("EXPENSE_NOTIFY_AUTHOR_ON_DECISION"),
     )
+    # Письмо автору после отметки «Оплачено» (кто отметил — в теле письма и в поле paidBy в API)
+    expense_notify_author_on_paid: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("EXPENSE_NOTIFY_AUTHOR_ON_PAID"),
+    )
     # Опционально: Bearer JWT для GET /users/{id}, когда нет заголовка (согласование по ссылке из письма)
     expense_auth_bearer_for_author_email: str = Field(
         default="",
@@ -182,6 +187,7 @@ class Settings(BaseSettings):
         "smtp_use_tls",
         "expense_email_action_confirm_step",
         "expense_notify_author_on_decision",
+        "expense_notify_author_on_paid",
         "expense_allow_database_reset",
         mode="before",
     )

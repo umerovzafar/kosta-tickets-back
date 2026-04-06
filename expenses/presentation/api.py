@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
                 # create_all не добавляет колонки к уже существующим таблицам — иначе 500 на SELECT
                 for ddl in (
                     "ALTER TABLE expense_requests ADD COLUMN IF NOT EXISTS payment_deadline DATE",
+                    "ALTER TABLE expense_requests ADD COLUMN IF NOT EXISTS paid_by_user_id INTEGER",
                     "ALTER TABLE expense_attachments ADD COLUMN IF NOT EXISTS attachment_kind VARCHAR(64)",
                 ):
                     try:

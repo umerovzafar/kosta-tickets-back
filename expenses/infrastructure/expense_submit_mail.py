@@ -822,6 +822,119 @@ async def notify_expense_author_decision(
     _log.info("expense author notify: отправлено expense_id=%s to=%s", expense_id, to)
 
 
+async def notify_expense_author_paid(
+    settings: Settings,
+    *,
+    to_email: str,
+    display_name: str | None,
+    expense_id: str,
+    paid_by_line: str,
+) -> None:
+    """Письмо автору: заявка отмечена как оплаченная (кто отметил — в тексте)."""
+    if not _smtp_ready(settings):
+        _log.warning(
+            "expense author paid notify: SMTP не настроен (%s), expense_id=%s",
+            ", ".join(_smtp_missing_env_names(settings)),
+            expense_id,
+        )
+        return
+    to = (to_email or "").strip()
+    if not to:
+        _log.warning("expense author paid notify: пустой email, expense_id=%s", expense_id)
+        return
+
+    safe_id = html.escape(expense_id)
+    greeting = (display_name or "").strip() or "Здравствуйте"
+    safe_greeting = html.escape(greeting)
+    safe_paid_by = html.escape((paid_by_line or "").strip() or "—")
+
+    subject = f"Заявка {expense_id} оплачена"
+    lead = (
+        f"Ваша заявка на расход <strong>{safe_id}</strong> отмечена как <strong>оплаченная</strong> "
+        f"со стороны компании."
+    )
+    who = (
+        f'<p style="margin:16px 0 0 0;color:#0f172a;font-size:14px;">'
+        f"<strong>Оплату отметил(а):</strong> {safe_paid_by}</p>"
+    )
+    plain_lead = (
+        f"Ваша заявка на расход {expense_id} отмечена как оплаченная.\n\n"
+        f"Оплату отметил(а): {(paid_by_line or '').strip() or '—'}"
+    )
+
+    open_link = _build_open_link(settings, expense_id)
+    link_block_html = ""
+    link_block_plain = ""
+    if open_link:
+        safe_link = html.escape(open_link, quote=True)
+        link_block_html = f"""
+<p style="margin:20px 0 0 0;">
+  <a href="{safe_link}" style="color:#2563eb;font-weight:600;">Открыть заявку в системе</a>
+</p>"""
+        link_block_plain = f"\n\nСсылка: {open_link}"
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"/></head>
+<body style="margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;padding:24px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;padding:28px 24px;">
+      <tr><td>
+        <p style="margin:0 0 12px 0;font-size:15px;color:#0f172a;">{safe_greeting},</p>
+        <p style="margin:0 0 8px 0;font-size:15px;line-height:1.55;color:#334155;">{lead}</p>
+        {who}
+        {link_block_html}
+        <p style="margin:24px 0 0 0;font-size:13px;color:#64748b;">Kosta Legal · расходы</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+    plain_body = f"""{greeting},
+
+{plain_lead}{link_block_plain}
+"""
+    from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
+    if not from_addr:
+        _log.warning(
+            "expense author paid notify: пустой отправитель — задайте EXPENSE_MAIL_FROM или EXPENSE_SMTP_USER, expense_id=%s",
+            expense_id,
+        )
+        return
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to
+    msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    _log.info(
+        "expense author paid notify: отправка SMTP expense_id=%s to=%s host=%s",
+        expense_id,
+        to,
+        settings.smtp_host.strip(),
+    )
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host.strip(),
+            port=int(settings.smtp_port),
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            start_tls=bool(settings.smtp_use_tls),
+        )
+    except Exception as e:
+        _log.error(
+            "expense author paid notify: ошибка SMTP expense_id=%s: %s: %s",
+            expense_id,
+            type(e).__name__,
+            e,
+        )
+        raise
+    _log.info("expense author paid notify: отправлено expense_id=%s to=%s", expense_id, to)
+
+
 async def send_expense_smtp_test(settings: Settings) -> list[str]:
     """Тест SMTP: письмо «на согласование»."""
     if not _smtp_ready(settings):

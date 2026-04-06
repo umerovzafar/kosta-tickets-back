@@ -16,7 +16,10 @@ from application.expense_service import calc_equivalent, validate_submit_fields
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
 from infrastructure.auth_users import fetch_users_by_ids
-from infrastructure.expense_author_decision_notify import run_author_decision_notification_safe
+from infrastructure.expense_author_decision_notify import (
+    run_author_decision_notification_safe,
+    run_expense_paid_notification_safe,
+)
 from infrastructure.expense_submit_mail import (
     AttachmentEmailItem,
     ExpenseModerationEmailContext,
@@ -143,7 +146,22 @@ def _ensure_can_edit(row: ExpenseRequestModel, user: dict) -> None:
         )
 
 
-def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestListItemOut:
+def _author_snippet(user_id: int, profile: dict | None) -> ExpenseAuthorSnippet:
+    p = profile or {}
+    return ExpenseAuthorSnippet(
+        id=user_id,
+        display_name=p.get("display_name"),
+        email=p.get("email"),
+        picture=p.get("picture"),
+        position=p.get("position"),
+    )
+
+
+def _list_item(
+    row: ExpenseRequestModel,
+    author: dict | None = None,
+    paid_by_profile: dict | None = None,
+) -> ExpenseRequestListItemOut:
     n = len(row.attachments or [])
     a = author or {}
     created_by = ExpenseAuthorSnippet(
@@ -152,6 +170,11 @@ def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseR
         email=a.get("email"),
         picture=a.get("picture"),
         position=a.get("position"),
+    )
+    paid_by = (
+        _author_snippet(row.paid_by_user_id, paid_by_profile)
+        if row.paid_by_user_id is not None
+        else None
     )
     return ExpenseRequestListItemOut(
         id=row.id,
@@ -181,14 +204,20 @@ def _list_item(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseR
         approved_at=row.approved_at,
         rejected_at=row.rejected_at,
         paid_at=row.paid_at,
+        paid_by_user_id=row.paid_by_user_id,
+        paid_by=paid_by,
         closed_at=row.closed_at,
         withdrawn_at=row.withdrawn_at,
         attachments_count=n,
     )
 
 
-def _detail(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequestDetailOut:
-    li = _list_item(row, author)
+def _detail(
+    row: ExpenseRequestModel,
+    author: dict | None = None,
+    paid_by_profile: dict | None = None,
+) -> ExpenseRequestDetailOut:
+    li = _list_item(row, author, paid_by_profile)
     sh = sorted(row.status_history or [], key=lambda x: x.changed_at)
     al = sorted(row.audit_logs or [], key=lambda x: x.performed_at)
     atts = row.attachments or []
@@ -238,8 +267,13 @@ def _detail(row: ExpenseRequestModel, author: dict | None = None) -> ExpenseRequ
 
 async def _detail_response(row: ExpenseRequestModel, authorization: Optional[str]) -> ExpenseRequestDetailOut:
     settings = get_settings()
-    m = await fetch_users_by_ids(settings.auth_service_url, authorization, {row.created_by_user_id})
-    return _detail(row, m.get(row.created_by_user_id))
+    ids = {row.created_by_user_id}
+    if row.paid_by_user_id is not None:
+        ids.add(row.paid_by_user_id)
+    m = await fetch_users_by_ids(settings.auth_service_url, authorization, ids)
+    author = m.get(row.created_by_user_id)
+    paid_by_p = m.get(row.paid_by_user_id) if row.paid_by_user_id is not None else None
+    return _detail(row, author, paid_by_p)
 
 
 async def _list_with_authors(
@@ -250,10 +284,21 @@ async def _list_with_authors(
     authorization: Optional[str],
 ) -> ExpenseListResponse:
     settings = get_settings()
-    ids = {r.created_by_user_id for r in rows}
+    ids: set[int] = set()
+    for r in rows:
+        ids.add(r.created_by_user_id)
+        if r.paid_by_user_id is not None:
+            ids.add(r.paid_by_user_id)
     m = await fetch_users_by_ids(settings.auth_service_url, authorization, ids)
     return ExpenseListResponse(
-        items=[_list_item(r, m.get(r.created_by_user_id)) for r in rows],
+        items=[
+            _list_item(
+                r,
+                m.get(r.created_by_user_id),
+                m.get(r.paid_by_user_id) if r.paid_by_user_id is not None else None,
+            )
+            for r in rows
+        ],
         total=total,
         skip=skip,
         limit=limit,
@@ -743,6 +788,7 @@ async def pay_expense(
     prev = row.status
     row.status = "paid"
     row.paid_at = _utc_now()
+    row.paid_by_user_id = int(user["id"])
     row.updated_by_user_id = int(user["id"])
     row.updated_at = _utc_now()
     await repo.add_status_history(
@@ -762,6 +808,15 @@ async def pay_expense(
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)
+    await run_expense_paid_notification_safe(
+        get_settings(),
+        authorization=authorization,
+        author_user_id=row.created_by_user_id,
+        expense_id=row.id,
+        paid_by_user_id=int(user["id"]),
+        paid_by_display_name=str(user.get("display_name") or "").strip() or None,
+        paid_by_email=str(user.get("email") or "").strip() or None,
+    )
     return await _detail_response(row, authorization)
 
 

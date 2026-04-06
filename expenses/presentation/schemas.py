@@ -124,6 +124,8 @@ class ExpenseRequestListItemOut(BaseModel):
     approved_at: Optional[datetime] = Field(None, serialization_alias="approvedAt")
     rejected_at: Optional[datetime] = Field(None, serialization_alias="rejectedAt")
     paid_at: Optional[datetime] = Field(None, serialization_alias="paidAt")
+    paid_by_user_id: Optional[int] = Field(None, serialization_alias="paidByUserId")
+    paid_by: Optional[ExpenseAuthorSnippet] = Field(None, serialization_alias="paidBy")
     closed_at: Optional[datetime] = Field(None, serialization_alias="closedAt")
     withdrawn_at: Optional[datetime] = Field(None, serialization_alias="withdrawnAt")
     attachments_count: int = Field(0, serialization_alias="attachmentsCount")
