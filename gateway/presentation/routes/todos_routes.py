@@ -94,6 +94,91 @@ async def todos_calendar_connect(request: Request):
     return JSONResponse(content={"url": data["url"]})
 
 
+@router.get("/calendar/status", summary="Outlook: статус подключения календаря (всегда JSON)")
+async def todos_calendar_status(request: Request):
+    """
+    Явный маршрут до catch-all: фронт ожидает JSON {\"connected\": true|false}.
+    Общий прокси мог бы вернуть не тот Content-Type при ошибке upstream.
+    """
+    base = _todos_base()
+    if not base:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "TODOS_SERVICE_URL not configured",
+                "connected": False,
+            },
+        )
+    url = f"{base}/api/v1/todos/calendar/status"
+    if request.url.query:
+        url = f"{url}?{request.url.query}"
+    auth = request.headers.get("Authorization")
+    headers = {"Authorization": auth} if auth else {}
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            r = await client.get(url, headers=headers)
+    except httpx.RequestError:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Todos service unavailable",
+                "connected": False,
+            },
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Bad gateway", "connected": False},
+        )
+    if r.status_code == 401:
+        return JSONResponse(status_code=401, content={"detail": "Authorization required"})
+    if r.status_code >= 400:
+        connected = False
+        detail: str | None = None
+        try:
+            body = r.json()
+            if isinstance(body, dict):
+                detail = body.get("detail")
+                if "connected" in body:
+                    connected = bool(body.get("connected"))
+                return JSONResponse(
+                    status_code=r.status_code,
+                    content={
+                        "detail": detail or "Todos calendar error",
+                        "connected": connected,
+                    },
+                )
+        except Exception:
+            pass
+        return JSONResponse(
+            status_code=r.status_code,
+            content={
+                "detail": (r.text or "Todos error")[:2000],
+                "connected": False,
+            },
+        )
+    try:
+        data = r.json()
+    except Exception:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "Ответ todos /calendar/status не JSON",
+                "connected": False,
+            },
+        )
+    if not isinstance(data, dict):
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Некорректный JSON от todos", "connected": False},
+        )
+    connected = bool(data.get("connected"))
+    out = {"connected": connected}
+    if "error" in data:
+        out["error"] = data["error"]
+    return JSONResponse(content=out)
+
+
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_todos(request: Request, path: str):
     """Проксирование запросов к сервису todos."""

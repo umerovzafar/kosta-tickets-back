@@ -730,6 +730,7 @@ async def pay_expense(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
+    """Перевод в «Выплачено» (paid): любой expense_type, возмещаемые и невозмещаемые одобренные заявки."""
     check_moderate_role(user)
     repo = ExpenseRepository(session)
     row = await repo.get_by_id(expense_id, load_children=True)
@@ -738,8 +739,6 @@ async def pay_expense(
     _ensure_access(row, user)
     if row.status != "approved":
         raise HTTPException(status_code=400, detail="Выплата только для approved")
-    if not row.is_reimbursable:
-        raise HTTPException(status_code=400, detail="Выплата только для возмещаемых расходов")
     ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     row.status = "paid"

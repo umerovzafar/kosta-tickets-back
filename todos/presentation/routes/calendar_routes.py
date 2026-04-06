@@ -143,16 +143,20 @@ async def calendar_status(
     user_id: Annotated[int, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_session),
 ):
-    """Проверка, подключён ли календарь Outlook для текущего пользователя."""
+    """Проверка, подключён ли календарь Outlook для текущего пользователя. Всегда JSON."""
     try:
         repo = OutlookCalendarTokenRepository(session)
         row = await repo.get_by_user_id(user_id)
-    except Exception:
-        raise HTTPException(
+        return JSONResponse(content={"connected": row is not None})
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.warning("calendar status: DB or query failed: %s", e, exc_info=True)
+        # Не отдаём 500: фронт может опросить статус до готовности БД
+        return JSONResponse(
             status_code=503,
-            detail="Calendar status unavailable",
-        ) from None
-    return {"connected": row is not None}
+            content={"connected": False, "error": "unavailable", "detail": str(e)[:500]},
+        )
 
 
 class CreateCalendarEventBody(BaseModel):
