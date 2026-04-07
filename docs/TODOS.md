@@ -49,27 +49,44 @@
 
 ### Быстрый запуск через Docker Desktop (Windows)
 
-1. Запустите **Docker Desktop** и дождитесь «Running».
-2. В корне **`tickets-back`** скопируйте **`.env.example`** → **`.env`**, заполните пароли БД (хотя бы для `users` / `todos`).
-3. Выполните:
+Минимальный стек для разработки **todos** без поднятия всего монорепо: **PostgreSQL (users + todos)**, **auth**, **todos** с пробросом порта **1240** на хост.
+
+**Файлы:**
+
+- **`docker-compose.todos-dev.yml`** — override к основному **`docker-compose.yml`**: проброс **`1240:1240`** для сервиса **`todos`** (прямая проверка `curl` с машины).
+- **`scripts/todos_dev_up.ps1`** — запускает **`users_db`**, **`todos_db`**, **`auth`**, **`todos`** с двумя compose-файлами.
+
+**Шаги:**
+
+1. Установите и запустите **Docker Desktop**.
+2. В корне **tickets-back** скопируйте **`.env.example`** → **`.env`** и задайте пароли (**`USERS_DB_PASSWORD`**, **`TODOS_DB_PASSWORD`**, **`TICKETS_DB_PASSWORD`** и т.д.) так, чтобы строки **`GATEWAY_DATABASE_URL`**, **`AUTH_DATABASE_URL`**, **`TODOS_DATABASE_URL`** и остальные `*_DATABASE_URL` совпадали с этими паролями (см. комментарии в **`.env.example`**).
+3. Выполните из корня репозитория (PowerShell):
 
    ```powershell
    .\scripts\todos_dev_up.ps1
    ```
 
-   Скрипт поднимает **`users_db`**, **`todos_db`**, **`auth`**, **`todos`** и пробрасывает **`http://127.0.0.1:1240`** на сервис todos (файл **`docker-compose.todos-dev.yml`**).
+4. Проверьте сервис todos напрямую:
 
-4. Проверка: **`curl http://127.0.0.1:1240/health`** — должен быть JSON со **`status`**.
+   ```text
+   curl.exe -s http://127.0.0.1:1240/health
+   ```
 
-5. Чтобы фронт ходил **как в проде** (через gateway):
+5. Чтобы проверять **как фронт** (через gateway и пути **`/api/v1/todos/...`**), поднимите **gateway** (в типичном **`docker compose up -d gateway`** подтянутся зависимости из основного compose — полный стек; для только todos+gateway в одной сети убедитесь, что **todos** уже запущен скриптом или поднимите весь проект согласно **`docker-compose.yml`**):
 
    ```powershell
    docker compose up -d gateway
    ```
 
-   Затем **`http://127.0.0.1:1234/health/todos`** — должно быть **`"todos": "reachable"`**. Далее **`GET http://127.0.0.1:1234/api/v1/todos/board`** с заголовком **`Authorization`** (токен пользователя).
+   Затем:
 
-На **продакшене** (`ticketsback.kostalegal.com`) **503** не исправляется скриптом на ПК: в stack должен быть задеплоен сервис **`todos`**, у **gateway** — **`TODOS_SERVICE_URL=http://todos:1240`**, см. чеклист ниже.
+   ```text
+   curl.exe -s http://127.0.0.1:1234/health/todos
+   ```
+
+   Ожидается **200** и JSON с **`"todos": "reachable"`**, если у gateway задан **`TODOS_SERVICE_URL=http://todos:1240`** (по умолчанию в compose).
+
+**Важно:** код в **tickets-back** / **tickets-front** **не устраняет** **503** на проде, если за gateway нет работающего **todos** — см. раздел **[Gateway](#gateway)** ниже.
 
 ---
 
@@ -146,10 +163,21 @@
 
 После правки env перезапустите **gateway** и при необходимости **todos**.
 
+### Продакшен (краткий чеклист)
+
+Пример публичного API: **`https://ticketsback.kostalegal.com`**. Запросы **`/api/v1/todos/board`** и **`/api/v1/todos/calendar/status`** обрабатывает **gateway**; **503** значит: до контейнера **todos** с gateway нет нормального соединения или не задан **`TODOS_SERVICE_URL`**. Настраивается на сервере (**Portainer** / **Compose** / **Kubernetes**), не в React.
+
+1. В stack должен быть сервис **todos** (+ **todos_db**), образ из этого репозитория.
+2. У контейнера **gateway**: **`TODOS_SERVICE_URL=http://todos:1240`** (не **`localhost`** / **`127.0.0.1`** внутри Docker).
+3. Перезапуск **gateway** после смены env.
+4. В браузере или curl: **`GET https://<gateway>/health/todos`** — ожидается **200** и **`"todos": "reachable"`**. Если **503** — смотрите JSON (**`hint`**, **`upstream_message`**, **`detail`**).
+
+На фронте см. **`docs/FRONTEND_TODOS.md`** (**§0.6**, **§0.8**): консоль, расширения (**`content.js`**), проверка **`response.ok`** перед разбором JSON.
+
 ---
 
 ## Клиенты (фронтенд)
 
-Полная таблица эндпоинтов, типы TypeScript, примеры `apiFetch`, календарь Outlook и типичные ошибки — в **`docs/FRONTEND_TODOS.md`** (в т.ч. **§0.6** про **503** и **`GET /health/todos`**). В репозитории **tickets-front** см. **`docs/FRONTEND_CONNECTION.md`**.
+Полная таблица эндпоинтов, типы TypeScript, примеры `apiFetch`, календарь Outlook и типичные ошибки — в **`docs/FRONTEND_TODOS.md`** (в т.ч. **§0.6** — **503** и **`GET /health/todos`**, **§0.8** — консоль и **`response.ok`**). В репозитории **tickets-front** см. **`docs/FRONTEND_CONNECTION.md`**.
 
 Старые короткие файлы `FRONTEND_TODOS_BOARD*.md` помечены как устаревшие; используйте **`FRONTEND_TODOS.md`**.

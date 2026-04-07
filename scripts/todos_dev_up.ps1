@@ -1,10 +1,16 @@
 # Запуск зависимостей для сервиса todos (БД + auth + сам todos) с пробросом :1240.
-# Требуется Docker Desktop и файл .env в корне tickets-back (см. .env.example).
+# Требуется Docker Desktop и файл .env в корне tickets-back.
+# Перед первым запуском: скопируйте .env.example -> .env и задайте пароли (см. docs/TODOS.md).
 # Использование: из корня репозитория  .\scripts\todos_dev_up.ps1
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+
+if (-not (Test-Path -LiteralPath (Join-Path $root ".env"))) {
+    Write-Host "Файл .env не найден. Скопируйте .env.example в .env и задайте пароли." -ForegroundColor Yellow
+    exit 1
+}
 
 Write-Host "Starting todos_db, users_db, auth, todos (with port 1240)..." -ForegroundColor Cyan
 docker compose -f docker-compose.yml -f docker-compose.todos-dev.yml up -d users_db todos_db auth todos
