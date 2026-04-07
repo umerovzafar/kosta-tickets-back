@@ -9,6 +9,7 @@ from infrastructure.schema_patches import (
     apply_client_tasks_schema_patch,
     apply_team_workload_schema_patch,
     apply_time_manager_clients_schema_patch,
+    apply_user_project_access_patch,
 )
 from presentation.routes import (
     client_expense_categories,
@@ -17,6 +18,7 @@ from presentation.routes import (
     clients,
     health,
     hourly_rates,
+    project_access,
     team_workload,
     time_entries,
     users,
@@ -32,6 +34,7 @@ async def lifespan(app: FastAPI):
         await apply_client_tasks_schema_patch(conn)
         await apply_client_expense_categories_schema_patch(conn)
         await apply_client_projects_schema_patch(conn)
+        await apply_user_project_access_patch(conn)
     yield
 
 
@@ -51,4 +54,5 @@ app.include_router(clients.router)
 app.include_router(team_workload.router)
 app.include_router(hourly_rates.router)
 app.include_router(time_entries.router)
+app.include_router(project_access.router)
 app.include_router(users.router)

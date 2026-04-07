@@ -97,3 +97,47 @@ async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> Any:
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
     return r.json()
+
+
+class ProjectAccessPutBody(BaseModel):
+    """Тело замены списка проектов с доступом (только projectIds; кто выдал — подставляет gateway)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    project_ids: list[str] = Field(default_factory=list, alias="projectIds")
+
+
+async def project_access_get_gateway(auth_user_id: int) -> Any:
+    base = _base()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(f"{base}/users/{auth_user_id}/project-access")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
+async def project_access_put_gateway(
+    auth_user_id: int,
+    body: ProjectAccessPutBody,
+    *,
+    granted_by_auth_user_id: int,
+) -> Any:
+    base = _base()
+    payload = {
+        "project_ids": list(body.project_ids),
+        "granted_by_auth_user_id": granted_by_auth_user_id,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.put(
+                f"{base}/users/{auth_user_id}/project-access",
+                json=payload,
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()

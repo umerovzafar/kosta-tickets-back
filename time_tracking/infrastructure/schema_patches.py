@@ -217,3 +217,37 @@ async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> 
     ]
     for col in stmts:
         await conn.execute(text(f"ALTER TABLE time_tracking_client_projects {col}"))
+
+
+async def apply_user_project_access_patch(conn: AsyncConnection) -> None:
+    """Доступ пользователей к проектам для списания времени (asyncpg — по одной команде)."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_user_project_access (
+                id VARCHAR(36) PRIMARY KEY,
+                auth_user_id INTEGER NOT NULL REFERENCES time_tracking_users (auth_user_id) ON DELETE CASCADE,
+                project_id VARCHAR(36) NOT NULL REFERENCES time_tracking_client_projects (id) ON DELETE CASCADE,
+                granted_by_auth_user_id INTEGER,
+                created_at TIMESTAMPTZ NOT NULL,
+                CONSTRAINT uq_tt_user_project_access UNIQUE (auth_user_id, project_id)
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_upa_user
+                ON time_tracking_user_project_access (auth_user_id)
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_upa_project
+                ON time_tracking_user_project_access (project_id)
+            """
+        )
+    )

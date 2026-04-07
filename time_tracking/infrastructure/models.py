@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.database import Base
@@ -171,3 +171,28 @@ class TimeManagerClientProjectModel(Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeTrackingUserProjectAccessModel(Base):
+    """Какие проекты доступны пользователю для списания времени (назначает менеджер учёта времени)."""
+
+    __tablename__ = "time_tracking_user_project_access"
+    __table_args__ = (
+        UniqueConstraint("auth_user_id", "project_id", name="uq_tt_user_project_access"),
+        Index("ix_tt_upa_user", "auth_user_id"),
+        Index("ix_tt_upa_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auth_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("time_tracking_users.auth_user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_client_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    granted_by_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -3,7 +3,7 @@
 /api/v1/time-tracking/users/... (нужно, если nginx проксирует только /api/v1/users).
 """
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from presentation.routes.time_tracking_hourly_proxy import (
     HourlyRateCreateBody,
@@ -15,10 +15,18 @@ from presentation.routes.time_tracking_hourly_proxy import (
     hourly_rates_list_gateway,
     hourly_rates_patch_gateway,
 )
-from presentation.routes.time_tracking_routes import require_manage_role, require_view_role
+from presentation.routes.time_tracking_routes import (
+    require_manage_project_access,
+    require_manage_role,
+    require_view_project_access,
+    require_view_role,
+)
 from presentation.routes.time_tracking_te_proxy import (
+    ProjectAccessPutBody,
     TimeEntryCreateBody,
     TimeEntryPatchBody,
+    project_access_get_gateway,
+    project_access_put_gateway,
     time_entries_create_gateway,
     time_entries_delete_gateway,
     time_entries_list_gateway,
@@ -109,3 +117,27 @@ async def delete_time_entry_under_users(
     _: dict = Depends(require_manage_role),
 ):
     return await time_entries_delete_gateway(user_id, entry_id)
+
+
+@router.get("/{auth_user_id}/project-access")
+async def get_project_access_under_users(
+    auth_user_id: int,
+    _: dict = Depends(require_view_project_access),
+):
+    return await project_access_get_gateway(auth_user_id)
+
+
+@router.put("/{auth_user_id}/project-access")
+async def put_project_access_under_users(
+    auth_user_id: int,
+    body: ProjectAccessPutBody,
+    user: dict = Depends(require_manage_project_access),
+):
+    uid = user.get("id")
+    if uid is None:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return await project_access_put_gateway(
+        auth_user_id,
+        body,
+        granted_by_auth_user_id=int(uid),
+    )

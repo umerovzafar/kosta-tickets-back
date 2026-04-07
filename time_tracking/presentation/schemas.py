@@ -152,6 +152,27 @@ class TimeEntryPatchBody(BaseModel):
     description: Optional[str] = None
 
 
+class ProjectAccessOut(BaseModel):
+    """Список id проектов, доступных пользователю для списания времени."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    project_ids: list[str] = Field(..., alias="projectIds")
+
+
+class ProjectAccessPutBody(BaseModel):
+    """Полная замена списка проектов с доступом (пустой список — ни один проект недоступен)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    project_ids: list[str] = Field(default_factory=list, alias="projectIds")
+    granted_by_auth_user_id: Optional[int] = Field(
+        None,
+        alias="grantedByAuthUserId",
+        description="Кто выдал доступ (прокси gateway подставляет текущего пользователя).",
+    )
+
+
 class TimeManagerClientOut(BaseModel):
     """Клиент time manager (настройки биллинга)."""
 

@@ -38,8 +38,11 @@ from presentation.routes.time_tracking_hourly_proxy import (
     hourly_rates_patch_gateway,
 )
 from presentation.routes.time_tracking_te_proxy import (
+    ProjectAccessPutBody,
     TimeEntryCreateBody,
     TimeEntryPatchBody,
+    project_access_get_gateway,
+    project_access_put_gateway,
     time_entries_create_gateway,
     time_entries_delete_gateway,
     time_entries_list_gateway,
@@ -73,6 +76,69 @@ def require_manage_role(user: dict = Depends(get_current_user)):
             detail="Only administrators can update or delete time tracking users",
         )
     return user
+
+
+async def _fetch_time_tracking_user_role(auth_user_id: int) -> str | None:
+    """Роль в сервисе time_tracking (user / manager / …)."""
+    settings = get_settings()
+    base = (settings.time_tracking_service_url or "").strip().rstrip("/")
+    if not base:
+        raise HTTPException(status_code=503, detail="Time tracking service not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{base}/users/{auth_user_id}")
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code == 404:
+        return None
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    data = r.json()
+    role = (data.get("role") or "").strip()
+    return role or None
+
+
+async def require_view_project_access(
+    auth_user_id: int,
+    user: dict = Depends(get_current_user),
+):
+    my_id = user.get("id")
+    if my_id is not None and int(my_id) == auth_user_id:
+        return user
+    role = (user.get("role") or "").strip()
+    if role in {
+        "Главный администратор",
+        "Администратор",
+        "Партнер",
+        "IT отдел",
+        "Офис менеджер",
+    }:
+        return user
+    if my_id is None:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    tt_role = await _fetch_time_tracking_user_role(int(my_id))
+    if tt_role == "manager":
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Недостаточно прав для просмотра доступа к проектам",
+    )
+
+
+async def require_manage_project_access(user: dict = Depends(get_current_user)):
+    role = (user.get("role") or "").strip()
+    if role in {"Главный администратор", "Администратор", "Партнер"}:
+        return user
+    my_id = user.get("id")
+    if my_id is None:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    tt_role = await _fetch_time_tracking_user_role(int(my_id))
+    if tt_role == "manager":
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Недостаточно прав для настройки доступа к проектам",
+    )
 
 
 class UserUpsertBody(BaseModel):
@@ -187,6 +253,30 @@ async def proxy_delete_time_entry(
     _: dict = Depends(require_manage_role),
 ):
     return await time_entries_delete_gateway(auth_user_id, entry_id)
+
+
+@router.get("/users/{auth_user_id}/project-access")
+async def proxy_get_project_access(
+    auth_user_id: int,
+    _: dict = Depends(require_view_project_access),
+):
+    return await project_access_get_gateway(auth_user_id)
+
+
+@router.put("/users/{auth_user_id}/project-access")
+async def proxy_put_project_access(
+    auth_user_id: int,
+    body: ProjectAccessPutBody,
+    user: dict = Depends(require_manage_project_access),
+):
+    uid = user.get("id")
+    if uid is None:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return await project_access_put_gateway(
+        auth_user_id,
+        body,
+        granted_by_auth_user_id=int(uid),
+    )
 
 
 @router.get("/users")

@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
-from infrastructure.repositories import TimeEntryRepository, TimeTrackingUserRepository
+from infrastructure.repositories import (
+    TimeEntryRepository,
+    TimeTrackingUserRepository,
+    UserProjectAccessRepository,
+)
 from presentation.schemas import TimeEntryCreateBody, TimeEntryOut, TimeEntryPatchBody
 
 router = APIRouter(prefix="/users", tags=["time_entries"])
@@ -17,6 +21,24 @@ async def _ensure_user(session: AsyncSession, auth_user_id: int) -> None:
     ur = TimeTrackingUserRepository(session)
     if not await ur.get_by_auth_user_id(auth_user_id):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+
+async def _require_project_access_if_set(
+    session: AsyncSession,
+    auth_user_id: int,
+    project_id: str | None,
+) -> None:
+    if project_id is None:
+        return
+    pid = str(project_id).strip()
+    if not pid:
+        return
+    par = UserProjectAccessRepository(session)
+    if not await par.has_access(auth_user_id, pid):
+        raise HTTPException(
+            status_code=403,
+            detail="Нет доступа к этому проекту для списания времени",
+        )
 
 
 @router.get("/{auth_user_id}/time-entries", response_model=list[TimeEntryOut])
@@ -41,6 +63,7 @@ async def create_time_entry(
     session: AsyncSession = Depends(get_session),
 ) -> TimeEntryOut:
     await _ensure_user(session, auth_user_id)
+    await _require_project_access_if_set(session, auth_user_id, body.project_id)
     repo = TimeEntryRepository(session)
     try:
         row = await repo.create(
@@ -70,6 +93,8 @@ async def patch_time_entry(
     patch = body.model_dump(exclude_unset=True)
     if not patch:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
+    if "project_id" in patch:
+        await _require_project_access_if_set(session, auth_user_id, patch.get("project_id"))
     repo = TimeEntryRepository(session)
     try:
         row = await repo.update(auth_user_id=auth_user_id, entry_id=entry_id, patch=patch)
