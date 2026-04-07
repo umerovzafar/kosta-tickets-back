@@ -2,7 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from presentation.routes import health, calendar_routes
+from infrastructure.models import (  # noqa: F401 — регистрация таблиц для create_all
+    OutlookCalendarTokenModel,
+    TodoBoardModel,
+    TodoCardModel,
+    TodoColumnModel,
+)
+from presentation.routes import board_routes, calendar_routes, health
 from infrastructure.database import Base, engine
 
 
@@ -24,3 +30,4 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(calendar_routes.router, prefix="/api/v1/todos")
+app.include_router(board_routes.router, prefix="/api/v1/todos")
