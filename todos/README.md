@@ -19,3 +19,5 @@ uvicorn main:app --host 0.0.0.0 --port 1240
 ```
 
 В Docker см. сервис `todos` в корневом `docker-compose.yml`.
+
+Быстрый старт с пробросом порта **1240**: из корня **`tickets-back`** выполните **`.\scripts\todos_dev_up.ps1`** (нужен Docker Desktop; см. **`docs/TODOS.md`**).

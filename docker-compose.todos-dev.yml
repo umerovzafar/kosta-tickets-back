@@ -1,0 +1,12 @@
+# Опционально: проброс порта todos на хост для локальной проверки без полного стека gateway.
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.todos-dev.yml up -d todos todos_db auth users_db
+# Проверка: GET http://127.0.0.1:1240/health
+#
+# Полный API todos идёт через gateway: /api/v1/todos/... — для этого нужен запущенный gateway
+# с TODOS_SERVICE_URL=http://todos:1240.
+
+services:
+  todos:
+    ports:
+      - "1240:1240"
