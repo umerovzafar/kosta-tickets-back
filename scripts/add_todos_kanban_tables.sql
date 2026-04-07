@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS todo_board_columns (
     title VARCHAR(200) NOT NULL,
     position INTEGER NOT NULL,
     color VARCHAR(32) NOT NULL DEFAULT '#6b7280',
+    is_collapsed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ
 );

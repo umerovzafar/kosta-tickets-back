@@ -43,7 +43,7 @@
 | На этой неделе | `#2563eb` |
 | Позже | `#ea580c` |
 
-- Колонки и карточки имеют **`position`** (0…n−1). В JSON поля в **snake_case**.
+- Колонки и карточки имеют **`position`** (0…n−1). У колонки есть **`is_collapsed`** — свёрнуто ли узкое представление (сохраняется в БД). В JSON поля в **snake_case**; в телах запросов допустим **camelCase** `isCollapsed` (Pydantic).
 
 ### 2.2 Таблица эндпоинтов
 
@@ -67,8 +67,8 @@
 | Эндпоинт | Тело |
 |----------|------|
 | `PATCH /board` | `{ "background_url": "<url>" }` или `{ "background_url": null }`. Пустое тело → **400**. |
-| `POST /board/columns` | `{ "title": "...", "color": "#hex", "insert_at": 0 }` — `color` и `insert_at` опционально (`insert_at` — индекс вставки слева, без поля — в конец). |
-| `PATCH /board/columns/{id}` | `{ "title": "..." }` и/или `{ "color": "#hex" }` |
+| `POST /board/columns` | `{ "title": "...", "color": "#hex", "insert_at": 0, "is_collapsed": false }` — опционально `color`, `insert_at`, **`is_collapsed`** / **`isCollapsed`**. |
+| `PATCH /board/columns/{id}` | `{ "title": "..." }`, `{ "color": "#hex" }`, **`{ "is_collapsed": true }`** или **`{ "isCollapsed": false }`** — только нужные поля. |
 | `PUT /board/columns/reorder` | `{ "ordered_column_ids": [2, 1, 3] }` — **полный** список id колонок в новом порядке слева направо. |
 | `POST .../columns/{id}/cards` | `{ "title": "...", "body": "...", "insert_at": 0 }` — `body` и `insert_at` опционально. |
 | `PATCH /board/cards/{id}` | опционально: `title`, `body`, `column_id`, `position`. |
@@ -91,6 +91,7 @@ interface TodoBoardColumn {
   title: string
   position: number
   color: string
+  is_collapsed: boolean
   task_count: number
   cards: TodoBoardCard[]
 }
@@ -133,6 +134,13 @@ await apiFetch(`/api/v1/todos/board/columns/${columnId}/cards`, {
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ title: 'Задача' }),
 })
+
+// Свернуть / развернуть колонку (сохраняется на сервере)
+await apiFetch(`/api/v1/todos/board/columns/${columnId}`, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ isCollapsed: true }),
+})
 ```
 
 ---
@@ -141,14 +149,14 @@ await apiFetch(`/api/v1/todos/board/columns/${columnId}/cards`, {
 
 ### 3.1 Загрузка
 
-Один **`GET /api/v1/todos/board`** — массив **`columns`** с полями **`id`**, **`title`**, **`color`**, **`position`**, **`task_count`**, **`cards`**.
+Один **`GET /api/v1/todos/board`** — массив **`columns`** с полями **`id`**, **`title`**, **`color`**, **`position`**, **`is_collapsed`**, **`task_count`**, **`cards`**.
 
 Сортируйте колонки по **`position`**; не полагайтесь только на порядок полей в JSON.
 
 ### 3.2 Добавление / переименование / удаление
 
-- **Добавить:** `POST /board/columns` с `title`; опционально `color`, **`insert_at`** (индекс слева, иначе конец).
-- **Изменить:** `PATCH .../columns/{id}` — только изменяемые поля.
+- **Добавить:** `POST /board/columns` с `title`; опционально `color`, **`insert_at`**, **`is_collapsed`**.
+- **Изменить:** `PATCH .../columns/{id}` — заголовок, цвет, **`is_collapsed`** (свернуть/развернуть).
 - **Удалить:** `DELETE .../columns/{id}` — карточки в колонке удаляются вместе с ней.
 
 ### 3.3 Смена порядка (DnD)
@@ -176,6 +184,7 @@ await apiFetch(`/api/v1/todos/board/columns/${columnId}/cards`, {
 | Перетащил колонку | `PUT .../columns/reorder` |
 | Новая колонка | `POST .../board/columns` |
 | Переименовал / цвет | `PATCH .../columns/{id}` |
+| Свернул / развернул колонку | `PATCH .../columns/{id}` с `is_collapsed` или `isCollapsed` |
 | Удалил колонку | `DELETE .../columns/{id}` |
 
 ---

@@ -104,6 +104,7 @@ class KanbanRepository:
                     title=title,
                     position=i,
                     color=color,
+                    is_collapsed=False,
                     created_at=now,
                     updated_at=None,
                 )
@@ -188,6 +189,7 @@ class KanbanRepository:
             title=title.strip(),
             position=pos,
             color=(color or "#6b7280").strip()[:32],
+            is_collapsed=bool(is_collapsed),
             created_at=now,
             updated_at=None,
         )
@@ -202,6 +204,7 @@ class KanbanRepository:
         *,
         title: str | None,
         color: str | None,
+        is_collapsed: bool | None,
     ) -> TodoColumnModel | None:
         col = await self.get_column_if_owned(user_id, column_id)
         if not col:
@@ -211,6 +214,8 @@ class KanbanRepository:
             col.title = title.strip()
         if color is not None:
             col.color = color.strip()[:32]
+        if is_collapsed is not None:
+            col.is_collapsed = bool(is_collapsed)
         col.updated_at = now
         self._session.add(col)
         return col

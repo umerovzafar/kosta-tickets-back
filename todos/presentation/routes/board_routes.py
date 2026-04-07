@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
@@ -25,6 +25,7 @@ class ColumnOut(BaseModel):
     title: str
     position: int
     color: str
+    is_collapsed: bool = False
     task_count: int
     cards: list[CardOut]
 
@@ -41,17 +42,23 @@ class PatchBoardBody(BaseModel):
 
 
 class CreateColumnBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     title: str = Field(..., min_length=1, max_length=200)
     color: str = Field(default="#6b7280", max_length=32)
     insert_at: int | None = Field(
         None,
         description="Индекс вставки (0 — начало); по умолчанию в конец",
     )
+    is_collapsed: bool = Field(False, alias="isCollapsed")
 
 
 class PatchColumnBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     title: str | None = Field(None, min_length=1, max_length=200)
     color: str | None = Field(None, max_length=32)
+    is_collapsed: bool | None = Field(None, alias="isCollapsed")
 
 
 class ReorderColumnsBody(BaseModel):
@@ -97,6 +104,7 @@ async def _build_board_out(
                 title=col.title,
                 position=col.position,
                 color=col.color,
+                is_collapsed=col.is_collapsed,
                 task_count=len(cards),
                 cards=[
                     CardOut(
@@ -159,6 +167,7 @@ async def create_column(
         title=body.title,
         color=body.color,
         insert_at=body.insert_at,
+        is_collapsed=body.is_collapsed,
     )
     await session.commit()
     return await _build_board_out(session, user_id)
@@ -171,7 +180,7 @@ async def patch_column(
     user_id: Annotated[int, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_session),
 ):
-    patch = body.model_dump(exclude_unset=True)
+    patch = body.model_dump(exclude_unset=True, by_alias=False)
     if not patch:
         raise HTTPException(status_code=400, detail="No fields to update")
     repo = KanbanRepository(session)
@@ -180,6 +189,7 @@ async def patch_column(
         column_id,
         title=patch.get("title"),
         color=patch.get("color"),
+        is_collapsed=patch.get("is_collapsed"),
     )
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")

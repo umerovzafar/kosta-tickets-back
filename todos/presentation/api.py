@@ -10,6 +10,7 @@ from infrastructure.models import (  # noqa: F401 — регистрация т�
 )
 from presentation.routes import board_routes, calendar_routes, health
 from infrastructure.database import Base, engine
+from infrastructure.schema_patches import apply_todo_board_columns_collapsed_patch
 
 
 @asynccontextmanager
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     """Создание таблиц при старте (если нет миграций)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await apply_todo_board_columns_collapsed_patch(conn)
     yield
 
 
