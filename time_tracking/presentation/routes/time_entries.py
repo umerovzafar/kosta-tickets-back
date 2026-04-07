@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
 from infrastructure.repositories import (
+    ClientProjectRepository,
     TimeEntryRepository,
     TimeTrackingUserRepository,
     UserProjectAccessRepository,
@@ -21,6 +22,30 @@ async def _ensure_user(session: AsyncSession, auth_user_id: int) -> None:
     ur = TimeTrackingUserRepository(session)
     if not await ur.get_by_auth_user_id(auth_user_id):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+
+def _normalize_project_id(project_id: str | None) -> str | None:
+    if project_id is None:
+        return None
+    s = str(project_id).strip()
+    return s if s else None
+
+
+async def _validate_project_if_set(
+    session: AsyncSession,
+    project_id: str | None,
+) -> str | None:
+    """Пустая строка → None; иначе проект должен существовать и не быть в архиве."""
+    pid = _normalize_project_id(project_id)
+    if pid is None:
+        return None
+    cpr = ClientProjectRepository(session)
+    proj = await cpr.get_by_id_global(pid)
+    if not proj:
+        raise HTTPException(status_code=400, detail="Проект не найден")
+    if proj.is_archived:
+        raise HTTPException(status_code=400, detail="Проект в архиве, списание времени недоступно")
+    return pid
 
 
 async def _require_project_access_if_set(
@@ -63,7 +88,8 @@ async def create_time_entry(
     session: AsyncSession = Depends(get_session),
 ) -> TimeEntryOut:
     await _ensure_user(session, auth_user_id)
-    await _require_project_access_if_set(session, auth_user_id, body.project_id)
+    project_id = await _validate_project_if_set(session, body.project_id)
+    await _require_project_access_if_set(session, auth_user_id, project_id)
     repo = TimeEntryRepository(session)
     try:
         row = await repo.create(
@@ -72,7 +98,7 @@ async def create_time_entry(
             work_date=body.work_date,
             hours=body.hours,
             is_billable=body.is_billable,
-            project_id=body.project_id,
+            project_id=project_id,
             description=body.description,
         )
     except ValueError as e:
@@ -94,7 +120,9 @@ async def patch_time_entry(
     if not patch:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
     if "project_id" in patch:
-        await _require_project_access_if_set(session, auth_user_id, patch.get("project_id"))
+        project_id = await _validate_project_if_set(session, patch.get("project_id"))
+        patch["project_id"] = project_id
+        await _require_project_access_if_set(session, auth_user_id, project_id)
     repo = TimeEntryRepository(session)
     try:
         row = await repo.update(auth_user_id=auth_user_id, entry_id=entry_id, patch=patch)

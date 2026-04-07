@@ -141,6 +141,62 @@ async def require_manage_project_access(user: dict = Depends(get_current_user)):
     )
 
 
+_VIEW_ROLES_TIME_ENTRIES = {
+    "Главный администратор",
+    "Администратор",
+    "Партнер",
+    "IT отдел",
+    "Офис менеджер",
+}
+
+_MANAGE_ROLES_TIME_ENTRIES = {"Главный администратор", "Администратор", "Партнер"}
+
+
+def _current_auth_user_id(user: dict) -> int:
+    uid = user.get("id")
+    if uid is None:
+        raise HTTPException(status_code=403, detail="В токене нет id пользователя")
+    return int(uid)
+
+
+async def require_time_entry_read(
+    auth_user_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Свои записи — любой авторизованный пользователь; чужие — офис / менеджер TT."""
+    if _current_auth_user_id(user) == auth_user_id:
+        return user
+    role = (user.get("role") or "").strip()
+    if role in _VIEW_ROLES_TIME_ENTRIES:
+        return user
+    tt_role = await _fetch_time_tracking_user_role(_current_auth_user_id(user))
+    if tt_role == "manager":
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Можно просматривать только свои записи времени либо нужна роль офиса или менеджера учёта времени",
+    )
+
+
+async def require_time_entry_write(
+    auth_user_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Создание/изменение/удаление своих записей; чужие — админы партнёрства или менеджер TT."""
+    if _current_auth_user_id(user) == auth_user_id:
+        return user
+    role = (user.get("role") or "").strip()
+    if role in _MANAGE_ROLES_TIME_ENTRIES:
+        return user
+    tt_role = await _fetch_time_tracking_user_role(_current_auth_user_id(user))
+    if tt_role == "manager":
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Можно изменять только свои записи времени либо нужны права администратора или менеджера учёта времени",
+    )
+
+
 class UserUpsertBody(BaseModel):
     """Тело синхронизации пользователя. Принимает snake_case и camelCase; в time_tracking уходит JSON с snake_case."""
 
@@ -222,7 +278,7 @@ async def proxy_team_workload(request: Request, _: dict = Depends(require_view_r
 async def proxy_list_time_entries(
     auth_user_id: int,
     request: Request,
-    _: dict = Depends(require_view_role),
+    _: dict = Depends(require_time_entry_read),
 ):
     return await time_entries_list_gateway(auth_user_id, request)
 
@@ -231,7 +287,7 @@ async def proxy_list_time_entries(
 async def proxy_create_time_entry(
     auth_user_id: int,
     body: TimeEntryCreateBody,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
     return await time_entries_create_gateway(auth_user_id, body)
 
@@ -241,7 +297,7 @@ async def proxy_patch_time_entry(
     auth_user_id: int,
     entry_id: str,
     body: TimeEntryPatchBody,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
     return await time_entries_patch_gateway(auth_user_id, entry_id, body)
 
@@ -250,7 +306,7 @@ async def proxy_patch_time_entry(
 async def proxy_delete_time_entry(
     auth_user_id: int,
     entry_id: str,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
     return await time_entries_delete_gateway(auth_user_id, entry_id)
 

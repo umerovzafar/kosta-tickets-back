@@ -137,18 +137,24 @@ class TimeEntryOut(BaseModel):
 
 
 class TimeEntryCreateBody(BaseModel):
-    work_date: date
+    """Тело POST; camelCase как на фронте (через gateway)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    work_date: date = Field(..., alias="workDate")
     hours: Decimal
-    is_billable: bool = True
-    project_id: Optional[str] = None
+    is_billable: bool = Field(True, alias="isBillable")
+    project_id: Optional[str] = Field(None, alias="projectId")
     description: Optional[str] = None
 
 
 class TimeEntryPatchBody(BaseModel):
-    work_date: Optional[date] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    work_date: Optional[date] = Field(None, alias="workDate")
     hours: Optional[Decimal] = None
-    is_billable: Optional[bool] = None
-    project_id: Optional[str] = None
+    is_billable: Optional[bool] = Field(None, alias="isBillable")
+    project_id: Optional[str] = Field(None, alias="projectId")
     description: Optional[str] = None
 
 

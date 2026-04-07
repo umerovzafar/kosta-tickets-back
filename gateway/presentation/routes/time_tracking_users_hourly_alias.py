@@ -18,6 +18,8 @@ from presentation.routes.time_tracking_hourly_proxy import (
 from presentation.routes.time_tracking_routes import (
     require_manage_project_access,
     require_manage_role,
+    require_time_entry_read,
+    require_time_entry_write,
     require_view_project_access,
     require_view_role,
 )
@@ -82,41 +84,41 @@ async def delete_hourly_rate_under_users(
     return await hourly_rates_delete_gateway(user_id, rate_id, user)
 
 
-@router.get("/{user_id}/time-entries")
+@router.get("/{auth_user_id}/time-entries")
 async def list_time_entries_under_users(
-    user_id: int,
+    auth_user_id: int,
     request: Request,
-    _: dict = Depends(require_view_role),
+    _: dict = Depends(require_time_entry_read),
 ):
-    return await time_entries_list_gateway(user_id, request)
+    return await time_entries_list_gateway(auth_user_id, request)
 
 
-@router.post("/{user_id}/time-entries")
+@router.post("/{auth_user_id}/time-entries")
 async def create_time_entry_under_users(
-    user_id: int,
+    auth_user_id: int,
     body: TimeEntryCreateBody,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
-    return await time_entries_create_gateway(user_id, body)
+    return await time_entries_create_gateway(auth_user_id, body)
 
 
-@router.patch("/{user_id}/time-entries/{entry_id}")
+@router.patch("/{auth_user_id}/time-entries/{entry_id}")
 async def patch_time_entry_under_users(
-    user_id: int,
+    auth_user_id: int,
     entry_id: str,
     body: TimeEntryPatchBody,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
-    return await time_entries_patch_gateway(user_id, entry_id, body)
+    return await time_entries_patch_gateway(auth_user_id, entry_id, body)
 
 
-@router.delete("/{user_id}/time-entries/{entry_id}")
+@router.delete("/{auth_user_id}/time-entries/{entry_id}")
 async def delete_time_entry_under_users(
-    user_id: int,
+    auth_user_id: int,
     entry_id: str,
-    _: dict = Depends(require_manage_role),
+    _: dict = Depends(require_time_entry_write),
 ):
-    return await time_entries_delete_gateway(user_id, entry_id)
+    return await time_entries_delete_gateway(auth_user_id, entry_id)
 
 
 @router.get("/{auth_user_id}/project-access")
