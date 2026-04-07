@@ -292,6 +292,8 @@ services:
     environment:
       - DATABASE_URL=${TODOS_DATABASE_URL:-postgresql://todos:todos@todos_db:5432/kosta_todos}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
+      - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-15}
       - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
       - MICROSOFT_TENANT_ID=${MICROSOFT_TENANT_ID:-}
       - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
@@ -307,6 +309,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    volumes:
+      - media_storage:/app/media
     depends_on:
       todos_db:
         condition: service_healthy

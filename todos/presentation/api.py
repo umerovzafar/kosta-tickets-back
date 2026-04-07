@@ -4,13 +4,22 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.models import (  # noqa: F401 — регистрация таблиц для create_all
     OutlookCalendarTokenModel,
+    TodoBoardLabelModel,
     TodoBoardModel,
+    TodoCardAttachmentModel,
+    TodoCardCommentModel,
+    TodoCardChecklistItemModel,
+    TodoCardLabelModel,
     TodoCardModel,
+    TodoCardParticipantModel,
     TodoColumnModel,
 )
 from presentation.routes import board_routes, calendar_routes, health
 from infrastructure.database import Base, engine
-from infrastructure.schema_patches import apply_todo_board_columns_collapsed_patch
+from infrastructure.schema_patches import (
+    apply_todo_board_columns_collapsed_patch,
+    apply_todo_kanban_extended_patch,
+)
 
 
 @asynccontextmanager
@@ -19,6 +28,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await apply_todo_board_columns_collapsed_patch(conn)
+        await apply_todo_kanban_extended_patch(conn)
     yield
 
 

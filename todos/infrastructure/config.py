@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = ""
     service_name: str = "todos"
+    media_path: str = "./media"
+    max_upload_mb: int = 15
     # Auth: проверка пользователя по токену (GET /users/me)
     auth_service_url: str = ""
 

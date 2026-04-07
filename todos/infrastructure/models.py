@@ -36,6 +36,37 @@ class TodoBoardModel(Base):
         back_populates="board",
         cascade="all, delete-orphan",
     )
+    labels: Mapped[list["TodoBoardLabelModel"]] = relationship(
+        "TodoBoardLabelModel",
+        back_populates="board",
+        cascade="all, delete-orphan",
+    )
+
+
+class TodoBoardLabelModel(Base):
+    """Метка на доске (переиспользуется на карточках)."""
+
+    __tablename__ = "todo_board_labels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    board_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_boards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    color: Mapped[str] = mapped_column(String(32), nullable=False, default="#6b7280")
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    board: Mapped["TodoBoardModel"] = relationship("TodoBoardModel", back_populates="labels")
+    card_links: Mapped[list["TodoCardLabelModel"]] = relationship(
+        "TodoCardLabelModel",
+        back_populates="label",
+        cascade="all, delete-orphan",
+    )
 
 
 class TodoColumnModel(Base):
@@ -80,7 +111,131 @@ class TodoCardModel(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     column: Mapped["TodoColumnModel"] = relationship("TodoColumnModel", back_populates="cards")
+    label_links: Mapped[list["TodoCardLabelModel"]] = relationship(
+        "TodoCardLabelModel",
+        back_populates="card",
+        cascade="all, delete-orphan",
+    )
+    checklist_items: Mapped[list["TodoCardChecklistItemModel"]] = relationship(
+        "TodoCardChecklistItemModel",
+        back_populates="card",
+        cascade="all, delete-orphan",
+    )
+    participants: Mapped[list["TodoCardParticipantModel"]] = relationship(
+        "TodoCardParticipantModel",
+        back_populates="card",
+        cascade="all, delete-orphan",
+    )
+    attachments: Mapped[list["TodoCardAttachmentModel"]] = relationship(
+        "TodoCardAttachmentModel",
+        back_populates="card",
+        cascade="all, delete-orphan",
+    )
+    comments: Mapped[list["TodoCardCommentModel"]] = relationship(
+        "TodoCardCommentModel",
+        back_populates="card",
+        cascade="all, delete-orphan",
+    )
+
+
+class TodoCardLabelModel(Base):
+    """Связь карточка — метка доски."""
+
+    __tablename__ = "todo_card_labels"
+
+    card_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_cards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    label_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_labels.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    card: Mapped["TodoCardModel"] = relationship("TodoCardModel", back_populates="label_links")
+    label: Mapped["TodoBoardLabelModel"] = relationship("TodoBoardLabelModel", back_populates="card_links")
+
+
+class TodoCardChecklistItemModel(Base):
+    """Пункт чеклиста на карточке."""
+
+    __tablename__ = "todo_card_checklist_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    card_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    is_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    card: Mapped["TodoCardModel"] = relationship("TodoCardModel", back_populates="checklist_items")
+
+
+class TodoCardParticipantModel(Base):
+    """Участник карточки (user_id из auth)."""
+
+    __tablename__ = "todo_card_participants"
+
+    card_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_cards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    card: Mapped["TodoCardModel"] = relationship("TodoCardModel", back_populates="participants")
+
+
+class TodoCardAttachmentModel(Base):
+    """Вложение файла (путь относительно MEDIA_PATH)."""
+
+    __tablename__ = "todo_card_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    card_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    card: Mapped["TodoCardModel"] = relationship("TodoCardModel", back_populates="attachments")
+
+
+class TodoCardCommentModel(Base):
+    """Комментарий к карточке (лента активности)."""
+
+    __tablename__ = "todo_card_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    card_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("todo_board_cards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    card: Mapped["TodoCardModel"] = relationship("TodoCardModel", back_populates="comments")
