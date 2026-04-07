@@ -47,6 +47,34 @@ def _todos_upstream_503(
     return JSONResponse(status_code=503, content=payload)
 
 
+# Заголовки входящего запроса, которые нельзя копировать при прокси с уже прочитанным body
+# (иначе multipart и Content-Length могут не совпасть с тем, что отправляет httpx).
+_HOP_REQUEST_TO_UPSTREAM = frozenset(
+    {
+        "host",
+        "connection",
+        "keep-alive",
+        "transfer-encoding",
+        "te",
+        "trailer",
+        "proxy-connection",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "upgrade",
+        "content-length",
+    }
+)
+
+
+def _request_headers_for_todos_upstream(request: Request) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, value in request.headers.items():
+        if key.lower() in _HOP_REQUEST_TO_UPSTREAM:
+            continue
+        out[key] = value
+    return out
+
+
 def _strip_hop_and_cors(headers: dict) -> dict:
     """Убираем hop-by-hop и CORS — их выставит gateway."""
     skip = {
@@ -223,8 +251,7 @@ async def proxy_todos(request: Request, path: str):
     url = f"{base}/api/v1/todos/{path}" if path else f"{base}/api/v1/todos"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    headers = dict(request.headers)
-    headers.pop("host", None)
+    headers = _request_headers_for_todos_upstream(request)
     try:
         body = await request.body()
     except Exception:

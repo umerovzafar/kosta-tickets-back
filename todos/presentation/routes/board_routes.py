@@ -58,6 +58,7 @@ class CardOut(BaseModel):
     title: str
     body: str | None
     position: int
+    created_at: datetime
     due_at: datetime | None
     is_completed: bool
     is_archived: bool
@@ -144,7 +145,9 @@ class PatchCardBody(BaseModel):
 
 
 class ReorderCardsBody(BaseModel):
-    ordered_card_ids: list[int] = Field(..., min_length=1)
+    model_config = ConfigDict(populate_by_name=True)
+
+    ordered_card_ids: list[int] = Field(..., min_length=1, alias="orderedCardIds")
 
 
 class CreateBoardLabelBody(BaseModel):
@@ -250,6 +253,7 @@ async def _build_board_out(
                     title=c.title,
                     body=c.body,
                     position=c.position,
+                    created_at=c.created_at,
                     due_at=c.due_at,
                     is_completed=c.is_completed,
                     is_archived=c.is_archived,
@@ -537,7 +541,7 @@ async def upload_card_attachment(
     card_id: int,
     user_id: Annotated[int, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_session),
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Тело multipart, поле формы «file»"),
 ):
     content = await file.read()
     repo = KanbanRepository(session)
