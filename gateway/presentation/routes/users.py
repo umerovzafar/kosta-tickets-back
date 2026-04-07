@@ -63,6 +63,18 @@ async def require_main_admin(authorization: Optional[str] = Header(None, alias="
     return user
 
 
+async def require_main_admin_or_administrator(authorization: Optional[str] = Header(None, alias="Authorization")):
+    """Главный администратор или Администратор — назначение ролей (см. auth: роль «Главный администратор» только у Главного)."""
+    user = await _get_current_user_optional(authorization)
+    role = (user.get("role") or "").strip()
+    if role not in (MAIN_ADMIN_ROLE, ADMIN_ROLE):
+        raise HTTPException(
+            status_code=403,
+            detail="Only Main Administrator or Administrator can assign user roles",
+        )
+    return user
+
+
 async def require_admin_or_it(authorization: Optional[str] = Header(None, alias="Authorization")):
     """Администратор, Партнер или IT отдел — просмотр списка и деталей пользователей."""
     user = await _get_current_user_optional(authorization)
@@ -261,7 +273,7 @@ async def set_user_role(
     user_id: int,
     body: SetRoleRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    _: dict = Depends(require_main_admin),
+    _: dict = Depends(require_main_admin_or_administrator),
 ):
     r = await auth_service_request(
         "PATCH",
@@ -273,6 +285,12 @@ async def set_user_role(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
+    if r.status_code == 403:
+        try:
+            detail = r.json().get("detail", "Forbidden")
+        except Exception:
+            detail = "Forbidden"
+        raise HTTPException(status_code=403, detail=detail)
     if r.status_code >= 400:
         raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()

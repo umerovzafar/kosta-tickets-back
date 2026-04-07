@@ -99,6 +99,17 @@ def require_main_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_assign_user_role(current_user: User = Depends(get_current_user)) -> User:
+    """Назначение роли пользователю: Главный администратор или Администратор."""
+    role = (current_user.role or "").strip()
+    if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value):
+        raise HTTPException(
+            status_code=403,
+            detail="Only Main Administrator or Administrator can assign user roles",
+        )
+    return current_user
+
+
 def require_main_admin_or_admin(current_user: User = Depends(get_current_user)) -> User:
     """Главный администратор или Администратор — управление доступом к учёту времени и ролями учёта времени."""
     role = (current_user.role or "").strip()
@@ -148,12 +159,18 @@ async def get_user_detail(
 async def set_user_role(
     user_id: int,
     body: SetRoleRequest,
-    current_user: User = Depends(require_main_admin),
+    current_user: User = Depends(require_assign_user_role),
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
 ):
-    """Назначить роль пользователю. Только Главный администратор."""
+    """Назначить роль пользователю. Главный администратор или Администратор; роль «Главный администратор» может назначить только Главный администратор."""
+    role_to_assign = (body.role or "").strip()
+    if role_to_assign == Role.MAIN_ADMIN.value and (current_user.role or "").strip() != Role.MAIN_ADMIN.value:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Main Administrator can assign the Main Administrator role",
+        )
     uc = SetRoleUseCase(user_repo, role_repo)
     user = await uc.execute(user_id, body.role)
     await session.commit()
