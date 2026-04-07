@@ -1,5 +1,7 @@
 """Прокси запросов к сервису todos (календарь Outlook и др.)."""
 
+import sys
+
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
@@ -8,9 +10,41 @@ from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/todos", tags=["todos"])
 
+_TODOS_503_HINT = (
+    "Gateway не достучался до микросервиса todos. Проверьте: "
+    "1) контейнер todos запущен в одном стеке/сети с gateway; "
+    "2) у gateway переменная TODOS_SERVICE_URL=http://todos:1240 (внутри Docker нельзя localhost/127.0.0.1 — это сам gateway); "
+    "3) логи контейнера todos (БД, старт приложения). "
+    "Диагностика: GET {gateway}/health/todos"
+)
+
 
 def _todos_base() -> str:
     return get_settings().todos_service_url.rstrip("/")
+
+
+def _todos_upstream_503(
+    base: str,
+    exc: httpx.RequestError | None = None,
+    *,
+    extra: dict | None = None,
+) -> JSONResponse:
+    payload: dict = {
+        "detail": "Todos service unavailable",
+        "hint": _TODOS_503_HINT,
+        "todos_service_url": base,
+    }
+    if exc is not None:
+        payload["upstream_error"] = type(exc).__name__
+        payload["upstream_message"] = str(exc)[:500]
+        print(
+            f"[gateway] todos upstream RequestError: base={base!r} {exc!r}",
+            file=sys.stderr,
+            flush=True,
+        )
+    if extra:
+        payload.update(extra)
+    return JSONResponse(status_code=503, content=payload)
 
 
 def _strip_hop_and_cors(headers: dict) -> dict:
@@ -39,7 +73,10 @@ async def todos_calendar_connect(request: Request):
     if not base:
         return JSONResponse(
             status_code=503,
-            content={"detail": "TODOS_SERVICE_URL not configured"},
+            content={
+                "detail": "TODOS_SERVICE_URL not configured",
+                "hint": "Задайте TODOS_SERVICE_URL для gateway, например http://todos:1240",
+            },
         )
     url = f"{base}/api/v1/todos/calendar/connect"
     if request.url.query:
@@ -49,11 +86,8 @@ async def todos_calendar_connect(request: Request):
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             r = await client.get(url, headers=headers)
-    except httpx.RequestError:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Todos service unavailable"},
-        )
+    except httpx.RequestError as e:
+        return _todos_upstream_503(base, e)
     except Exception:
         return JSONResponse(status_code=502, content={"detail": "Bad gateway"})
     if r.is_redirect:
@@ -106,6 +140,7 @@ async def todos_calendar_status(request: Request):
             status_code=503,
             content={
                 "detail": "TODOS_SERVICE_URL not configured",
+                "hint": "Задайте TODOS_SERVICE_URL для gateway, например http://todos:1240",
                 "connected": False,
             },
         )
@@ -117,14 +152,8 @@ async def todos_calendar_status(request: Request):
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             r = await client.get(url, headers=headers)
-    except httpx.RequestError:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "detail": "Todos service unavailable",
-                "connected": False,
-            },
-        )
+    except httpx.RequestError as e:
+        return _todos_upstream_503(base, e, extra={"connected": False})
     except Exception:
         return JSONResponse(
             status_code=502,
@@ -186,7 +215,10 @@ async def proxy_todos(request: Request, path: str):
     if not base:
         return JSONResponse(
             status_code=503,
-            content={"detail": "TODOS_SERVICE_URL not configured"},
+            content={
+                "detail": "TODOS_SERVICE_URL not configured",
+                "hint": "Задайте TODOS_SERVICE_URL для gateway, например http://todos:1240",
+            },
         )
     url = f"{base}/api/v1/todos/{path}" if path else f"{base}/api/v1/todos"
     if request.url.query:
@@ -205,11 +237,8 @@ async def proxy_todos(request: Request, path: str):
                 headers=headers,
                 content=body,
             )
-    except httpx.RequestError:
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "Todos service unavailable"},
-        )
+    except httpx.RequestError as e:
+        return _todos_upstream_503(base, e)
     except Exception:
         return JSONResponse(
             status_code=502,
