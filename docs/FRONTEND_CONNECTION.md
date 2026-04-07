@@ -41,6 +41,18 @@ VITE_API_BASE_URL=https://ticketsback.kostalegal.com
 - При **401** — редирект на **`getAzureLoginUrl()`** (см. `tickets-front/src/shared/api/client.ts`).
 - CORS настраивается на gateway (**`FRONTEND_URL`** и др. в env контейнера gateway) — см. `.env.example` в **tickets-back**.
 
+## Фон рабочего стола (`desktop_background`)
+
+В **`/users/me`** приходит относительный путь вида **`desktop_backgrounds/{user_id}/{uuid}.png`**. Картинку отдаёт **gateway** по тому же origin, что и API:
+
+**`https://<хост-gateway>/desktop_backgrounds/{user_id}/{filename}`** — без префикса **`/api/v1`** (удобно для `<img src>`).
+
+Убедитесь, что каталог **`MEDIA_PATH`** в контейнере gateway смонтирован на постоянное хранилище (см. `docker-compose`). Если файл на диске отсутствует — будет **404** (перезалейте фото).
+
+Локально во **Vite** прокси обычно настроен только на **`/api`**. Добавьте прокси **`/desktop_backgrounds`** на тот же адрес gateway, что и **`/api`**, иначе превью с `localhost:5173/desktop_backgrounds/...` не дойдут до бэкенда.
+
+Альтернатива без отдельного прокси: собирать URL как **`${VITE_API_BASE_URL}/desktop_backgrounds/...`** (при заданном base).
+
 ## Учёт времени (примеры путей)
 
 | Назначение | Путь |
@@ -51,9 +63,9 @@ VITE_API_BASE_URL=https://ticketsback.kostalegal.com
 
 Подробности во фронте: **`tickets-front/docs/TIME_TRACKING.md`**.
 
-## Личная Kanban-доска (todos)
+## Сервис todos (Kanban + календарь Outlook)
 
-Пути вида **`/api/v1/todos/board`** — см. **`docs/FRONTEND_TODOS_BOARD_CONNECTION.md`** (подключение, примеры, порядок колонок).
+Префикс **`/api/v1/todos/...`**. Полная инструкция для фронта в одном файле: **`Docs/FRONTEND_TODOS.md`** (копия: `docs/FRONTEND_TODOS.md`).
 
 ## Проверка
 

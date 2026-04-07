@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.config import get_settings
 from presentation.middleware.time_tracking_clients_rewrite import TimeTrackingClientsPathRewriteMiddleware
 from presentation.routes import (
+    desktop_backgrounds_public,
     spa_auth_callback,
     health,
     auth_azure,
@@ -70,6 +71,7 @@ app.add_middleware(
 )
 app.include_router(spa_auth_callback.router)
 app.include_router(health.router)
+app.include_router(desktop_backgrounds_public.router)
 app.include_router(auth_azure.router)
 app.include_router(auth_admin.router)
 app.include_router(users.router)
