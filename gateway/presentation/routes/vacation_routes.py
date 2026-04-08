@@ -22,7 +22,8 @@ ROLES_CAN_VIEW = {
     "Сотрудник",
 }
 
-ROLES_CAN_IMPORT_SCHEDULE = {
+# Импорт Excel, ручное создание/правка/удаление строк графика и дней отсутствия.
+ROLES_CAN_MANAGE_SCHEDULE = {
     "Главный администратор",
     "Администратор",
     "Партнер",
@@ -30,25 +31,25 @@ ROLES_CAN_IMPORT_SCHEDULE = {
 }
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def vacation_access(request: Request, authorization: Optional[str] = Header(None, alias="Authorization")):
+    """GET — просмотр (широкий список ролей); POST/PATCH/DELETE — только управление графиком."""
     user = await verify_bearer_and_get_user(authorization)
     role = (user.get("role") or "").strip()
-    if role not in ROLES_CAN_VIEW:
-        raise HTTPException(
-            status_code=403,
-            detail="Only authenticated staff roles can view the absence schedule",
-        )
-    return user
-
-
-async def require_schedule_import_role(authorization: Optional[str] = Header(None, alias="Authorization")):
-    user = await verify_bearer_and_get_user(authorization)
-    role = (user.get("role") or "").strip()
-    if role not in ROLES_CAN_IMPORT_SCHEDULE:
-        raise HTTPException(
-            status_code=403,
-            detail="Only administrators, partners and office managers can upload the absence schedule",
-        )
+    method = request.method.upper()
+    if method == "GET":
+        if role not in ROLES_CAN_VIEW:
+            raise HTTPException(
+                status_code=403,
+                detail="Only authenticated staff roles can view the absence schedule",
+            )
+    elif method in ("POST", "PATCH", "DELETE"):
+        if role not in ROLES_CAN_MANAGE_SCHEDULE:
+            raise HTTPException(
+                status_code=403,
+                detail="Only administrators, partners and office managers can modify the absence schedule",
+            )
+    else:
+        raise HTTPException(status_code=405, detail="Method not allowed")
     return user
 
 
@@ -107,17 +108,17 @@ async def _forward(
 async def proxy_vacation_schedule_import(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    _: dict = Depends(require_schedule_import_role),
+    _: dict = Depends(vacation_access),
 ):
     """Загрузка Excel графика отсутствий (multipart). Прокси на vacation POST /schedule/import."""
     return await _forward(request, "schedule/import", authorization, timeout=120.0)
 
 
-@router.api_route("/{path:path}", methods=["GET"])
+@router.api_route("/{path:path}", methods=["GET", "POST", "PATCH", "DELETE"])
 async def proxy_vacation(
     path: str,
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    _: dict = Depends(get_current_user),
+    _: dict = Depends(vacation_access),
 ):
-    return await _forward(request, path, authorization, timeout=60.0)
+    return await _forward(request, path, authorization, timeout=120.0)
