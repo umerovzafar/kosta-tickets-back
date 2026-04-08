@@ -22,6 +22,13 @@ ROLES_CAN_VIEW = {
     "Сотрудник",
 }
 
+ROLES_CAN_IMPORT_SCHEDULE = {
+    "Главный администратор",
+    "Администратор",
+    "Партнер",
+    "Офис менеджер",
+}
+
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
     user = await verify_bearer_and_get_user(authorization)
@@ -30,6 +37,17 @@ async def get_current_user(authorization: Optional[str] = Header(None, alias="Au
         raise HTTPException(
             status_code=403,
             detail="Only authenticated staff roles can view the absence schedule",
+        )
+    return user
+
+
+async def require_schedule_import_role(authorization: Optional[str] = Header(None, alias="Authorization")):
+    user = await verify_bearer_and_get_user(authorization)
+    role = (user.get("role") or "").strip()
+    if role not in ROLES_CAN_IMPORT_SCHEDULE:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators, partners and office managers can upload the absence schedule",
         )
     return user
 
@@ -83,6 +101,16 @@ async def _forward(
         )
     resp_headers = {k: v for k, v in r.headers.items() if k.lower() not in ("connection", "transfer-encoding")}
     return Response(content=r.content, status_code=r.status_code, headers=resp_headers)
+
+
+@router.post("/schedule/import")
+async def proxy_vacation_schedule_import(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    _: dict = Depends(require_schedule_import_role),
+):
+    """Загрузка Excel графика отсутствий (multipart). Прокси на vacation POST /schedule/import."""
+    return await _forward(request, "schedule/import", authorization, timeout=120.0)
 
 
 @router.api_route("/{path:path}", methods=["GET"])

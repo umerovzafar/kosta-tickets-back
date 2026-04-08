@@ -1,15 +1,21 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import sessionmaker, selectinload
+from starlette.concurrency import run_in_threadpool
 
+from application.excel_schedule_import import import_schedule_from_workbook
+from infrastructure.config import get_settings
 from infrastructure.database import get_session
+from infrastructure.db_sync import sync_engine_url
 from infrastructure.models import AbsenceDay, ScheduleEmployee
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
+
+MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024
 
 KIND_LABELS: dict[int, str] = {
     1: "annual_vacation",
@@ -41,6 +47,62 @@ class AbsenceDayWithEmployeeOut(AbsenceDayOut):
 
 class EmployeeWithAbsencesOut(EmployeeOut):
     absence_days: list[AbsenceDayOut]
+
+
+class ImportResultOut(BaseModel):
+    year: int
+    employees_imported: int
+    absence_days_imported: int
+
+
+def _sync_import_bytes(db_url: str, content: bytes, year: int, sheet: str | None) -> tuple[int, int]:
+    engine = create_engine(sync_engine_url(db_url), echo=False)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    with SessionLocal() as session:
+        return import_schedule_from_workbook(
+            session,
+            year=year,
+            sheet_name=sheet,
+            source=content,
+        )
+
+
+@router.post("/import", response_model=ImportResultOut)
+async def import_excel_upload(
+    year: int = Form(..., ge=2000, le=2100),
+    file: UploadFile = File(...),
+    sheet: str | None = Form(None),
+):
+    """
+    Загрузка .xlsx: парсинг и замена в БД данных только за указанный `year`.
+    Даты в колонках файла должны быть того же календарного года, что и `year`.
+    """
+    settings = get_settings()
+    db_url = (settings.database_url or "").strip()
+    if not db_url:
+        raise HTTPException(status_code=503, detail="DATABASE_URL is not configured")
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="Ожидается файл Excel (.xlsx или .xlsm)")
+
+    content = await file.read()
+    if len(content) > MAX_IMPORT_FILE_BYTES:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (максимум 20 МБ)")
+
+    sheet_name = sheet.strip() if sheet and sheet.strip() else None
+
+    try:
+        emp, days = await run_in_threadpool(_sync_import_bytes, db_url, content, year, sheet_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось прочитать или разобрать файл: {e}",
+        ) from e
+
+    return ImportResultOut(year=year, employees_imported=emp, absence_days_imported=days)
 
 
 @router.get("/kind-codes", response_model=dict[str, str])
