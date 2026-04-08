@@ -1,6 +1,6 @@
 # Записи времени по проектам (бэкенд)
 
-Согласовано с `tickets-front/BACKEND_TIME_ENTRIES.md`. Кратко по реализации в `tickets-back`.
+Согласовано с `tickets-front/BACKEND_TIME_ENTRIES.md`. Для фронта см. **`docs/FRONTEND_TIME_TRACKING.md`**. Ниже — кратко по реализации в `tickets-back`.
 
 ## Gateway (`/api/v1/time-tracking/...` и зеркало `/api/v1/users/...`)
 

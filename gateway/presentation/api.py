@@ -18,6 +18,7 @@ from presentation.routes import (
     todos_routes,
     media,
     attendance_routes,
+    vacation_routes,
     time_tracking_routes,
     time_tracking_users_hourly_alias,
     expenses_routes,
@@ -85,5 +86,6 @@ app.include_router(todos_routes.router)
 app.include_router(media.router)
 app.include_router(attendance_routes.router_compat)  # /hikvision/attendance — до attendance
 app.include_router(attendance_routes.router)
+app.include_router(vacation_routes.router)
 app.include_router(time_tracking_routes.router)
 app.include_router(expenses_routes.router)

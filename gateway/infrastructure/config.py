@@ -12,6 +12,7 @@ _DEFAULT_SERVICE_URLS: dict[str, str] = {
     "expenses_service_url": "http://expenses:1242",
     "projects_service_url": "http://projects:1243",
     "attendance_service_url": "http://attendance:1239",
+    "vacation_service_url": "http://vacation:1244",
 }
 
 
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     expenses_service_url: str = ""
     projects_service_url: str = ""
     attendance_service_url: str = ""
+    vacation_service_url: str = ""
     attendance_hikvision_allowed_ips: str = ""
     todos_service_url: str = ""
     frontend_url: str = ""

@@ -1,5 +1,7 @@
 # Доступ к проектам (frontend)
 
+Полная инструкция по подключению фронта ко всему учёту времени: **`docs/FRONTEND_TIME_TRACKING.md`**.
+
 ## API (через gateway)
 
 - **GET** `/api/v1/time-tracking/users/{auth_user_id}/project-access`  
