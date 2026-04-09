@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import FileResponse
 
-from application.expense_service import calc_equivalent, validate_submit_fields
+from application.expense_service import calc_equivalent, validate_expense_subtype_rules, validate_submit_fields
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
 from infrastructure.auth_users import fetch_users_by_ids
@@ -58,8 +58,14 @@ _log = logging.getLogger(__name__)
 _MODERATION_MAIL_TIMEOUT_SEC = 90.0
 
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
-# Документ для оплаты — до отметки «Выплачено» (в т.ч. пока заявка одобрена, но ещё не оплачена).
-_AUTHOR_ATTACHMENT_STATUSES = frozenset({"draft", "revision_required", "pending_approval", "approved"})
+# Документ для оплаты — до «Выплачено» (черновик, доработка, на согласовании, одобрено).
+_AUTHOR_PAYMENT_DOC_STATUSES = frozenset({"draft", "revision_required", "pending_approval", "approved"})
+# Квитанция об оплате — в т.ч. до выплаты (фронт грузит сразу после save) и not_reimbursable; не в rejected/closed/withdrawn.
+_PAYMENT_RECEIPT_STATUSES = frozenset(
+    {"draft", "revision_required", "pending_approval", "approved", "paid", "not_reimbursable"}
+)
+_NO_NEW_ATTACHMENT_STATUSES = frozenset({"rejected", "closed", "withdrawn"})
+_MODERATOR_UPLOAD_STATUSES = frozenset({"pending_approval", "approved", "paid", "not_reimbursable"})
 
 
 def _moderation_email_context(row: ExpenseRequestModel, user: dict) -> ExpenseModerationEmailContext:
@@ -480,6 +486,17 @@ async def update_expense(
         "current_approver_id": row.current_approver_id,
     }
     data = body.model_dump(exclude_unset=True)
+    eff_type = row.expense_type
+    eff_subtype = row.expense_subtype
+    if "expense_type" in data:
+        eff_type = data["expense_type"]
+    if "expense_subtype" in data:
+        eff_subtype = data["expense_subtype"]
+    try:
+        validate_expense_subtype_rules(eff_type, eff_subtype)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     amount_uzs = data.get("amount_uzs", row.amount_uzs)
     exchange_rate = data.get("exchange_rate", row.exchange_rate)
     if isinstance(amount_uzs, Decimal) and amount_uzs <= 0:
@@ -581,8 +598,10 @@ async def submit_expense(
             amount_uzs=row.amount_uzs,
             exchange_rate=row.exchange_rate,
             expense_type=row.expense_type,
+            expense_subtype=row.expense_subtype,
             is_reimbursable=row.is_reimbursable,
             comment=row.comment,
+            project_id=row.project_id,
             attachment_count=n_att,
             expense_amount_limit_uzs=limit,
             payment_document_count=pd_count,
@@ -998,16 +1017,22 @@ async def upload_attachment(
     if not is_admin_editor(user):
         uid = int(user["id"])
         is_author = row.created_by_user_id == uid
-        moderator_may_add_payment_receipt = (
-            is_moderator(user)
-            and row.status == "paid"
-            and kind_norm == "payment_receipt"
-        )
-        if not is_author and not moderator_may_add_payment_receipt:
+        moderator_may_upload = is_moderator(user) and row.status in _MODERATOR_UPLOAD_STATUSES
+        if is_author:
+            pass
+        elif moderator_may_upload:
+            ensure_not_moderating_own_expense(user, row.created_by_user_id)
+        else:
             raise HTTPException(
                 status_code=403,
-                detail="Добавлять вложения может автор заявки; квитанцию об оплате после «Выплачено» — также модератор",
+                detail=(
+                    "Добавлять вложения может автор; модератор — в статусах на согласовании, одобрено, "
+                    "выплачено, невозмещаемый (не свою заявку)"
+                ),
             )
+
+    if not is_admin_editor(user) and row.status in _NO_NEW_ATTACHMENT_STATUSES:
+        raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
 
     if row.status == "paid":
         if kind_norm != "payment_receipt":
@@ -1019,19 +1044,24 @@ async def upload_attachment(
                 ),
             )
     elif kind_norm == "payment_receipt":
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Квитанцию об оплате загружайте после одобрения заявки и после отметки оплаты "
-                "(статус «Выплачено»)."
-            ),
-        )
-    elif not is_admin_editor(user):
-        if row.status not in _AUTHOR_ATTACHMENT_STATUSES:
+        if row.status not in _PAYMENT_RECEIPT_STATUSES:
             raise HTTPException(
                 status_code=400,
-                detail="Вложения в этом статусе недоступны",
+                detail="Квитанцию об оплате нельзя загрузить в текущем статусе заявки",
             )
+    elif kind_norm == "payment_document" or kind_norm is None:
+        if row.status == "not_reimbursable" and not is_admin_editor(user):
+            raise HTTPException(
+                status_code=400,
+                detail="Для невозмещаемого расхода документ для оплаты не загружается",
+            )
+        if not is_admin_editor(user) and row.status not in _AUTHOR_PAYMENT_DOC_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail="Документ для оплаты в этом статусе недоступен",
+            )
+    elif not is_admin_editor(user):
+        raise HTTPException(status_code=400, detail="Вложения в этом статусе недоступны")
 
     content = await file.read()
     try:
@@ -1081,31 +1111,37 @@ async def delete_attachment(
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")
     if not is_admin_editor(user):
-        uid = int(user["id"])
-        is_author = row.created_by_user_id == uid
+        is_author = row.created_by_user_id == int(user["id"])
         ak = (att_row.attachment_kind or "").strip()
-        moderator_may_delete_payment_receipt = (
+        moderator_may_delete_receipt = (
             is_moderator(user)
-            and row.status == "paid"
+            and row.status in _MODERATOR_UPLOAD_STATUSES
             and ak == "payment_receipt"
         )
-        if not is_author and not moderator_may_delete_payment_receipt:
+        if is_author:
+            pass
+        elif moderator_may_delete_receipt:
+            ensure_not_moderating_own_expense(user, row.created_by_user_id)
+        else:
             raise HTTPException(
                 status_code=403,
-                detail="Удалять вложения может автор заявки; квитанцию об оплате после «Выплачено» — также модератор",
+                detail=(
+                    "Удалять вложения может автор; квитанцию — также модератор "
+                    "(на согласовании, одобрено, выплачено, невозмещаемый, не свою заявку)"
+                ),
             )
     if not is_admin_editor(user):
         ak = (att_row.attachment_kind or "").strip()
         if ak == "payment_receipt":
-            if row.status not in ("draft", "revision_required", "paid"):
+            if row.status not in _PAYMENT_RECEIPT_STATUSES:
                 raise HTTPException(
                     status_code=400,
                     detail="Удаление квитанции в этом статусе недоступно",
                 )
-        elif row.status not in ("draft", "revision_required", "approved"):
+        elif row.status not in _AUTHOR_PAYMENT_DOC_STATUSES:
             raise HTTPException(
                 status_code=400,
-                detail="Удаление документа для оплаты доступно до отметки оплаты (черновик, на согласовании, одобрено)",
+                detail="Удаление документа для оплаты доступно до отметки оплаты (черновик, доработка, на согласовании, одобрено)",
             )
     storage_key = att_row.storage_key
     ok = await repo.delete_attachment(expense_id, attachment_id)

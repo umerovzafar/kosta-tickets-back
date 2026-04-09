@@ -4,7 +4,7 @@ from typing import Annotated, Any, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from application.expense_service import normalize_payment_method, validate_expense_type
+from application.expense_service import normalize_payment_method, validate_expense_subtype_rules, validate_expense_type
 
 MoneyDecimal = Annotated[
     Decimal,
@@ -193,6 +193,11 @@ class ExpenseCreateBody(BaseModel):
     def validate_deadline_vs_expense_date(self) -> "ExpenseCreateBody":
         if self.payment_deadline is not None and self.payment_deadline < self.expense_date:
             raise ValueError("Конечный срок оплаты не может быть раньше даты расхода")
+        return self
+
+    @model_validator(mode="after")
+    def validate_partner_subtype_create(self) -> "ExpenseCreateBody":
+        validate_expense_subtype_rules(self.expense_type, self.expense_subtype)
         return self
 
 

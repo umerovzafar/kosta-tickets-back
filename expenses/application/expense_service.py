@@ -27,7 +27,19 @@ ALLOWED_EXPENSE_TYPES = frozenset(
         "services",
         "entertainment",
         "client_expense",
+        "partner_expense",
         "other",
+    }
+)
+
+# Подтипы для expenseType=partner_expense (фронт ExpensesFormPanel)
+PARTNER_EXPENSE_SUBTYPES = frozenset(
+    {
+        "partner_fuel",
+        "partner_air",
+        "partner_meetings_food",
+        "partner_shop",
+        "partner_misc",
     }
 )
 
@@ -58,6 +70,17 @@ def validate_expense_type(code: str) -> str:
     return c
 
 
+def validate_expense_subtype_rules(expense_type: str, expense_subtype: str | None) -> None:
+    """Для partner_expense обязателен subtype из whitelist."""
+    if (expense_type or "").strip() != "partner_expense":
+        return
+    s = (expense_subtype or "").strip()
+    if not s or s not in PARTNER_EXPENSE_SUBTYPES:
+        raise ValueError(
+            f"Для partner_expense укажите expenseSubtype из: {', '.join(sorted(PARTNER_EXPENSE_SUBTYPES))}"
+        )
+
+
 def normalize_payment_method(v: str | None) -> str | None:
     if v is None:
         return None
@@ -80,8 +103,10 @@ def validate_submit_fields(
     amount_uzs: Decimal,
     exchange_rate: Decimal,
     expense_type: str,
+    expense_subtype: str | None = None,
     is_reimbursable: bool,
     comment: str | None,
+    project_id: str | None = None,
     attachment_count: int,
     expense_amount_limit_uzs: Decimal | None,
     payment_document_count: int = 0,
@@ -98,12 +123,15 @@ def validate_submit_fields(
     if exchange_rate is None or exchange_rate <= 0:
         raise ValueError("exchangeRate must be greater than 0")
     validate_expense_type(expense_type)
+    validate_expense_subtype_rules(expense_type, expense_subtype)
     if is_reimbursable is None:
         raise ValueError("isReimbursable is required")
     if expense_amount_limit_uzs is not None and amount_uzs > expense_amount_limit_uzs:
         raise ValueError("amountUzs exceeds allowed limit; additional approval may be required")
     if is_reimbursable:
-        # Документ для оплаты — при отправке на согласование; квитанция — только после оплаты (статус paid).
+        if not (project_id or "").strip():
+            raise ValueError("Для возмещаемого расхода укажите projectId")
+        # Документ для оплаты при отправке; квитанция может быть добавлена до/после оплаты (см. политику вложений).
         if payment_document_count >= 1:
             pass
         elif attachment_count >= 1 and payment_document_count == 0 and payment_receipt_count == 0:

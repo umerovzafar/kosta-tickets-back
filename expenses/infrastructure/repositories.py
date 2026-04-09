@@ -385,6 +385,7 @@ async def seed_reference_data(session: AsyncSession) -> None:
         ("services", "Услуги", 50),
         ("entertainment", "Развлечения", 60),
         ("client_expense", "Расход клиента", 70),
+        ("partner_expense", "Партнёрский расход", 75),
         ("other", "Прочее", 100),
     ]
     for code, label, so in types_:
