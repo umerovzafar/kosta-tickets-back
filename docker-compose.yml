@@ -39,6 +39,9 @@ services:
       - CORS_ALLOW_PRIVATE_NETWORK=${CORS_ALLOW_PRIVATE_NETWORK:-false}
       # Одинаковый секрет на gateway, tickets, notifications — защита внутренних WS от обхода gateway.
       - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
+      # Как у auth — проверка OAuth state на /api/v1/auth/azure/callback (вход в основной фронт и админку).
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
     volumes:
       - media_storage:/app/media
     healthcheck:

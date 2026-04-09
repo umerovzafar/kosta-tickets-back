@@ -1,4 +1,3 @@
-import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -10,6 +9,7 @@ from infrastructure.database import get_session
 from infrastructure.repositories import UserRepository, RoleRepository
 from infrastructure.jwt_service import JWTService
 from infrastructure.azure_ad import get_login_url, get_logout_url, acquire_token_by_code
+from infrastructure.oauth_state_jwt import create_oauth_state_token, parse_oauth_state_token
 from domain.roles import Role
 from infrastructure.config import get_settings
 from presentation.schemas import (
@@ -26,13 +26,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 OAUTH_STATE_COOKIE = "oauth_state_nonce"
 OAUTH_TARGET_COOKIE = "oauth_target"
-
-
-def _oauth_cookie_kwargs(request: Request) -> dict:
-    kw: dict = dict(httponly=True, samesite="lax", max_age=600, path="/")
-    if request.url.scheme == "https":
-        kw["secure"] = True
-    return kw
 
 
 def _clear_oauth_cookies(response: RedirectResponse) -> None:
@@ -75,22 +68,25 @@ async def list_roles(role_repo: RoleRepositoryPort = Depends(get_role_repo)):
 
 @router.get("/login")
 async def login(
-    request: Request,
     target: str = Query("main", description="main или admin — куда редирект после входа"),
     state: Optional[str] = Query(
         None,
         description="Устарело: используйте target=admin вместо state=admin",
     ),
 ):
-    t = "admin" if (target == "admin" or state == "admin") else "main"
+    settings = get_settings()
+    t: str = "admin" if (target == "admin" or state == "admin") else "main"
     if t not in ("main", "admin"):
         t = "main"
-    nonce = secrets.token_urlsafe(32)
-    resp = RedirectResponse(url=get_login_url(state=nonce), status_code=302)
-    ck = _oauth_cookie_kwargs(request)
-    resp.set_cookie(OAUTH_STATE_COOKIE, nonce, **ck)
-    resp.set_cookie(OAUTH_TARGET_COOKIE, t, **ck)
-    return resp
+    try:
+        state_token = create_oauth_state_token(
+            jwt_secret=settings.jwt_secret,
+            jwt_algorithm=settings.jwt_algorithm,
+            target=t,  # type: ignore[arg-type]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return RedirectResponse(url=get_login_url(state=state_token), status_code=302)
 
 
 @router.get("/logout")
@@ -117,15 +113,19 @@ async def callback(
     session: AsyncSession = Depends(get_session),
 ):
     settings = get_settings()
-    nonce_ok = (request.cookies.get(OAUTH_STATE_COOKIE) or "").strip()
-    target_t = (request.cookies.get(OAUTH_TARGET_COOKIE) or "main").strip()
-    if not state or not nonce_ok or state != nonce_ok:
+    target_t = parse_oauth_state_token(
+        state,
+        jwt_secret=settings.jwt_secret,
+        jwt_algorithm=settings.jwt_algorithm,
+    )
+    if target_t is None:
+        nonce_ok = (request.cookies.get(OAUTH_STATE_COOKIE) or "").strip()
+        cookie_tgt = (request.cookies.get(OAUTH_TARGET_COOKIE) or "main").strip()
+        if state and nonce_ok and state == nonce_ok:
+            target_t = "admin" if cookie_tgt == "admin" else "main"
+    if target_t is None:
         base = (settings.frontend_url or "http://localhost").rstrip("/")
-        err = "/login?error=oauth_state"
-        if target_t == "admin" and (settings.admin_frontend_url or "").strip():
-            base = settings.admin_frontend_url.rstrip("/")
-            err = "/index.html?error=oauth_state"
-        resp = RedirectResponse(url=base + err, status_code=302)
+        resp = RedirectResponse(url=base + "/login?error=oauth_state", status_code=302)
         _clear_oauth_cookies(resp)
         return resp
 

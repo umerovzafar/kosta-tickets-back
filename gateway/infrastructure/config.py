@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     security_hsts_enabled: bool = False
     # Опционально, например: default-src 'none'; frame-ancestors 'none'
     security_csp: str = ""
+    # Тот же секрет, что у auth — для проверки OAuth state на /api/v1/auth/azure/callback
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
 
     @field_validator(*tuple(_DEFAULT_SERVICE_URLS.keys()), mode="before")
     @classmethod

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 from infrastructure.config import get_settings
+from infrastructure.oauth_state_jwt import parse_oauth_state_token
 
 router = APIRouter(prefix="/api/v1/auth/azure", tags=["auth"])
 
@@ -79,15 +80,19 @@ async def azure_callback(
     state: Optional[str] = Query(None),
 ):
     settings = get_settings()
-    nonce_ok = (request.cookies.get("oauth_state_nonce") or "").strip()
-    target_t = (request.cookies.get("oauth_target") or "main").strip()
-    if not state or not nonce_ok or state != nonce_ok:
+    target_t = parse_oauth_state_token(
+        state,
+        jwt_secret=settings.jwt_secret,
+        jwt_algorithm=settings.jwt_algorithm or "HS256",
+    )
+    if target_t is None:
+        nonce_ok = (request.cookies.get("oauth_state_nonce") or "").strip()
+        cookie_tgt = (request.cookies.get("oauth_target") or "main").strip()
+        if state and nonce_ok and state == nonce_ok:
+            target_t = "admin" if cookie_tgt == "admin" else "main"
+    if target_t is None:
         base = (settings.frontend_url or "http://localhost").rstrip("/")
-        path = "/login?error=oauth_state"
-        if target_t == "admin" and (settings.admin_frontend_url or "").strip():
-            base = settings.admin_frontend_url.rstrip("/")
-            path = "/index.html?error=oauth_state"
-        resp = RedirectResponse(url=base + path, status_code=302)
+        resp = RedirectResponse(url=base + "/login?error=oauth_state", status_code=302)
         _clear_oauth_cookies(resp)
         return resp
 
