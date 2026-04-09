@@ -140,6 +140,12 @@ async def import_excel_upload(
     content = await file.read()
     if len(content) > MAX_IMPORT_FILE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой (максимум 20 МБ)")
+    # .xlsx/.xlsm — ZIP (OOXML); без этого можно подсунуть произвольное расширение.
+    if len(content) < 4 or content[:4] != b"PK\x03\x04":
+        raise HTTPException(
+            status_code=400,
+            detail="Ожидается настоящий файл Excel OOXML (.xlsx / .xlsm)",
+        )
 
     sheet_name = sheet.strip() if sheet and sheet.strip() else None
 

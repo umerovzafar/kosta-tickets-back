@@ -5,7 +5,7 @@
 В ячейках дней — коды 1–5 (легенда: ежегодный отпуск, болезнь, day off, командировка, удалёнка).
 
 Запуск (из каталога vacation/, с поднятой БД):
-  set DATABASE_URL=postgresql://vacation:123456@localhost:5432/kosta_vacation
+  set DATABASE_URL=postgresql://vacation:YOUR_PASSWORD@localhost:5432/kosta_vacation
   python scripts/import_excel.py "C:\\path\\to\\file.xlsx" --year 2026
 
 Удаляются только данные за указанный --year; остальные годы в БД не трогаются.

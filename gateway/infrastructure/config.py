@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     todos_service_url: str = ""
     frontend_url: str = ""
     admin_frontend_url: str = ""
+    # CORS: широкий regex для частных сетей (RFC1918). В проде обычно отключают.
+    cors_allow_private_network: bool = False
+    # Общий секрет для backend WebSocket (tickets, notifications); gateway подставляет в query.
+    ws_internal_secret: str = ""
+    # HSTS только если gateway отдаёт ответы по HTTPS (иначе браузер игнорирует).
+    security_hsts_enabled: bool = False
+    # Опционально, например: default-src 'none'; frame-ancestors 'none'
+    security_csp: str = ""
 
     @field_validator(*tuple(_DEFAULT_SERVICE_URLS.keys()), mode="before")
     @classmethod

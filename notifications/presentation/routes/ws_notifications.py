@@ -1,5 +1,8 @@
 import json
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from infrastructure.config import get_settings
 from infrastructure.database import async_session_factory
 from infrastructure.repositories import NotificationRepository
 from application.ports import NotificationFilters
@@ -30,6 +33,11 @@ def _notification_to_dict(n):
 
 @router.websocket("/ws/notifications")
 async def ws_notifications(websocket: WebSocket):
+    settings = get_settings()
+    secret = (settings.ws_internal_secret or "").strip()
+    if secret and (websocket.query_params.get("internal_key") or "").strip() != secret:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     while True:
         try:

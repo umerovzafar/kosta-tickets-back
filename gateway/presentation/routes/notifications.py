@@ -1,5 +1,7 @@
 import asyncio
 import json
+import urllib.parse
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import websockets
 from infrastructure.auth_upstream import verify_bearer_and_get_user
@@ -29,6 +31,9 @@ async def forward_to_notifications_service(message: dict) -> dict:
     base = settings.notifications_service_url
     ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
     ws_url = f"{ws_base}/ws/notifications"
+    ws_secret = (getattr(settings, "ws_internal_secret", None) or "").strip()
+    if ws_secret:
+        ws_url = f"{ws_url}?internal_key={urllib.parse.quote(ws_secret, safe='')}"
     try:
         async with websockets.connect(ws_url) as ws:
             await ws.send(json.dumps(message))

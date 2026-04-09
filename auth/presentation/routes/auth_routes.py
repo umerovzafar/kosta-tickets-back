@@ -1,5 +1,7 @@
+import secrets
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import RedirectResponse
 from application.use_cases import AdminLoginUseCase, AzureLoginUseCase, BootstrapAdminUseCase, GetCurrentUserUseCase
@@ -21,6 +23,21 @@ from presentation.schemas import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+OAUTH_STATE_COOKIE = "oauth_state_nonce"
+OAUTH_TARGET_COOKIE = "oauth_target"
+
+
+def _oauth_cookie_kwargs(request: Request) -> dict:
+    kw: dict = dict(httponly=True, samesite="lax", max_age=600, path="/")
+    if request.url.scheme == "https":
+        kw["secure"] = True
+    return kw
+
+
+def _clear_oauth_cookies(response: RedirectResponse) -> None:
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/")
+    response.delete_cookie(OAUTH_TARGET_COOKIE, path="/")
 
 
 def get_user_repo(session: AsyncSession = Depends(get_session)) -> UserRepositoryPort:
@@ -57,8 +74,23 @@ async def list_roles(role_repo: RoleRepositoryPort = Depends(get_role_repo)):
     return [RoleItem(value=r["name"], label=r["name"]) for r in roles]
 
 @router.get("/login")
-async def login(state: Optional[str] = None):
-    return RedirectResponse(url=get_login_url(state=state))
+async def login(
+    request: Request,
+    target: str = Query("main", description="main или admin — куда редирект после входа"),
+    state: Optional[str] = Query(
+        None,
+        description="Устарело: используйте target=admin вместо state=admin",
+    ),
+):
+    t = "admin" if (target == "admin" or state == "admin") else "main"
+    if t not in ("main", "admin"):
+        t = "main"
+    nonce = secrets.token_urlsafe(32)
+    resp = RedirectResponse(url=get_login_url(state=nonce), status_code=302)
+    ck = _oauth_cookie_kwargs(request)
+    resp.set_cookie(OAUTH_STATE_COOKIE, nonce, **ck)
+    resp.set_cookie(OAUTH_TARGET_COOKIE, t, **ck)
+    return resp
 
 
 @router.get("/logout")
@@ -78,37 +110,56 @@ def _claims_to_user_and_token(claims: dict, uc: AzureLoginUseCase):
 
 @router.get("/callback")
 async def callback(
+    request: Request,
     code: str,
     state: Optional[str] = None,
     uc: AzureLoginUseCase = Depends(get_login_use_case),
     session: AsyncSession = Depends(get_session),
 ):
-    tokens = acquire_token_by_code(code)
     settings = get_settings()
+    nonce_ok = (request.cookies.get(OAUTH_STATE_COOKIE) or "").strip()
+    target_t = (request.cookies.get(OAUTH_TARGET_COOKIE) or "main").strip()
+    if not state or not nonce_ok or state != nonce_ok:
+        base = (settings.frontend_url or "http://localhost").rstrip("/")
+        err = "/login?error=oauth_state"
+        if target_t == "admin" and (settings.admin_frontend_url or "").strip():
+            base = settings.admin_frontend_url.rstrip("/")
+            err = "/index.html?error=oauth_state"
+        resp = RedirectResponse(url=base + err, status_code=302)
+        _clear_oauth_cookies(resp)
+        return resp
+
+    tokens = acquire_token_by_code(code)
     if not tokens or "id_token_claims" not in tokens:
-        base = (settings.admin_frontend_url if state == "admin" else settings.frontend_url).rstrip("/")
-        path = "/index.html?error=auth_failed" if state == "admin" else "/login?error=auth_failed"
-        return RedirectResponse(url=base + path)
+        base = (settings.admin_frontend_url if target_t == "admin" else settings.frontend_url).rstrip("/")
+        path = "/index.html?error=auth_failed" if target_t == "admin" else "/login?error=auth_failed"
+        resp = RedirectResponse(url=base + path)
+        _clear_oauth_cookies(resp)
+        return resp
     claims = tokens["id_token_claims"]
     azure_oid, email, display_name, picture = _claims_to_user_and_token(claims, uc)
     if not azure_oid or not email:
-        base = (settings.admin_frontend_url if state == "admin" else settings.frontend_url).rstrip("/")
-        path = "/index.html?error=missing_claims" if state == "admin" else "/login?error=missing_claims"
-        return RedirectResponse(url=base + path)
+        base = (settings.admin_frontend_url if target_t == "admin" else settings.frontend_url).rstrip("/")
+        path = "/index.html?error=missing_claims" if target_t == "admin" else "/login?error=missing_claims"
+        resp = RedirectResponse(url=base + path)
+        _clear_oauth_cookies(resp)
+        return resp
     user, access_token = await uc.execute(
         azure_oid, email, display_name, picture, Role.EMPLOYEE.value
     )
     await session.commit()
-    if state == "admin" and settings.admin_frontend_url:
+    if target_t == "admin" and settings.admin_frontend_url:
         redirect_base = settings.admin_frontend_url.rstrip("/")
         callback_path = "/auth/callback.html"
     else:
         redirect_base = settings.frontend_url.rstrip("/")
         callback_path = "/auth/callback"
-    return RedirectResponse(
+    resp = RedirectResponse(
         url=f"{redirect_base}{callback_path}#access_token={access_token}",
         status_code=302,
     )
+    _clear_oauth_cookies(resp)
+    return resp
 
 
 def get_admin_login_use_case(

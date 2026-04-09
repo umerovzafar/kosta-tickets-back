@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from infrastructure.config import get_settings
+from presentation.middleware.security_headers import SecurityHeadersMiddleware
 from presentation.middleware.time_tracking_clients_rewrite import TimeTrackingClientsPathRewriteMiddleware
 from presentation.routes import (
     desktop_backgrounds_public,
@@ -58,13 +59,16 @@ _CORS_PRIVATE_ORIGIN_REGEX = (
 )
 
 origins = _cors_origins()
+_settings = get_settings()
+_cors_regex = _CORS_PRIVATE_ORIGIN_REGEX if _settings.cors_allow_private_network else None
 
 # Первым в цепочке: nginx иногда отдаёт /api/v1/clients/... без /time-tracking — иначе 404 на вложенных путях.
 app.add_middleware(TimeTrackingClientsPathRewriteMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=_CORS_PRIVATE_ORIGIN_REGEX,
+    allow_origin_regex=_cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

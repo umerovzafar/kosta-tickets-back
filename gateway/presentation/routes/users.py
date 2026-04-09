@@ -87,6 +87,39 @@ async def require_admin_or_it(authorization: Optional[str] = Header(None, alias=
     return user
 
 
+async def verify_user_detail_access(
+    user_id: int,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    """Свой профиль или роли из ROLES_CAN_VIEW_USERS."""
+    user = await verify_bearer_and_get_user(authorization)
+    role = (user.get("role") or "").strip()
+    rid = user.get("id")
+    if rid is not None and int(rid) == int(user_id):
+        return user
+    if role not in ROLES_CAN_VIEW_USERS:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Administrator, Partner or IT department can view other users' profiles",
+        )
+    return user
+
+
+def _image_magic_matches_content(content: bytes, ext: str) -> bool:
+    if len(content) < 12:
+        return False
+    e = (ext or "").lower()
+    if e in (".jpg", ".jpeg"):
+        return content[:3] == b"\xff\xd8\xff"
+    if e == ".png":
+        return content[:8] == b"\x89PNG\r\n\x1a\n"
+    if e == ".gif":
+        return content[:6] in (b"GIF87a", b"GIF89a")
+    if e == ".webp":
+        return content[:4] == b"RIFF" and len(content) >= 12 and content[8:12] == b"WEBP"
+    return False
+
+
 DESKTOP_BG_MAX_MB = 5
 DESKTOP_BG_ALLOWED = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DESKTOP_BG_SUBDIR = "desktop_backgrounds"
@@ -120,6 +153,11 @@ async def upload_desktop_background(
     content = await file.read()
     if len(content) > DESKTOP_BG_MAX_MB * 1024 * 1024:
         raise HTTPException(status_code=400, detail=f"Файл превышает {DESKTOP_BG_MAX_MB} МБ")
+    if not _image_magic_matches_content(content, ext):
+        raise HTTPException(
+            status_code=400,
+            detail="Содержимое файла не совпадает с разрешённым форматом изображения",
+        )
 
     settings = get_settings()
     base_dir = Path(settings.media_path).resolve()
@@ -185,7 +223,7 @@ async def delete_desktop_background(
 async def list_users(
     include_archived: bool = Query(False, description="Include archived users"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    _: dict = Depends(require_auth),
+    _: dict = Depends(require_admin_or_it),
 ):
     r = await auth_service_request(
         "GET",
@@ -195,6 +233,12 @@ async def list_users(
     )
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if r.status_code == 403:
+        try:
+            d = r.json().get("detail", "Forbidden")
+        except Exception:
+            d = "Forbidden"
+        raise HTTPException(status_code=403, detail=d)
     if r.status_code >= 400:
         raise HTTPException(status_code=503, detail="Auth service error")
     return r.json()
@@ -253,11 +297,17 @@ async def patch_me_weekly_capacity(
 async def get_user_detail(
     user_id: int,
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    _: dict = Depends(require_auth),
+    _: dict = Depends(verify_user_detail_access),
 ):
     r = await auth_service_request("GET", f"/users/{user_id}", authorization)
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if r.status_code == 403:
+        try:
+            d = r.json().get("detail", "Forbidden")
+        except Exception:
+            d = "Forbidden"
+        raise HTTPException(status_code=403, detail=d)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="User not found")
     if r.status_code >= 400:

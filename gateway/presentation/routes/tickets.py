@@ -1,5 +1,6 @@
-from typing import Optional
+import urllib.parse
 from pathlib import Path
+from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -307,6 +308,9 @@ async def ws_tickets_proxy(websocket: WebSocket):
     base = settings.tickets_service_url
     ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
     ws_url = f"{ws_base}/ws/tickets"
+    ws_secret = (getattr(settings, "ws_internal_secret", None) or "").strip()
+    if ws_secret:
+        ws_url = f"{ws_url}?internal_key={urllib.parse.quote(ws_secret, safe='')}"
     try:
         import asyncio
         import json

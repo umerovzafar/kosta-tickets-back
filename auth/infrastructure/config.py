@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 10080
+    jwt_expire_minutes: int = 1440
     frontend_url: str = ""
     admin_frontend_url: str = ""
     admin_username: str = "admin"

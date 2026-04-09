@@ -126,10 +126,45 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+ROLES_CAN_VIEW_USER_DIRECTORY = {
+    Role.MAIN_ADMIN.value,
+    Role.ADMIN.value,
+    Role.PARTNER.value,
+    Role.IT_DEPARTMENT.value,
+}
+
+
+def require_view_user_directory(current_user: User = Depends(get_current_user)) -> User:
+    """Список пользователей — только админские роли и IT."""
+    role = (current_user.role or "").strip()
+    if role not in ROLES_CAN_VIEW_USER_DIRECTORY:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Main Administrator, Administrator, Partner or IT department can list users",
+        )
+    return current_user
+
+
+def require_user_detail_access(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Профиль: свой или те же роли, что для каталога."""
+    role = (current_user.role or "").strip()
+    if current_user.id == user_id:
+        return current_user
+    if role not in ROLES_CAN_VIEW_USER_DIRECTORY:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Main Administrator, Administrator, Partner or IT department can view this profile",
+        )
+    return current_user
+
+
 @router.get("", response_model=list[UserResponse])
 async def list_users(
     include_archived: bool = Query(False, description="Include archived users"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_view_user_directory),
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
@@ -146,7 +181,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 @router.get("/{user_id}", response_model=UserDetailResponse)
 async def get_user_detail(
     user_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_user_detail_access),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
     user = await user_repo.get_by_id(user_id)

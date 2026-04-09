@@ -35,6 +35,10 @@ services:
       - ATTENDANCE_HIKVISION_ALLOWED_IPS=${ATTENDANCE_HIKVISION_ALLOWED_IPS:-}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
+      # Широкий CORS по частным IP (RFC1918). В проде задайте false и перечислите фронты в FRONTEND_URL.
+      - CORS_ALLOW_PRIVATE_NETWORK=${CORS_ALLOW_PRIVATE_NETWORK:-false}
+      # Одинаковый секрет на gateway, tickets, notifications — защита внутренних WS от обхода gateway.
+      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
     volumes:
       - media_storage:/app/media
     healthcheck:
@@ -95,6 +99,7 @@ services:
     environment:
       - DATABASE_URL=${TICKETS_DATABASE_URL:-postgresql://tickets:tickets@tickets_db:5432/kosta_tickets}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
     volumes:
       - media_storage:/app/media
     healthcheck:
@@ -140,7 +145,7 @@ services:
       - AUTH_REDIRECT_URI=${AZURE_REDIRECT_URI}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
-      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-10080}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
@@ -173,6 +178,7 @@ services:
     environment:
       - DATABASE_URL=${NOTIFICATIONS_DATABASE_URL:-postgresql://notifications:notifications@notifications_db:5432/kosta_notifications}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
+      - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
     volumes:
       - media_storage:/app/media
     healthcheck:
@@ -478,7 +484,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      - DATABASE_URL=${VACATION_DATABASE_URL:-postgresql://vacation:123456@vacation_db:5432/kosta_vacation}
+      - DATABASE_URL=${VACATION_DATABASE_URL:-postgresql://vacation:vacation@vacation_db:5432/kosta_vacation}
     healthcheck:
       test:
         [
@@ -499,7 +505,7 @@ services:
     command: ["postgres", "-c", "log_min_messages=warning"]
     environment:
       POSTGRES_USER: ${VACATION_DB_USER:-vacation}
-      POSTGRES_PASSWORD: ${VACATION_DB_PASSWORD:-123456}
+      POSTGRES_PASSWORD: ${VACATION_DB_PASSWORD:-vacation}
       POSTGRES_DB: ${VACATION_DB_NAME:-kosta_vacation}
     volumes:
       - vacation_db_data:/var/lib/postgresql/data
