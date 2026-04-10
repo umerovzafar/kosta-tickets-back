@@ -2,10 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY telegram_bot/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend_common ./backend_common
+COPY telegram_bot/ ./
 
 EXPOSE 1242
 

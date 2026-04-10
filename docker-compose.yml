@@ -13,8 +13,8 @@ name: kosta-tickets-back
 services:
   gateway:
     build:
-      context: ./gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: gateway/Dockerfile
     restart: unless-stopped
     ports:
       - "${GATEWAY_PORT:-1234}:1234"
@@ -96,8 +96,8 @@ services:
 
   tickets:
     build:
-      context: ./tickets
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: tickets/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${TICKETS_DATABASE_URL:-postgresql://tickets:tickets@tickets_db:5432/kosta_tickets}
@@ -137,8 +137,8 @@ services:
 
   auth:
     build:
-      context: ./auth
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: auth/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://gateway:gateway@users_db:5432/kosta_users}
@@ -175,8 +175,8 @@ services:
 
   notifications:
     build:
-      context: ./notifications
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: notifications/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${NOTIFICATIONS_DATABASE_URL:-postgresql://notifications:notifications@notifications_db:5432/kosta_notifications}
@@ -216,8 +216,8 @@ services:
 
   inventory:
     build:
-      context: ./inventory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: inventory/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${INVENTORY_DATABASE_URL:-postgresql://inventory:inventory@inventory_db:5432/kosta_inventory}
@@ -256,8 +256,8 @@ services:
 
   attendance:
     build:
-      context: ./attendance
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: attendance/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${ATTENDANCE_DATABASE_URL:-postgresql://attendance:attendance@attendance_db:5432/kosta_attendance}
@@ -298,8 +298,8 @@ services:
 
   todos:
     build:
-      context: ./todos
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: todos/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${TODOS_DATABASE_URL:-postgresql://todos:todos@todos_db:5432/kosta_todos}
@@ -347,8 +347,8 @@ services:
 
   time_tracking:
     build:
-      context: ./time_tracking
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: time_tracking/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
@@ -483,8 +483,8 @@ services:
 
   vacation:
     build:
-      context: ./vacation
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: vacation/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${VACATION_DATABASE_URL:-postgresql://vacation:vacation@vacation_db:5432/kosta_vacation}
@@ -520,8 +520,8 @@ services:
 
   telegram_bot:
     build:
-      context: ./telegram_bot
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: telegram_bot/Dockerfile
     restart: unless-stopped
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
