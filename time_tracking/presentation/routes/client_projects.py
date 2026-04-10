@@ -206,6 +206,40 @@ async def get_client_project(
     return _project_out(row, usage)
 
 
+@router.get("/{client_id}/projects/{project_id}/dashboard")
+async def get_client_project_dashboard(
+    client_id: str,
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    date_from: str | None = Query(None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="YYYY-MM-DD"),
+):
+    """Агрегаты для UI деталей проекта. Заглушка до расчётов по time entries (см. tickets-front docs)."""
+    _ = date_from, date_to
+    await _require_client(session, client_id)
+    repo = ClientProjectRepository(session)
+    row = await repo.get_by_id(client_id, project_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {
+        "currency": None,
+        "totals": {
+            "total_hours": 0,
+            "billable_hours": 0,
+            "non_billable_hours": 0,
+            "billable_amount": 0,
+            "internal_cost_amount": 0,
+            "internal_costs_complete": True,
+            "unbilled_amount": 0,
+        },
+        "progress_by_week": [],
+        "hours_by_week": [],
+        "tasks": [],
+        "team": [],
+        "invoices": [],
+    }
+
+
 @router.post("/{client_id}/projects", response_model=TimeManagerClientProjectOut)
 async def create_client_project(
     client_id: str,
