@@ -1,4 +1,3 @@
-import urllib.parse
 from pathlib import Path
 from typing import Optional
 
@@ -309,13 +308,14 @@ async def ws_tickets_proxy(websocket: WebSocket):
     ws_base = base.replace("https://", "wss://").replace("http://", "ws://")
     ws_url = f"{ws_base}/ws/tickets"
     ws_secret = (getattr(settings, "ws_internal_secret", None) or "").strip()
+    ws_headers: dict[str, str] | None = None
     if ws_secret:
-        ws_url = f"{ws_url}?internal_key={urllib.parse.quote(ws_secret, safe='')}"
+        ws_headers = {"X-Internal-Key": ws_secret}
     try:
         import asyncio
         import json
         import websockets
-        async with websockets.connect(ws_url) as backend_ws:
+        async with websockets.connect(ws_url, additional_headers=ws_headers) as backend_ws:
             async def forward_from_backend():
                 try:
                     async for msg in backend_ws:

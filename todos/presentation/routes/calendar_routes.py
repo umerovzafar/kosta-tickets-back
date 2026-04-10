@@ -1,7 +1,6 @@
 """Эндпоинты интеграции с календарём Microsoft Outlook."""
 
 import logging
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -20,6 +19,12 @@ from infrastructure.microsoft_graph import (
     refresh_tokens,
 )
 from infrastructure.models import OutlookCalendarTokenModel
+from infrastructure.oauth_state import (
+    DEFAULT_STATE_MAX_AGE_SECONDS,
+    decode_oauth_state,
+    encode_oauth_state,
+    resolve_oauth_state_secret,
+)
 from infrastructure.repositories import OutlookCalendarTokenRepository
 from presentation.dependencies import get_current_user_id
 
@@ -27,15 +32,20 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 _log = logging.getLogger(__name__)
 
 
+def _oauth_state_secret() -> str:
+    settings = get_settings()
+    return resolve_oauth_state_secret(
+        settings.microsoft_oauth_state_secret,
+        settings.microsoft_client_secret,
+    )
+
+
 def _encode_state(user_id: int) -> str:
-    return urlsafe_b64encode(str(user_id).encode()).decode()
+    return encode_oauth_state(user_id, _oauth_state_secret())
 
 
-def _decode_state(state: str) -> int | None:
-    try:
-        return int(urlsafe_b64decode(state.encode()).decode())
-    except Exception:
-        return None
+def _decode_state(state: str, *, max_age_seconds: int = DEFAULT_STATE_MAX_AGE_SECONDS) -> int | None:
+    return decode_oauth_state(state, _oauth_state_secret(), max_age_seconds=max_age_seconds)
 
 
 async def _get_valid_token(

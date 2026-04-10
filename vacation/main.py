@@ -1,5 +1,5 @@
-import logging
+from backend_common.logging import configure_logging
 
-logging.disable(logging.CRITICAL)
+configure_logging("vacation")
 
 from presentation.api import app

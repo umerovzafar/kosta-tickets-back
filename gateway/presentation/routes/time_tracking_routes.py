@@ -10,6 +10,11 @@ from starlette.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_http import (
+    raise_for_upstream_status,
+    send_upstream_request,
+    service_base_url,
+)
 from presentation.schemas.time_manager_client_contacts import (
     TimeManagerClientContactCreateBody,
     TimeManagerClientContactPatchBody,
@@ -56,6 +61,49 @@ from presentation.routes.time_tracking_te_proxy import (
 router = APIRouter(prefix="/api/v1/time-tracking", tags=["time_tracking"])
 
 
+def _time_tracking_base_url() -> str:
+    return service_base_url(get_settings().time_tracking_service_url, "Time tracking")
+
+
+async def _tt_request(
+    method: str,
+    path: str,
+    *,
+    timeout: float = 10.0,
+    **kwargs,
+) -> httpx.Response:
+    base = _time_tracking_base_url()
+    if not path.startswith("/"):
+        path = "/" + path
+    return await send_upstream_request(
+        method,
+        f"{base}{path}",
+        timeout=timeout,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+        **kwargs,
+    )
+
+
+async def _tt_json(
+    method: str,
+    path: str,
+    *,
+    timeout: float = 10.0,
+    **kwargs,
+):
+    response = await _tt_request(method, path, timeout=timeout, **kwargs)
+    raise_for_upstream_status(response, "Time tracking service error")
+    return response.json()
+
+
+def _alias_free_payload(body: BaseModel, label: str, *, exclude_unset: bool = False) -> dict:
+    try:
+        return json.loads(body.model_dump_json(by_alias=False, exclude_unset=exclude_unset))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid {label} payload: {exc}") from exc
+
+
 def require_view_role(user: dict = Depends(get_current_user)):
     role = (user.get("role") or "").strip()
     if role not in {
@@ -84,19 +132,10 @@ def require_manage_role(user: dict = Depends(get_current_user)):
 
 async def _fetch_time_tracking_user_role(auth_user_id: int) -> str | None:
     """Роль в сервисе time_tracking (user / manager / …)."""
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").strip().rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/users/{auth_user_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    r = await _tt_request("GET", f"/users/{auth_user_id}", timeout=10.0)
     if r.status_code == 404:
         return None
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    raise_for_upstream_status(r, "Time tracking service error")
     data = r.json()
     role = (data.get("role") or "").strip()
     return role or None
@@ -264,18 +303,7 @@ async def delete_hourly_rate(
 
 @router.get("/team-workload")
 async def proxy_team_workload(request: Request, _: dict = Depends(require_view_role)):
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            r = await client.get(f"{base}/team-workload", params=request.query_params)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", "/team-workload", timeout=20.0, params=request.query_params)
 
 
 @router.get("/users/{auth_user_id}/time-entries")
@@ -341,18 +369,7 @@ async def proxy_put_project_access(
 
 @router.get("/users")
 async def list_users(_: dict = Depends(require_view_role)):
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/users")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", "/users")
 
 
 @router.post("/users")
@@ -360,30 +377,8 @@ async def upsert_user(
     body: UserUpsertBody,
     _: dict = Depends(require_manage_role),
 ):
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid user upsert payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/users", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
-
-
-def _time_tracking_base_url() -> str:
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").strip().rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    return base
+    payload = _alias_free_payload(body, "user upsert")
+    return await _tt_json("POST", "/users", json=payload)
 
 
 @router.get("/clients")
@@ -391,31 +386,16 @@ async def list_time_manager_clients(
     include_archived: bool = Query(False, alias="includeArchived"),
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{base}/clients",
-                params={"includeArchived": "true" if include_archived else "false"},
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "GET",
+        "/clients",
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
 
 
 @router.get("/clients/{client_id}/tasks")
 async def list_client_tasks(client_id: str, _: dict = Depends(require_view_role)):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/tasks")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/tasks")
 
 
 @router.get("/clients/{client_id}/tasks/{task_id}")
@@ -424,15 +404,7 @@ async def get_client_task(
     task_id: str,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/tasks/{task_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/tasks/{task_id}")
 
 
 @router.post("/clients/{client_id}/tasks")
@@ -441,19 +413,8 @@ async def create_client_task(
     body: TimeManagerClientTaskCreateBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid task payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/clients/{client_id}/tasks", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    payload = _alias_free_payload(body, "task")
+    return await _tt_json("POST", f"/clients/{client_id}/tasks", json=payload)
 
 
 @router.patch("/clients/{client_id}/tasks/{task_id}")
@@ -463,21 +424,10 @@ async def patch_client_task(
     body: TimeManagerClientTaskPatchBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid task payload: {e}") from e
+    payload = _alias_free_payload(body, "task", exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(f"{base}/clients/{client_id}/tasks/{task_id}", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("PATCH", f"/clients/{client_id}/tasks/{task_id}", json=payload)
 
 
 @router.delete("/clients/{client_id}/tasks/{task_id}", status_code=204)
@@ -486,28 +436,13 @@ async def delete_client_task(
     task_id: str,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/clients/{client_id}/tasks/{task_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    await _tt_json("DELETE", f"/clients/{client_id}/tasks/{task_id}")
     return None
 
 
 @router.get("/clients/{client_id}/contacts")
 async def list_client_contacts_gateway(client_id: str, _: dict = Depends(require_view_role)):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/contacts")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/contacts")
 
 
 @router.get("/clients/{client_id}/contacts/{contact_id}")
@@ -516,15 +451,7 @@ async def get_client_contact_gateway(
     contact_id: str,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/contacts/{contact_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/contacts/{contact_id}")
 
 
 @router.post("/clients/{client_id}/contacts")
@@ -533,19 +460,8 @@ async def create_client_contact_gateway(
     body: TimeManagerClientContactCreateBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid contact payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/clients/{client_id}/contacts", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    payload = _alias_free_payload(body, "contact")
+    return await _tt_json("POST", f"/clients/{client_id}/contacts", json=payload)
 
 
 @router.patch("/clients/{client_id}/contacts/{contact_id}")
@@ -555,24 +471,10 @@ async def patch_client_contact_gateway(
     body: TimeManagerClientContactPatchBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid contact payload: {e}") from e
+    payload = _alias_free_payload(body, "contact", exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(
-                f"{base}/clients/{client_id}/contacts/{contact_id}",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("PATCH", f"/clients/{client_id}/contacts/{contact_id}", json=payload)
 
 
 @router.delete("/clients/{client_id}/contacts/{contact_id}", status_code=204)
@@ -581,14 +483,7 @@ async def delete_client_contact_gateway(
     contact_id: str,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/clients/{client_id}/contacts/{contact_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    await _tt_json("DELETE", f"/clients/{client_id}/contacts/{contact_id}")
     return None
 
 
@@ -598,18 +493,11 @@ async def list_client_expense_categories(
     include_archived: bool = Query(False, alias="includeArchived"),
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{base}/clients/{client_id}/expense-categories",
-                params={"includeArchived": "true" if include_archived else "false"},
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "GET",
+        f"/clients/{client_id}/expense-categories",
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
 
 
 @router.get("/clients/{client_id}/expense-categories/{category_id}")
@@ -618,15 +506,7 @@ async def get_client_expense_category(
     category_id: str,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/expense-categories/{category_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/expense-categories/{category_id}")
 
 
 @router.post("/clients/{client_id}/expense-categories")
@@ -635,19 +515,8 @@ async def create_client_expense_category(
     body: TimeManagerClientExpenseCategoryCreateBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid expense category payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/clients/{client_id}/expense-categories", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    payload = _alias_free_payload(body, "expense category")
+    return await _tt_json("POST", f"/clients/{client_id}/expense-categories", json=payload)
 
 
 @router.patch("/clients/{client_id}/expense-categories/{category_id}")
@@ -657,24 +526,14 @@ async def patch_client_expense_category(
     body: TimeManagerClientExpenseCategoryPatchBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid expense category payload: {e}") from e
+    payload = _alias_free_payload(body, "expense category", exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(
-                f"{base}/clients/{client_id}/expense-categories/{category_id}",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "PATCH",
+        f"/clients/{client_id}/expense-categories/{category_id}",
+        json=payload,
+    )
 
 
 @router.delete("/clients/{client_id}/expense-categories/{category_id}", status_code=204)
@@ -683,14 +542,7 @@ async def delete_client_expense_category(
     category_id: str,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/clients/{client_id}/expense-categories/{category_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    await _tt_json("DELETE", f"/clients/{client_id}/expense-categories/{category_id}")
     return None
 
 
@@ -699,15 +551,7 @@ async def get_client_project_code_hint(
     client_id: str,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/projects/code-hint")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/projects/code-hint")
 
 
 @router.post("/clients/{client_id}/projects/{project_id}/duplicate")
@@ -716,17 +560,7 @@ async def duplicate_client_project(
     project_id: str,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{base}/clients/{client_id}/projects/{project_id}/duplicate",
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("POST", f"/clients/{client_id}/projects/{project_id}/duplicate")
 
 
 @router.get("/clients/{client_id}/projects/{project_id}/export")
@@ -736,17 +570,12 @@ async def export_client_project(
     export_format: Literal["json", "csv"] = Query("json", alias="format"),
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{base}/clients/{client_id}/projects/{project_id}/export",
-                params={"format": export_format},
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await _tt_request(
+        "GET",
+        f"/clients/{client_id}/projects/{project_id}/export",
+        params={"format": export_format},
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     out_headers: dict[str, str] = {}
     if ct := r.headers.get("content-type"):
         out_headers["Content-Type"] = ct
@@ -761,18 +590,11 @@ async def list_client_projects(
     include_archived: bool = Query(False, alias="includeArchived"),
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{base}/clients/{client_id}/projects",
-                params={"includeArchived": "true" if include_archived else "false"},
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "GET",
+        f"/clients/{client_id}/projects",
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
 
 
 @router.get("/clients/{client_id}/projects/{project_id}")
@@ -781,15 +603,7 @@ async def get_client_project(
     project_id: str,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}/projects/{project_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}/projects/{project_id}")
 
 
 @router.get("/clients/{client_id}/projects/{project_id}/dashboard")
@@ -800,23 +614,17 @@ async def get_client_project_dashboard(
     date_to: Optional[str] = Query(None, alias="dateTo"),
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
     params: dict[str, str] = {}
     if date_from:
         params["date_from"] = date_from
     if date_to:
         params["date_to"] = date_to
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(
-                f"{base}/clients/{client_id}/projects/{project_id}/dashboard",
-                params=params or None,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "GET",
+        f"/clients/{client_id}/projects/{project_id}/dashboard",
+        timeout=30.0,
+        params=params or None,
+    )
 
 
 @router.get("/clients/{client_id}/projects/{project_id}/team-workload")
@@ -826,18 +634,12 @@ async def get_project_team_workload(
     request: Request,
     _: dict = Depends(require_view_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(
-                f"{base}/clients/{client_id}/projects/{project_id}/team-workload",
-                params=request.query_params,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json(
+        "GET",
+        f"/clients/{client_id}/projects/{project_id}/team-workload",
+        timeout=30.0,
+        params=request.query_params,
+    )
 
 
 @router.post("/clients/{client_id}/projects")
@@ -846,19 +648,8 @@ async def create_client_project(
     body: TimeManagerClientProjectCreateBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid project payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/clients/{client_id}/projects", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    payload = _alias_free_payload(body, "project")
+    return await _tt_json("POST", f"/clients/{client_id}/projects", json=payload)
 
 
 @router.patch("/clients/{client_id}/projects/{project_id}")
@@ -868,24 +659,10 @@ async def patch_client_project(
     body: TimeManagerClientProjectPatchBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid project payload: {e}") from e
+    payload = _alias_free_payload(body, "project", exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(
-                f"{base}/clients/{client_id}/projects/{project_id}",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("PATCH", f"/clients/{client_id}/projects/{project_id}", json=payload)
 
 
 @router.delete("/clients/{client_id}/projects/{project_id}", status_code=204)
@@ -894,28 +671,13 @@ async def delete_client_project(
     project_id: str,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/clients/{client_id}/projects/{project_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    await _tt_json("DELETE", f"/clients/{client_id}/projects/{project_id}")
     return None
 
 
 @router.get("/clients/{client_id}")
 async def get_time_manager_client(client_id: str, _: dict = Depends(require_view_role)):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/clients/{client_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("GET", f"/clients/{client_id}")
 
 
 @router.post("/clients")
@@ -923,19 +685,8 @@ async def create_time_manager_client(
     body: TimeManagerClientCreateBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid client payload: {e}") from e
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(f"{base}/clients", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    payload = _alias_free_payload(body, "client")
+    return await _tt_json("POST", "/clients", json=payload)
 
 
 @router.patch("/clients/{client_id}")
@@ -944,33 +695,15 @@ async def patch_time_manager_client(
     body: TimeManagerClientPatchBody,
     _: dict = Depends(require_manage_role),
 ):
-    base = _time_tracking_base_url()
-    try:
-        payload = json.loads(body.model_dump_json(by_alias=False))
-    except (TypeError, ValueError) as e:
-        raise HTTPException(status_code=500, detail=f"Invalid client payload: {e}") from e
+    payload = _alias_free_payload(body, "client", exclude_unset=True)
     if not payload:
         raise HTTPException(status_code=400, detail="No fields to update")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(f"{base}/clients/{client_id}", json=payload)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("PATCH", f"/clients/{client_id}", json=payload)
 
 
 @router.delete("/clients/{client_id}", status_code=204)
 async def delete_time_manager_client(client_id: str, _: dict = Depends(require_manage_role)):
-    base = _time_tracking_base_url()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/clients/{client_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    await _tt_json("DELETE", f"/clients/{client_id}")
     return None
 
 
@@ -979,15 +712,4 @@ async def delete_user(
     auth_user_id: int,
     _: dict = Depends(require_manage_role),
 ):
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/users/{auth_user_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
-    return r.json()
+    return await _tt_json("DELETE", f"/users/{auth_user_id}")

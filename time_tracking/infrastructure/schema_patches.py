@@ -3,6 +3,29 @@
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from infrastructure.schema_patch_utils import add_columns_if_missing
+
+_CLIENT_CONTACT_COLUMN_DEFINITIONS = (
+    "phone VARCHAR(64)",
+    "email VARCHAR(320)",
+    "contact_name VARCHAR(500)",
+    "contact_phone VARCHAR(64)",
+    "contact_email VARCHAR(320)",
+)
+
+_PROJECT_BILLING_COLUMN_DEFINITIONS = (
+    "project_type VARCHAR(32) NOT NULL DEFAULT 'time_and_materials'",
+    "billable_rate_type VARCHAR(64)",
+    "budget_type VARCHAR(64)",
+    "budget_amount NUMERIC(18, 4)",
+    "budget_hours NUMERIC(12, 2)",
+    "budget_resets_every_month BOOLEAN NOT NULL DEFAULT FALSE",
+    "budget_includes_expenses BOOLEAN NOT NULL DEFAULT FALSE",
+    "send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE",
+    "budget_alert_threshold_percent NUMERIC(8, 2)",
+    "fixed_fee_amount NUMERIC(18, 4)",
+)
+
 
 async def apply_team_workload_schema_patch(conn: AsyncConnection) -> None:
     """Соответствует scripts/add_time_tracking_team_workload.sql — идемпотентно."""
@@ -86,16 +109,11 @@ async def apply_time_tracking_clients_is_archived_patch(conn: AsyncConnection) -
 
 async def apply_time_tracking_clients_contact_columns_patch(conn: AsyncConnection) -> None:
     """Телефон/почта клиента и основное контактное лицо."""
-    for col, typ in (
-        ("phone", "VARCHAR(64)"),
-        ("email", "VARCHAR(320)"),
-        ("contact_name", "VARCHAR(500)"),
-        ("contact_phone", "VARCHAR(64)"),
-        ("contact_email", "VARCHAR(320)"),
-    ):
-        await conn.execute(
-            text(f"ALTER TABLE time_tracking_clients ADD COLUMN IF NOT EXISTS {col} {typ}")
-        )
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_clients",
+        _CLIENT_CONTACT_COLUMN_DEFINITIONS,
+    )
 
 
 async def apply_client_extra_contacts_schema_patch(conn: AsyncConnection) -> None:
@@ -258,20 +276,11 @@ async def apply_client_projects_is_archived_patch(conn: AsyncConnection) -> None
 
 async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> None:
     """Добавляет колонки биллинга/бюджета к уже существующей таблице проектов."""
-    stmts = [
-        "ADD COLUMN IF NOT EXISTS project_type VARCHAR(32) NOT NULL DEFAULT 'time_and_materials'",
-        "ADD COLUMN IF NOT EXISTS billable_rate_type VARCHAR(64)",
-        "ADD COLUMN IF NOT EXISTS budget_type VARCHAR(64)",
-        "ADD COLUMN IF NOT EXISTS budget_amount NUMERIC(18, 4)",
-        "ADD COLUMN IF NOT EXISTS budget_hours NUMERIC(12, 2)",
-        "ADD COLUMN IF NOT EXISTS budget_resets_every_month BOOLEAN NOT NULL DEFAULT FALSE",
-        "ADD COLUMN IF NOT EXISTS budget_includes_expenses BOOLEAN NOT NULL DEFAULT FALSE",
-        "ADD COLUMN IF NOT EXISTS send_budget_alerts BOOLEAN NOT NULL DEFAULT FALSE",
-        "ADD COLUMN IF NOT EXISTS budget_alert_threshold_percent NUMERIC(8, 2)",
-        "ADD COLUMN IF NOT EXISTS fixed_fee_amount NUMERIC(18, 4)",
-    ]
-    for col in stmts:
-        await conn.execute(text(f"ALTER TABLE time_tracking_client_projects {col}"))
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_client_projects",
+        _PROJECT_BILLING_COLUMN_DEFINITIONS,
+    )
 
 
 async def apply_user_project_access_patch(conn: AsyncConnection) -> None:

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic import AliasChoices, Field, field_validator
@@ -199,5 +200,6 @@ class Settings(BaseSettings):
         return v
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

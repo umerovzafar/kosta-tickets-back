@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from infrastructure.models import TimeTrackingUserProjectAccessModel
+from infrastructure.repository_clients import ClientProjectRepository
+from infrastructure.repository_shared import _now_utc
+
+
+class UserProjectAccessRepository:
+    """Какие проекты пользователь может выбирать при списании времени."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def has_access(self, auth_user_id: int, project_id: str) -> bool:
+        r = await self._session.execute(
+            select(TimeTrackingUserProjectAccessModel.id).where(
+                TimeTrackingUserProjectAccessModel.auth_user_id == auth_user_id,
+                TimeTrackingUserProjectAccessModel.project_id == project_id,
+            )
+        )
+        return r.scalar_one_or_none() is not None
+
+    async def list_project_ids(self, auth_user_id: int) -> list[str]:
+        r = await self._session.execute(
+            select(TimeTrackingUserProjectAccessModel.project_id)
+            .where(TimeTrackingUserProjectAccessModel.auth_user_id == auth_user_id)
+            .order_by(TimeTrackingUserProjectAccessModel.project_id.asc())
+        )
+        return [str(x) for x in r.scalars().all()]
+
+    async def list_auth_user_ids_for_project(self, project_id: str) -> list[int]:
+        r = await self._session.execute(
+            select(TimeTrackingUserProjectAccessModel.auth_user_id).where(
+                TimeTrackingUserProjectAccessModel.project_id == project_id,
+            )
+        )
+        return [int(x) for x in r.scalars().all()]
+
+    async def replace_all(
+        self,
+        auth_user_id: int,
+        project_ids: list[str],
+        *,
+        granted_by_auth_user_id: int | None,
+        projects: ClientProjectRepository,
+    ) -> None:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for raw in project_ids:
+            pid = (raw or "").strip()
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            if await projects.get_by_id_global(pid) is None:
+                raise ValueError(f"Проект не найден: {pid}")
+            normalized.append(pid)
+
+        await self._session.execute(
+            delete(TimeTrackingUserProjectAccessModel).where(
+                TimeTrackingUserProjectAccessModel.auth_user_id == auth_user_id
+            )
+        )
+        now = _now_utc()
+        for pid in normalized:
+            self._session.add(
+                TimeTrackingUserProjectAccessModel(
+                    id=str(uuid.uuid4()),
+                    auth_user_id=auth_user_id,
+                    project_id=pid,
+                    granted_by_auth_user_id=granted_by_auth_user_id,
+                    created_at=now,
+                )
+            )

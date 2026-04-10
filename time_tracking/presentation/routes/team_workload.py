@@ -1,18 +1,16 @@
 """Агрегат «загрузка команды» за период (карточки + таблица сотрудников)."""
 
 from datetime import date
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.team_workload_math import capacity_for_period, period_days_inclusive, workload_percent
+from application.team_workload_builder import build_team_workload_members_and_summary
+from application.team_workload_math import period_days_inclusive
 from infrastructure.database import get_session
 from infrastructure.repositories import TimeEntryRepository, TimeTrackingUserRepository
 from presentation.schemas import (
-    TeamWorkloadMemberOut,
     TeamWorkloadOut,
-    TeamWorkloadSummaryOut,
 )
 
 router = APIRouter(prefix="/team-workload", tags=["team_workload"])
@@ -40,42 +38,11 @@ async def get_team_workload(
 
     sums = await entry_repo.aggregate_by_user(date_from, date_to)
 
-    members: list[TeamWorkloadMemberOut] = []
-    total_hours = Decimal("0")
-    billable_sum = Decimal("0")
-    non_sum = Decimal("0")
-    team_cap = Decimal("0")
-    team_weekly = Decimal("0")
-
-    for u in sorted(rows, key=lambda x: (x.display_name or x.email or "").lower()):
-        cap = capacity_for_period(u.weekly_capacity_hours, date_from, date_to)
-        tot, bill, nonb = sums.get(u.auth_user_id, (Decimal("0"), Decimal("0"), Decimal("0")))
-        total_hours += tot
-        billable_sum += bill
-        non_sum += nonb
-        team_cap += cap
-        team_weekly += u.weekly_capacity_hours
-        members.append(
-            TeamWorkloadMemberOut(
-                auth_user_id=u.auth_user_id,
-                display_name=u.display_name,
-                email=u.email,
-                picture=u.picture,
-                capacity_hours=cap,
-                total_hours=tot,
-                billable_hours=bill,
-                non_billable_hours=nonb,
-                workload_percent=workload_percent(tot, cap),
-            )
-        )
-
-    summary = TeamWorkloadSummaryOut(
-        total_hours=total_hours,
-        team_capacity_hours=team_cap,
-        team_weekly_capacity_hours=team_weekly,
-        billable_hours=billable_sum,
-        non_billable_hours=non_sum,
-        team_workload_percent=workload_percent(total_hours, team_cap),
+    members, summary = build_team_workload_members_and_summary(
+        rows,
+        sums,
+        date_from=date_from,
+        date_to=date_to,
     )
 
     return TeamWorkloadOut(

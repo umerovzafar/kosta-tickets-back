@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -30,13 +32,19 @@ class Settings(BaseSettings):
     service_name: str = "auth"
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
 
 
 def validate_production_secrets(settings: Settings) -> None:
     """Проверка обязательных секретов при старте. Вызывает RuntimeError при небезопасной конфигурации."""
-    if not (settings.jwt_secret or "").strip():
+    jwt_secret = (settings.jwt_secret or "").strip()
+    if not jwt_secret:
         raise RuntimeError(
             "JWT_SECRET is required. Set JWT_SECRET in environment (e.g. in .env or docker-compose)."
         )
+    if len(jwt_secret) < 32:
+        raise RuntimeError("JWT_SECRET must be at least 32 characters long.")
+    if (settings.jwt_algorithm or "").strip() not in {"HS256", "HS384", "HS512"}:
+        raise RuntimeError("JWT_ALGORITHM must be one of HS256, HS384 or HS512.")

@@ -1,13 +1,22 @@
 import time
 from collections import defaultdict
 
-import httpx
 from fastapi import APIRouter, Body, HTTPException, Request
 from pydantic import BaseModel
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_http import (
+    raise_for_upstream_status,
+    send_upstream_request,
+    service_base_url,
+    upstream_error_detail,
+)
 
 router = APIRouter(prefix="/api/v1/auth/admin", tags=["auth"])
+def _auth_base() -> str:
+    return service_base_url(get_settings().auth_service_url, "Auth")
+
+
 
 # Rate limit: 5 попыток за 15 минут на IP
 _ADMIN_LOGIN_LIMIT = 5
@@ -53,41 +62,36 @@ async def admin_login(body: AdminLoginBody, request: Request):
     """Вход в админ-панель по логину и паролю (без Microsoft)."""
     client_ip = request.client.host if request.client else "unknown"
     _check_admin_rate_limit(client_ip)
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{settings.auth_service_url}/auth/admin-login",
-                json={"username": body.username, "password": body.password},
-            )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=502,
-            detail="Auth service unavailable",
-        ) from e
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    if r.status_code == 404:
-        raise HTTPException(
-            status_code=502,
-            detail="Auth service does not support admin login. Rebuild and restart the auth service (docker-compose up -d --build auth).",
-        )
-    if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Auth error")
+    r = await send_upstream_request(
+        "POST",
+        f"{_auth_base()}/auth/admin-login",
+        json={"username": body.username, "password": body.password},
+        timeout=10.0,
+        unavailable_status=502,
+        unavailable_detail="Auth service unavailable",
+    )
+    raise_for_upstream_status(
+        r,
+        "Auth error",
+        status_detail_map={
+            401: "Invalid username or password",
+            404: "Auth service does not support admin login. Rebuild and restart the auth service (docker-compose up -d --build auth).",
+        },
+    )
     return r.json()
 
 
 @router.get("/bootstrap/status")
 async def admin_bootstrap_status():
     """Доступна ли первичная настройка входа в админ-панель (прокси к auth)."""
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{settings.auth_service_url}/auth/admin-bootstrap/status")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail="Auth service unavailable") from e
-    if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Auth error")
+    r = await send_upstream_request(
+        "GET",
+        f"{_auth_base()}/auth/admin-bootstrap/status",
+        timeout=10.0,
+        unavailable_status=502,
+        unavailable_detail="Auth service unavailable",
+    )
+    raise_for_upstream_status(r, "Auth error")
     return r.json()
 
 
@@ -96,31 +100,14 @@ async def admin_bootstrap(request: Request, body: dict = Body(...)):
     """Одноразовая генерация логина/пароля (тело: {\"secret\": \"...\"})."""
     client_ip = request.client.host if request.client else "unknown"
     _check_bootstrap_rate_limit(client_ip)
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(
-                f"{settings.auth_service_url}/auth/admin-bootstrap",
-                json=body,
-            )
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail="Auth service unavailable") from e
-    def _detail() -> str:
-        try:
-            j = r.json()
-            d = j.get("detail")
-            if isinstance(d, str):
-                return d
-            return r.text or "Auth error"
-        except Exception:
-            return r.text or "Auth error"
-
-    if r.status_code == 503:
-        raise HTTPException(status_code=503, detail=_detail())
-    if r.status_code == 409:
-        raise HTTPException(status_code=409, detail=_detail())
-    if r.status_code == 403:
-        raise HTTPException(status_code=403, detail=_detail())
-    if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=_detail())
+    r = await send_upstream_request(
+        "POST",
+        f"{_auth_base()}/auth/admin-bootstrap",
+        json=body,
+        timeout=15.0,
+        unavailable_status=502,
+        unavailable_detail="Auth service unavailable",
+    )
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=upstream_error_detail(r, "Auth error"))
     return r.json()

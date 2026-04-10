@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 1244
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "1244", "--no-access-log", "--log-level", "critical"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "1244", "--no-access-log", "--log-level", "info"]

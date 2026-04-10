@@ -2,6 +2,7 @@ import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from backend_common.ws_internal_auth import reject_unless_valid_internal_ws_key
 from infrastructure.config import get_settings
 from infrastructure.database import async_session_factory
 from infrastructure.repositories import TicketRepository, CommentRepository
@@ -53,9 +54,7 @@ def _comment_to_dict(c):
 @router.websocket("/ws/tickets")
 async def ws_tickets(websocket: WebSocket):
     settings = get_settings()
-    secret = (settings.ws_internal_secret or "").strip()
-    if secret and (websocket.query_params.get("internal_key") or "").strip() != secret:
-        await websocket.close(code=1008)
+    if not await reject_unless_valid_internal_ws_key(websocket, settings.ws_internal_secret):
         return
     await websocket.accept()
     outbound = await hub.subscribe(websocket)

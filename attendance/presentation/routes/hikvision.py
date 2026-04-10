@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
+from infrastructure.hikvision_hosts import resolve_hikvision_hosts
 from infrastructure.hikvision_client import get_attendance_from_devices, get_users_from_devices
 from infrastructure.models import AttendanceExplanationModel, HikvisionUserBindingModel
 
@@ -89,13 +90,10 @@ async def get_attendance(
     Фильтрация выполняется по полям person_id, name, department, checkpoint, attendance_status.
     """
     settings = get_settings()
-    hosts: list[str] = []
-    if camera_ip:
-        hosts = [h.strip() for h in camera_ip.split(",") if h.strip()]
-    elif settings.hikvision_device_ips:
-        hosts = [h.strip() for h in settings.hikvision_device_ips.split(",") if h.strip()]
-    elif settings.hikvision_device_ip:
-        hosts = [settings.hikvision_device_ip.strip()]
+    try:
+        hosts = resolve_hikvision_hosts(settings, camera_ip)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     if not hosts:
         raise HTTPException(status_code=400, detail="Не настроены IP камер (HIKVISION_DEVICE_IP(S)).")
@@ -155,13 +153,10 @@ async def get_users(
     [{ camera_ip, users: [...], error }]
     """
     settings = get_settings()
-    hosts: list[str] = []
-    if camera_ip:
-        hosts = [h.strip() for h in camera_ip.split(",") if h.strip()]
-    elif settings.hikvision_device_ips:
-        hosts = [h.strip() for h in settings.hikvision_device_ips.split(",") if h.strip()]
-    elif settings.hikvision_device_ip:
-        hosts = [settings.hikvision_device_ip.strip()]
+    try:
+        hosts = resolve_hikvision_hosts(settings, camera_ip)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     if not hosts:
         raise HTTPException(status_code=400, detail="Не настроены IP камер (HIKVISION_DEVICE_IP(S)).")

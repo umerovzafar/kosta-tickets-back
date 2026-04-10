@@ -8,28 +8,36 @@ import httpx
 from fastapi import HTTPException
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_http import (
+    raise_for_upstream_status,
+    send_upstream_request,
+    service_base_url,
+)
 
 
 def auth_service_base() -> str:
-    return get_settings().auth_service_url.rstrip("/")
+    return service_base_url(get_settings().auth_service_url, "Auth")
 
 
 async def verify_bearer_and_get_user(authorization: Optional[str]) -> dict:
     """GET /users/me — валидный Bearer или 401/503."""
     if not authorization or not authorization.strip():
         raise HTTPException(status_code=401, detail="Authorization required")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(
-                f"{auth_service_base()}/users/me",
-                headers={"Authorization": authorization},
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    if r.status_code == 401:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=503, detail="Auth service error")
+    r = await send_upstream_request(
+        "GET",
+        f"{auth_service_base()}/users/me",
+        headers={"Authorization": authorization},
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Auth service unavailable",
+    )
+    raise_for_upstream_status(
+        r,
+        "Auth service error",
+        status_detail_map={
+            401: "Invalid or expired token",
+        },
+    )
     return r.json()
 
 
@@ -49,8 +57,12 @@ async def auth_service_request(
     headers = dict(kwargs.pop("headers", None) or {})
     if authorization:
         headers["Authorization"] = authorization
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            return await client.request(method, url, headers=headers, **kwargs)
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
+    return await send_upstream_request(
+        method,
+        url,
+        headers=headers,
+        timeout=timeout,
+        unavailable_status=503,
+        unavailable_detail="Auth service unavailable",
+        **kwargs,
+    )

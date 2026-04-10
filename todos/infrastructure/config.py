@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -20,6 +22,7 @@ class Settings(BaseSettings):
     microsoft_client_id: str = ""
     microsoft_tenant_id: str = ""
     microsoft_client_secret: str = ""
+    microsoft_oauth_state_secret: str = ""
     microsoft_redirect_uri: str = ""
     # Куда редиректить пользователя после успешного/неуспешного OAuth календаря
     calendar_connected_redirect_url: str = ""
@@ -30,6 +33,7 @@ class Settings(BaseSettings):
         "microsoft_client_id",
         "microsoft_tenant_id",
         "microsoft_client_secret",
+        "microsoft_oauth_state_secret",
         "calendar_connected_redirect_url",
         mode="before",
     )
@@ -45,5 +49,6 @@ class Settings(BaseSettings):
         return parts[0] if parts else ""
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()

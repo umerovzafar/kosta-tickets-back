@@ -4,12 +4,16 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-import httpx
 from fastapi import Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
+from infrastructure.upstream_http import (
+    raise_for_upstream_status,
+    send_upstream_request,
+    service_base_url,
+)
 
 ROLES_CAN_VIEW = {"Главный администратор", "Администратор", "Партнер", "IT отдел", "Офис менеджер"}
 ROLES_CAN_MANAGE = {"Главный администратор", "Администратор", "Партнер"}
@@ -57,23 +61,20 @@ def _ensure_manage_cost_rates(user: dict) -> None:
 
 
 def _time_tracking_base() -> str:
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    return base
+    return service_base_url(get_settings().time_tracking_service_url, "Time tracking")
 
 
 async def _tt_get_hourly_rate(base: str, auth_user_id: int, rate_id: str) -> dict[str, Any] | None:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    r = await send_upstream_request(
+        "GET",
+        f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
     if r.status_code == 404:
         return None
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -104,13 +105,15 @@ async def hourly_rates_list_gateway(auth_user_id: int, kind: str, user: dict) ->
     else:
         _ensure_billable_rates_view(user)
     base = _time_tracking_base()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.get(f"{base}/users/{auth_user_id}/hourly-rates", params={"kind": kind})
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "GET",
+        f"{base}/users/{auth_user_id}/hourly-rates",
+        params={"kind": kind},
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -135,16 +138,15 @@ async def hourly_rates_create_gateway(auth_user_id: int, body: HourlyRateCreateB
     else:
         raise HTTPException(status_code=400, detail="rateKind must be billable or cost")
     base = _time_tracking_base()
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                f"{base}/users/{auth_user_id}/hourly-rates",
-                json=body.model_dump(mode="json", by_alias=False),
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "POST",
+        f"{base}/users/{auth_user_id}/hourly-rates",
+        json=body.model_dump(mode="json", by_alias=False),
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -165,16 +167,15 @@ async def hourly_rates_patch_gateway(
     payload = body.model_dump(exclude_unset=True, mode="json")
     if not payload:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.patch(
-                f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "PATCH",
+        f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
+        json=payload,
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -187,11 +188,12 @@ async def hourly_rates_delete_gateway(auth_user_id: int, rate_id: str, user: dic
         _ensure_manage_cost_rates(user)
     else:
         _ensure_manage_billable_rates(user)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.delete(f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "DELETE",
+        f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
+        timeout=10.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()

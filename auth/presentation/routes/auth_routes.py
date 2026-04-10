@@ -33,6 +33,20 @@ def _clear_oauth_cookies(response: RedirectResponse) -> None:
     response.delete_cookie(OAUTH_TARGET_COOKIE, path="/")
 
 
+def _frontend_base(settings, target: str) -> str:
+    preferred = settings.admin_frontend_url if target == "admin" else settings.frontend_url
+    fallback = settings.frontend_url or settings.admin_frontend_url or "http://localhost"
+    return (preferred or fallback).rstrip("/")
+
+
+def _error_redirect(settings, target: str, error_code: str) -> RedirectResponse:
+    path = "/index.html" if target == "admin" else "/login"
+    return RedirectResponse(
+        url=f"{_frontend_base(settings, target)}{path}?error={error_code}",
+        status_code=302,
+    )
+
+
 def get_user_repo(session: AsyncSession = Depends(get_session)) -> UserRepositoryPort:
     return UserRepository(session)
 
@@ -92,11 +106,11 @@ async def login(
 @router.get("/logout")
 async def logout():
     settings = get_settings()
-    post_logout_redirect = f"{settings.frontend_url.rstrip('/')}/login"
+    post_logout_redirect = f"{_frontend_base(settings, 'main')}/login"
     return RedirectResponse(url=get_logout_url(post_logout_redirect), status_code=302)
 
 
-def _claims_to_user_and_token(claims: dict, uc: AzureLoginUseCase):
+def _claims_to_user_and_token(claims: dict):
     azure_oid = claims.get("oid") or claims.get("sub") or ""
     email = claims.get("preferred_username") or claims.get("email") or ""
     display_name = claims.get("name")
@@ -124,24 +138,19 @@ async def callback(
         if state and nonce_ok and state == nonce_ok:
             target_t = "admin" if cookie_tgt == "admin" else "main"
     if target_t is None:
-        base = (settings.frontend_url or "http://localhost").rstrip("/")
-        resp = RedirectResponse(url=base + "/login?error=oauth_state", status_code=302)
+        resp = _error_redirect(settings, "main", "oauth_state")
         _clear_oauth_cookies(resp)
         return resp
 
     tokens = acquire_token_by_code(code)
     if not tokens or "id_token_claims" not in tokens:
-        base = (settings.admin_frontend_url if target_t == "admin" else settings.frontend_url).rstrip("/")
-        path = "/index.html?error=auth_failed" if target_t == "admin" else "/login?error=auth_failed"
-        resp = RedirectResponse(url=base + path)
+        resp = _error_redirect(settings, target_t, "auth_failed")
         _clear_oauth_cookies(resp)
         return resp
     claims = tokens["id_token_claims"]
-    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims, uc)
+    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims)
     if not azure_oid or not email:
-        base = (settings.admin_frontend_url if target_t == "admin" else settings.frontend_url).rstrip("/")
-        path = "/index.html?error=missing_claims" if target_t == "admin" else "/login?error=missing_claims"
-        resp = RedirectResponse(url=base + path)
+        resp = _error_redirect(settings, target_t, "missing_claims")
         _clear_oauth_cookies(resp)
         return resp
     user, access_token = await uc.execute(
@@ -152,7 +161,7 @@ async def callback(
         redirect_base = settings.admin_frontend_url.rstrip("/")
         callback_path = "/auth/callback.html"
     else:
-        redirect_base = settings.frontend_url.rstrip("/")
+        redirect_base = _frontend_base(settings, "main")
         callback_path = "/auth/callback"
     resp = RedirectResponse(
         url=f"{redirect_base}{callback_path}#access_token={access_token}",
@@ -260,7 +269,7 @@ async def exchange(
     if not tokens or "id_token_claims" not in tokens:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
     claims = tokens["id_token_claims"]
-    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims, uc)
+    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims)
     if not azure_oid or not email:
         raise HTTPException(status_code=400, detail="Missing user claims")
     user, access_token = await uc.execute(

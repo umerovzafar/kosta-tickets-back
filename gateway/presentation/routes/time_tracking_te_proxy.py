@@ -4,19 +4,19 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-import httpx
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_http import (
+    raise_for_upstream_status,
+    send_upstream_request,
+    service_base_url,
+)
 
 
 def _base() -> str:
-    settings = get_settings()
-    base = (settings.time_tracking_service_url or "").rstrip("/")
-    if not base:
-        raise HTTPException(status_code=503, detail="Time tracking service not configured")
-    return base
+    return service_base_url(get_settings().time_tracking_service_url, "Time tracking")
 
 
 class TimeEntryCreateBody(BaseModel):
@@ -43,31 +43,29 @@ class TimeEntryPatchBody(BaseModel):
 
 async def time_entries_list_gateway(auth_user_id: int, request: Request) -> Any:
     base = _base()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(
-                f"{base}/users/{auth_user_id}/time-entries",
-                params=request.query_params,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "GET",
+        f"{base}/users/{auth_user_id}/time-entries",
+        params=request.query_params,
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
 async def time_entries_create_gateway(auth_user_id: int, body: TimeEntryCreateBody) -> Any:
     base = _base()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(
-                f"{base}/users/{auth_user_id}/time-entries",
-                json=body.model_dump(mode="json", by_alias=False),
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "POST",
+        f"{base}/users/{auth_user_id}/time-entries",
+        json=body.model_dump(mode="json", by_alias=False),
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -76,28 +74,28 @@ async def time_entries_patch_gateway(auth_user_id: int, entry_id: str, body: Tim
     payload = body.model_dump(exclude_unset=True, mode="json", by_alias=False)
     if not payload:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.patch(
-                f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "PATCH",
+        f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
+        json=payload,
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
 async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> Any:
     base = _base()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.delete(f"{base}/users/{auth_user_id}/time-entries/{entry_id}")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "DELETE",
+        f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -111,13 +109,14 @@ class ProjectAccessPutBody(BaseModel):
 
 async def project_access_get_gateway(auth_user_id: int) -> Any:
     base = _base()
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(f"{base}/users/{auth_user_id}/project-access")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "GET",
+        f"{base}/users/{auth_user_id}/project-access",
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
 
 
@@ -132,14 +131,13 @@ async def project_access_put_gateway(
         "project_ids": list(body.project_ids),
         "granted_by_auth_user_id": granted_by_auth_user_id,
     }
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.put(
-                f"{base}/users/{auth_user_id}/project-access",
-                json=payload,
-            )
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
-    if r.status_code >= 400:
-        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    r = await send_upstream_request(
+        "PUT",
+        f"{base}/users/{auth_user_id}/project-access",
+        json=payload,
+        timeout=15.0,
+        unavailable_status=503,
+        unavailable_detail="Time tracking service unavailable",
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
     return r.json()
