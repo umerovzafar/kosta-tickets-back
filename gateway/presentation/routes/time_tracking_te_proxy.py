@@ -26,6 +26,7 @@ class TimeEntryCreateBody(BaseModel):
     hours: Decimal
     is_billable: bool = Field(True, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
+    task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
 
 
@@ -36,6 +37,7 @@ class TimeEntryPatchBody(BaseModel):
     hours: Optional[Decimal] = None
     is_billable: Optional[bool] = Field(None, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
+    task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
 
 

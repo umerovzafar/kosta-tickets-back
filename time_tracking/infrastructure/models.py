@@ -59,7 +59,10 @@ class TimeEntryModel(Base):
     """Факт списания времени (загрузка команды: billable / non-billable)."""
 
     __tablename__ = "time_tracking_entries"
-    __table_args__ = (Index("ix_tt_entries_user_date", "auth_user_id", "work_date"),)
+    __table_args__ = (
+        Index("ix_tt_entries_user_date", "auth_user_id", "work_date"),
+        Index("ix_tt_entries_project_task", "project_id", "task_id"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     auth_user_id: Mapped[int] = mapped_column(
@@ -71,6 +74,11 @@ class TimeEntryModel(Base):
     hours: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    task_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_client_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

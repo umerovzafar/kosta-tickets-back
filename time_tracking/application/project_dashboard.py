@@ -79,6 +79,40 @@ async def build_client_project_dashboard(
         for wk, t, b, n in weeks
     ]
 
+    task_rows: list[dict] = []
+    for tid, tname, billable_default, hrs in await entry_repo.aggregate_task_hours_for_project(
+        project_id, date_from, date_to
+    ):
+        if hrs <= 0:
+            continue
+        task_rows.append(
+            {
+                "task_id": tid,
+                "name": tname,
+                "billable": billable_default,
+                "hours": _hours_json(hrs),
+                "billable_amount": 0,
+                "internal_cost_amount": 0,
+            }
+        )
+    for is_b, hrs in await entry_repo.aggregate_unassigned_hours_by_billable_for_project(
+        project_id, date_from, date_to
+    ):
+        if hrs <= 0:
+            continue
+        synthetic = "__unassigned_billable__" if is_b else "__unassigned_non_billable__"
+        label = "Без задачи (оплачиваемые)" if is_b else "Без задачи (неоплачиваемые)"
+        task_rows.append(
+            {
+                "task_id": synthetic,
+                "name": label,
+                "billable": is_b,
+                "hours": _hours_json(hrs),
+                "billable_amount": 0,
+                "internal_cost_amount": 0,
+            }
+        )
+
     return {
         "currency": currency,
         "totals": {
@@ -92,7 +126,7 @@ async def build_client_project_dashboard(
         },
         "progress_by_week": [],
         "hours_by_week": hours_by_week,
-        "tasks": [],
+        "tasks": task_rows,
         "team": team,
         "invoices": [],
     }

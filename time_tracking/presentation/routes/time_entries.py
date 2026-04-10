@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.time_entry_task import resolve_time_entry_task_for_project
 from infrastructure.database import get_session
 from infrastructure.repositories import (
     ClientProjectRepository,
@@ -90,6 +91,8 @@ async def create_time_entry(
     await _ensure_user(session, auth_user_id)
     project_id = await _validate_project_if_set(session, body.project_id)
     await _require_project_access_if_set(session, auth_user_id, project_id)
+    tid, bb = await resolve_time_entry_task_for_project(session, project_id, body.task_id)
+    is_billable = body.is_billable if tid is None else bool(bb)
     repo = TimeEntryRepository(session)
     try:
         row = await repo.create(
@@ -97,8 +100,9 @@ async def create_time_entry(
             auth_user_id=auth_user_id,
             work_date=body.work_date,
             hours=body.hours,
-            is_billable=body.is_billable,
+            is_billable=is_billable,
             project_id=project_id,
+            task_id=tid,
             description=body.description,
         )
     except ValueError as e:
@@ -119,11 +123,25 @@ async def patch_time_entry(
     patch = body.model_dump(exclude_unset=True)
     if not patch:
         raise HTTPException(status_code=400, detail="Нет полей для обновления")
+    repo = TimeEntryRepository(session)
+    row = await repo.get_by_id(auth_user_id, entry_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
     if "project_id" in patch:
         project_id = await _validate_project_if_set(session, patch.get("project_id"))
         patch["project_id"] = project_id
         await _require_project_access_if_set(session, auth_user_id, project_id)
-    repo = TimeEntryRepository(session)
+
+    eff_proj = patch["project_id"] if "project_id" in patch else row.project_id
+    eff_task = patch["task_id"] if "task_id" in patch else row.task_id
+    tid, bb = await resolve_time_entry_task_for_project(session, eff_proj, eff_task)
+    if tid is not None:
+        patch["task_id"] = tid
+        patch["is_billable"] = bb
+    elif "task_id" in patch:
+        patch["task_id"] = None
+
     try:
         row = await repo.update(auth_user_id=auth_user_id, entry_id=entry_id, patch=patch)
     except LookupError as e:

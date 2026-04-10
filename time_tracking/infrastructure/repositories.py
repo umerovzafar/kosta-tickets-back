@@ -479,6 +479,7 @@ class TimeEntryRepository:
         hours: Decimal,
         is_billable: bool,
         project_id: str | None,
+        task_id: str | None = None,
         description: str | None,
     ) -> TimeEntryModel:
         if hours <= 0:
@@ -491,6 +492,7 @@ class TimeEntryRepository:
             hours=hours,
             is_billable=is_billable,
             project_id=project_id,
+            task_id=task_id,
             description=description,
             created_at=now,
             updated_at=None,
@@ -520,11 +522,77 @@ class TimeEntryRepository:
             row.is_billable = bool(patch["is_billable"])
         if "project_id" in patch:
             row.project_id = patch["project_id"]
+        if "task_id" in patch:
+            row.task_id = patch["task_id"]
         if "description" in patch:
             row.description = patch["description"]
         row.updated_at = _now_utc()
         self._session.add(row)
         return row
+
+    async def aggregate_task_hours_for_project(
+        self,
+        project_id: str,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> list[tuple[str, str, bool, Decimal]]:
+        """По задачам клиента: (task_id, name, billable_by_default, sum hours)."""
+        cond = [
+            *self._project_entry_conditions(project_id, date_from, date_to),
+            TimeEntryModel.task_id.is_not(None),
+        ]
+        q = (
+            select(
+                TimeManagerClientTaskModel.id,
+                TimeManagerClientTaskModel.name,
+                TimeManagerClientTaskModel.billable_by_default,
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("hrs"),
+            )
+            .select_from(TimeEntryModel)
+            .join(TimeManagerClientTaskModel, TimeManagerClientTaskModel.id == TimeEntryModel.task_id)
+            .where(and_(*cond))
+            .group_by(
+                TimeManagerClientTaskModel.id,
+                TimeManagerClientTaskModel.name,
+                TimeManagerClientTaskModel.billable_by_default,
+            )
+            .order_by(
+                TimeManagerClientTaskModel.billable_by_default.desc(),
+                TimeManagerClientTaskModel.name,
+            )
+        )
+        r = await self._session.execute(q)
+        out: list[tuple[str, str, bool, Decimal]] = []
+        for row in r.all():
+            hrs = row.hrs if isinstance(row.hrs, Decimal) else Decimal(str(row.hrs))
+            out.append((str(row.id), str(row.name), bool(row.billable_by_default), hrs))
+        return out
+
+    async def aggregate_unassigned_hours_by_billable_for_project(
+        self,
+        project_id: str,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> list[tuple[bool, Decimal]]:
+        """Часы без task_id, по флагу is_billable."""
+        cond = [
+            *self._project_entry_conditions(project_id, date_from, date_to),
+            TimeEntryModel.task_id.is_(None),
+        ]
+        q = (
+            select(
+                TimeEntryModel.is_billable,
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("hrs"),
+            )
+            .where(and_(*cond))
+            .group_by(TimeEntryModel.is_billable)
+        )
+        r = await self._session.execute(q)
+        out: list[tuple[bool, Decimal]] = []
+        for row in r.all():
+            hrs = row.hrs if isinstance(row.hrs, Decimal) else Decimal(str(row.hrs))
+            out.append((bool(row.is_billable), hrs))
+        return out
 
     async def delete(self, auth_user_id: int, entry_id: str) -> bool:
         row = await self.get_by_id(auth_user_id, entry_id)

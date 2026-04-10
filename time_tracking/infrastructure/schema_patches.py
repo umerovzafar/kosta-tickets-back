@@ -306,3 +306,24 @@ async def apply_user_project_access_patch(conn: AsyncConnection) -> None:
             """
         )
     )
+
+
+async def apply_time_entries_task_id_schema_patch(conn: AsyncConnection) -> None:
+    """Связь записи времени с задачей клиента (оплачиваемая / неоплачиваемая по справочнику)."""
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+                ADD COLUMN IF NOT EXISTS task_id VARCHAR(36)
+                    REFERENCES time_tracking_client_tasks (id) ON DELETE SET NULL
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_entries_project_task
+                ON time_tracking_entries (project_id, task_id)
+            """
+        )
+    )
