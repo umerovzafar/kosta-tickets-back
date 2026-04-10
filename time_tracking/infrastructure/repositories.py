@@ -3,7 +3,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import case, delete, func, select, text, and_
+from sqlalchemy import case, cast, delete, func, select, text, and_
+from sqlalchemy.types import DateTime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import intervals_overlap, validate_range_order
@@ -295,10 +296,102 @@ class TimeEntryRepository:
             out[uid] = (tot, bill, non)
         return out
 
+    def _project_entry_conditions(
+        self,
+        project_id: str,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> list:
+        cond = [
+            TimeEntryModel.project_id == project_id,
+        ]
+        if date_from is not None:
+            cond.append(TimeEntryModel.work_date >= date_from)
+        if date_to is not None:
+            cond.append(TimeEntryModel.work_date <= date_to)
+        return cond
+
+    async def aggregate_totals_for_project(
+        self,
+        project_id: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        """Сумма (всего, billable, non_billable) по project_id; даты опциональны (вся история)."""
+        q = (
+            select(
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("billable"),
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("non_bill"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
+            )
+            .where(and_(*self._project_entry_conditions(project_id, date_from, date_to)))
+        )
+        r = await self._session.execute(q)
+        row = r.one()
+        bill = row.billable if isinstance(row.billable, Decimal) else Decimal(str(row.billable))
+        non = row.non_bill if isinstance(row.non_bill, Decimal) else Decimal(str(row.non_bill))
+        tot = row.total if isinstance(row.total, Decimal) else Decimal(str(row.total))
+        return tot, bill, non
+
+    async def aggregate_hours_by_week_for_project(
+        self,
+        project_id: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[tuple[date, Decimal, Decimal, Decimal]]:
+        """По неделям (Пн, PostgreSQL date_trunc week): (week_start, total, billable, non_billable)."""
+        week_expr = func.date_trunc("week", cast(TimeEntryModel.work_date, DateTime))
+        q = (
+            select(
+                week_expr.label("wk"),
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("billable"),
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("non_bill"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
+            )
+            .where(and_(*self._project_entry_conditions(project_id, date_from, date_to)))
+            .group_by(week_expr)
+            .order_by(week_expr)
+        )
+        r = await self._session.execute(q)
+        out: list[tuple[date, Decimal, Decimal, Decimal]] = []
+        for row in r.all():
+            raw_wk = row.wk
+            if isinstance(raw_wk, datetime):
+                wk_d = raw_wk.date()
+            elif isinstance(raw_wk, date):
+                wk_d = raw_wk
+            else:
+                wk_d = date.fromisoformat(str(raw_wk)[:10])
+            bill = row.billable if isinstance(row.billable, Decimal) else Decimal(str(row.billable))
+            non = row.non_bill if isinstance(row.non_bill, Decimal) else Decimal(str(row.non_bill))
+            tot = row.total if isinstance(row.total, Decimal) else Decimal(str(row.total))
+            out.append((wk_d, tot, bill, non))
+        return out
+
     async def aggregate_by_user_for_project(
         self,
-        date_from: date,
-        date_to: date,
+        date_from: date | None,
+        date_to: date | None,
         project_id: str,
     ) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
         """auth_user_id -> (total_hours, billable_hours, non_billable_hours) только по project_id."""
@@ -319,11 +412,7 @@ class TimeEntryRepository:
                 ).label("non_bill"),
                 func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
             )
-            .where(
-                TimeEntryModel.work_date >= date_from,
-                TimeEntryModel.work_date <= date_to,
-                TimeEntryModel.project_id == project_id,
-            )
+            .where(and_(*self._project_entry_conditions(project_id, date_from, date_to)))
             .group_by(TimeEntryModel.auth_user_id)
         )
         r = await self._session.execute(q)

@@ -6,6 +6,7 @@ from datetime import date
 from io import StringIO
 from typing import Literal
 
+from application.project_dashboard import build_client_project_dashboard
 from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +25,16 @@ from presentation.schemas import (
 )
 
 router = APIRouter(prefix="/clients", tags=["client_projects"])
+
+
+def _parse_dashboard_date(param: str | None) -> date | None:
+    if param is None or not str(param).strip():
+        return None
+    s = str(param).strip()[:10]
+    try:
+        return date.fromisoformat(s)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Некорректная дата: {param!r}") from e
 
 
 def _suggest_next_code(last: str | None) -> str | None:
@@ -216,30 +227,23 @@ async def get_client_project_dashboard(
     date_from: str | None = Query(None, description="YYYY-MM-DD"),
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
 ):
-    """Агрегаты для UI деталей проекта. Заглушка до расчётов по time entries (см. tickets-front docs)."""
-    _ = date_from, date_to
+    """Агрегаты для UI деталей проекта: часы из time entries (billable / non-billable по is_billable)."""
     await _require_client(session, client_id)
-    repo = ClientProjectRepository(session)
-    row = await repo.get_by_id(client_id, project_id)
-    if not row:
+    df = _parse_dashboard_date(date_from)
+    dt = _parse_dashboard_date(date_to)
+    try:
+        payload = await build_client_project_dashboard(
+            session,
+            client_id=client_id,
+            project_id=project_id,
+            date_from=df,
+            date_to=dt,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not payload:
         raise HTTPException(status_code=404, detail="Project not found")
-    return {
-        "currency": None,
-        "totals": {
-            "total_hours": 0,
-            "billable_hours": 0,
-            "non_billable_hours": 0,
-            "billable_amount": 0,
-            "internal_cost_amount": 0,
-            "internal_costs_complete": True,
-            "unbilled_amount": 0,
-        },
-        "progress_by_week": [],
-        "hours_by_week": [],
-        "tasks": [],
-        "team": [],
-        "invoices": [],
-    }
+    return payload
 
 
 @router.get("/{client_id}/projects/{project_id}/team-workload", response_model=TeamWorkloadOut)
