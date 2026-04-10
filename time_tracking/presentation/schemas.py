@@ -107,6 +107,7 @@ class TeamWorkloadMemberOut(BaseModel):
     auth_user_id: int
     display_name: Optional[str] = None
     email: str
+    picture: Optional[str] = None
     capacity_hours: Decimal
     total_hours: Decimal
     billable_hours: Decimal
@@ -120,6 +121,9 @@ class TeamWorkloadOut(BaseModel):
     period_days: int
     summary: TeamWorkloadSummaryOut
     members: list[TeamWorkloadMemberOut]
+    project_id: Optional[str] = None
+    client_id: Optional[str] = None
+    project_name: Optional[str] = None
 
 
 class TimeEntryOut(BaseModel):

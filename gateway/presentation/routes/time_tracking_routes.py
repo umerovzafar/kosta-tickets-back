@@ -819,6 +819,27 @@ async def get_client_project_dashboard(
     return r.json()
 
 
+@router.get("/clients/{client_id}/projects/{project_id}/team-workload")
+async def get_project_team_workload(
+    client_id: str,
+    project_id: str,
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    base = _time_tracking_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(
+                f"{base}/clients/{client_id}/projects/{project_id}/team-workload",
+                params=request.query_params,
+            )
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Time tracking service unavailable")
+    if r.status_code >= 400:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Time tracking service error")
+    return r.json()
+
+
 @router.post("/clients/{client_id}/projects")
 async def create_client_project(
     client_id: str,

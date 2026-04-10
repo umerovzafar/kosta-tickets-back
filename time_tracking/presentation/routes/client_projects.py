@@ -6,6 +6,7 @@ from datetime import date
 from io import StringIO
 from typing import Literal
 
+from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from infrastructure.database import get_session
 from infrastructure.repositories import ClientProjectRepository
 from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
+    TeamWorkloadOut,
     TimeManagerClientProjectCodeHintOut,
     TimeManagerClientProjectCreateBody,
     TimeManagerClientProjectOut,
@@ -238,6 +240,35 @@ async def get_client_project_dashboard(
         "team": [],
         "invoices": [],
     }
+
+
+@router.get("/{client_id}/projects/{project_id}/team-workload", response_model=TeamWorkloadOut)
+async def get_project_team_workload(
+    client_id: str,
+    project_id: str,
+    date_from: date = Query(..., alias="from"),
+    date_to: date = Query(..., alias="to"),
+    include_archived: bool = Query(False, alias="includeArchived"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Загрузка команды по проекту (карточки + таблица): часы только по этому project_id."""
+    if date_to < date_from:
+        raise HTTPException(status_code=400, detail="Параметр to не может быть раньше from")
+    await _require_client(session, client_id)
+    try:
+        out = await compute_project_team_workload(
+            session,
+            client_id=client_id,
+            project_id=project_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_archived=include_archived,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if out is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return out
 
 
 @router.post("/{client_id}/projects", response_model=TimeManagerClientProjectOut)

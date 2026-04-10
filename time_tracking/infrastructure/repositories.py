@@ -295,6 +295,65 @@ class TimeEntryRepository:
             out[uid] = (tot, bill, non)
         return out
 
+    async def aggregate_by_user_for_project(
+        self,
+        date_from: date,
+        date_to: date,
+        project_id: str,
+    ) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+        """auth_user_id -> (total_hours, billable_hours, non_billable_hours) только по project_id."""
+        q = (
+            select(
+                TimeEntryModel.auth_user_id,
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("billable"),
+                func.coalesce(
+                    func.sum(
+                        case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0),
+                    ),
+                    0,
+                ).label("non_bill"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
+            )
+            .where(
+                TimeEntryModel.work_date >= date_from,
+                TimeEntryModel.work_date <= date_to,
+                TimeEntryModel.project_id == project_id,
+            )
+            .group_by(TimeEntryModel.auth_user_id)
+        )
+        r = await self._session.execute(q)
+        out: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+        for row in r.all():
+            uid = int(row.auth_user_id)
+            bill = row.billable if isinstance(row.billable, Decimal) else Decimal(str(row.billable))
+            non = row.non_bill if isinstance(row.non_bill, Decimal) else Decimal(str(row.non_bill))
+            tot = row.total if isinstance(row.total, Decimal) else Decimal(str(row.total))
+            out[uid] = (tot, bill, non)
+        return out
+
+    async def list_auth_users_with_entries_on_project(
+        self,
+        date_from: date,
+        date_to: date,
+        project_id: str,
+    ) -> list[int]:
+        q = (
+            select(TimeEntryModel.auth_user_id)
+            .distinct()
+            .where(
+                TimeEntryModel.work_date >= date_from,
+                TimeEntryModel.work_date <= date_to,
+                TimeEntryModel.project_id == project_id,
+            )
+        )
+        r = await self._session.execute(q)
+        return [int(x) for x in r.scalars().all()]
+
     async def list_for_user(
         self,
         auth_user_id: int,
@@ -1105,6 +1164,14 @@ class UserProjectAccessRepository:
             .order_by(TimeTrackingUserProjectAccessModel.project_id.asc())
         )
         return [str(x) for x in r.scalars().all()]
+
+    async def list_auth_user_ids_for_project(self, project_id: str) -> list[int]:
+        r = await self._session.execute(
+            select(TimeTrackingUserProjectAccessModel.auth_user_id).where(
+                TimeTrackingUserProjectAccessModel.project_id == project_id,
+            )
+        )
+        return [int(x) for x in r.scalars().all()]
 
     async def replace_all(
         self,

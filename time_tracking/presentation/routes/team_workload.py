@@ -58,6 +58,7 @@ async def get_team_workload(
                 auth_user_id=u.auth_user_id,
                 display_name=u.display_name,
                 email=u.email,
+                picture=u.picture,
                 capacity_hours=cap,
                 total_hours=tot,
                 billable_hours=bill,
