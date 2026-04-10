@@ -179,6 +179,21 @@ class ProjectAccessPutBody(BaseModel):
     )
 
 
+class TimeManagerClientContactOut(BaseModel):
+    """Дополнительное контактное лицо клиента."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    client_id: str
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    sort_order: Optional[int] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
 class TimeManagerClientOut(BaseModel):
     """Клиент time manager (настройки биллинга)."""
 
@@ -193,6 +208,13 @@ class TimeManagerClientOut(BaseModel):
     tax_percent: Optional[Decimal] = None
     tax2_percent: Optional[Decimal] = None
     discount_percent: Optional[Decimal] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    extra_contacts: list[TimeManagerClientContactOut] = Field(default_factory=list)
+    is_archived: bool = Field(False, alias="isArchived")
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -213,6 +235,12 @@ class TimeManagerClientCreateBody(BaseModel):
     tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
     tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
     discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    contact_name: Optional[str] = Field(None, alias="contactName", max_length=500)
+    contact_phone: Optional[str] = Field(None, alias="contactPhone", max_length=64)
+    contact_email: Optional[str] = Field(None, alias="contactEmail", max_length=320)
+    is_archived: bool = Field(False, alias="isArchived")
 
 
 class TimeManagerClientPatchBody(BaseModel):
@@ -231,6 +259,30 @@ class TimeManagerClientPatchBody(BaseModel):
     tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
     tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
     discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    contact_name: Optional[str] = Field(None, alias="contactName", max_length=500)
+    contact_phone: Optional[str] = Field(None, alias="contactPhone", max_length=64)
+    contact_email: Optional[str] = Field(None, alias="contactEmail", max_length=320)
+    is_archived: Optional[bool] = Field(None, alias="isArchived")
+
+
+class TimeManagerClientContactCreateBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(..., min_length=1, max_length=500)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    sort_order: Optional[int] = Field(None, alias="sortOrder")
+
+
+class TimeManagerClientContactPatchBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    sort_order: Optional[int] = Field(None, alias="sortOrder")
 
 
 class TimeManagerClientTaskOut(BaseModel):

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from infrastructure.database import Base
 
@@ -91,8 +91,44 @@ class TimeManagerClientModel(Base):
     tax_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
     tax2_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
     discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    extra_contacts: Mapped[list["TimeManagerClientContactModel"]] = relationship(
+        "TimeManagerClientContactModel",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+
+
+class TimeManagerClientContactModel(Base):
+    """Дополнительное контактное лицо клиента."""
+
+    __tablename__ = "time_tracking_client_contacts"
+    __table_args__ = (Index("ix_tt_client_contacts_client", "client_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_clients.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    client: Mapped["TimeManagerClientModel"] = relationship(
+        "TimeManagerClientModel", back_populates="extra_contacts"
+    )
 
 
 class TimeManagerClientTaskModel(Base):

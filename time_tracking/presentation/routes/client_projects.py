@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from infrastructure.database import get_session
-from infrastructure.repositories import ClientProjectRepository, ClientRepository
+from infrastructure.repositories import ClientProjectRepository
+from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
     TimeManagerClientProjectCodeHintOut,
     TimeManagerClientProjectCreateBody,
@@ -75,9 +76,12 @@ def _validate_date_range(start: date | None, end: date | None) -> None:
 
 
 async def _require_client(session: AsyncSession, client_id: str) -> None:
-    repo = ClientRepository(session)
-    if not await repo.get_by_id(client_id):
-        raise HTTPException(status_code=404, detail="Client not found")
+    await get_client_or_404(session, client_id)
+
+
+async def _require_client_mutable(session: AsyncSession, client_id: str) -> None:
+    row = await get_client_or_404(session, client_id)
+    ensure_client_not_archived(row)
 
 
 @router.get("/{client_id}/projects/code-hint", response_model=TimeManagerClientProjectCodeHintOut)
@@ -111,7 +115,7 @@ async def duplicate_client_project(
     project_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientProjectRepository(session)
     try:
         row = await repo.duplicate_from(client_id, project_id)
@@ -208,7 +212,7 @@ async def create_client_project(
     body: TimeManagerClientProjectCreateBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     _validate_date_range(body.start_date, body.end_date)
     repo = ClientProjectRepository(session)
     if await repo.has_code_conflict(client_id, body.code):
@@ -259,7 +263,7 @@ async def patch_client_project(
     body: TimeManagerClientProjectPatchBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientProjectRepository(session)
     patch = body.model_dump(exclude_unset=True, mode="json", by_alias=False)
     if not patch:
@@ -316,7 +320,7 @@ async def delete_client_project(
     project_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientProjectRepository(session)
     usage = await repo.time_entries_count(project_id)
     if usage > 0:

@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import intervals_overlap, validate_range_order
 from application.ports import HealthRepositoryPort
+from sqlalchemy.orm import selectinload
+
 from infrastructure.models import (
     TimeEntryModel,
+    TimeManagerClientContactModel,
     TimeManagerClientModel,
     TimeManagerClientExpenseCategoryModel,
     TimeManagerClientProjectModel,
@@ -394,14 +397,25 @@ class ClientRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    async def list_all(self) -> list[TimeManagerClientModel]:
-        q = select(TimeManagerClientModel).order_by(TimeManagerClientModel.name.asc())
+    async def list_all(self, *, include_archived: bool = False) -> list[TimeManagerClientModel]:
+        q = select(TimeManagerClientModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientModel.name.asc())
         r = await self._session.execute(q)
         return list(r.scalars().all())
 
     async def get_by_id(self, client_id: str) -> TimeManagerClientModel | None:
         r = await self._session.execute(
             select(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id)
+        )
+        return r.scalars().one_or_none()
+
+    async def get_by_id_with_contacts(self, client_id: str) -> TimeManagerClientModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientModel)
+            .options(selectinload(TimeManagerClientModel.extra_contacts))
+            .where(TimeManagerClientModel.id == client_id)
         )
         return r.scalars().one_or_none()
 
@@ -416,6 +430,12 @@ class ClientRepository:
         tax_percent: Decimal | None,
         tax2_percent: Decimal | None,
         discount_percent: Decimal | None,
+        phone: str | None = None,
+        email: str | None = None,
+        contact_name: str | None = None,
+        contact_phone: str | None = None,
+        contact_email: str | None = None,
+        is_archived: bool = False,
     ) -> TimeManagerClientModel:
         cid = str(uuid.uuid4())
         now = _now_utc()
@@ -429,6 +449,12 @@ class ClientRepository:
             tax_percent=tax_percent,
             tax2_percent=tax2_percent,
             discount_percent=discount_percent,
+            phone=(phone or None) and str(phone).strip()[:64] or None,
+            email=(email or None) and str(email).strip()[:320] or None,
+            contact_name=(contact_name or None) and str(contact_name).strip()[:500] or None,
+            contact_phone=(contact_phone or None) and str(contact_phone).strip()[:64] or None,
+            contact_email=(contact_email or None) and str(contact_email).strip()[:320] or None,
+            is_archived=bool(is_archived),
             created_at=now,
             updated_at=None,
         )
@@ -455,6 +481,23 @@ class ClientRepository:
             row.tax2_percent = patch["tax2_percent"]
         if "discount_percent" in patch:
             row.discount_percent = patch["discount_percent"]
+        if "phone" in patch:
+            v = patch["phone"]
+            row.phone = (str(v).strip()[:64] if v is not None and str(v).strip() else None)
+        if "email" in patch:
+            v = patch["email"]
+            row.email = (str(v).strip()[:320] if v is not None and str(v).strip() else None)
+        if "contact_name" in patch:
+            v = patch["contact_name"]
+            row.contact_name = (str(v).strip()[:500] if v is not None and str(v).strip() else None)
+        if "contact_phone" in patch:
+            v = patch["contact_phone"]
+            row.contact_phone = (str(v).strip()[:64] if v is not None and str(v).strip() else None)
+        if "contact_email" in patch:
+            v = patch["contact_email"]
+            row.contact_email = (str(v).strip()[:320] if v is not None and str(v).strip() else None)
+        if "is_archived" in patch and patch["is_archived"] is not None:
+            row.is_archived = bool(patch["is_archived"])
         row.updated_at = _now_utc()
         self._session.add(row)
         return row
@@ -464,6 +507,85 @@ class ClientRepository:
         if not row:
             return False
         await self._session.execute(delete(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id))
+        return True
+
+
+class ClientContactRepository:
+    """Дополнительные контакты клиента."""
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def list_for_client(self, client_id: str) -> list[TimeManagerClientContactModel]:
+        q = (
+            select(TimeManagerClientContactModel)
+            .where(TimeManagerClientContactModel.client_id == client_id)
+            .order_by(TimeManagerClientContactModel.sort_order.asc().nulls_last(), TimeManagerClientContactModel.name)
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
+    async def get_by_id(self, client_id: str, contact_id: str) -> TimeManagerClientContactModel | None:
+        r = await self._session.execute(
+            select(TimeManagerClientContactModel).where(
+                TimeManagerClientContactModel.client_id == client_id,
+                TimeManagerClientContactModel.id == contact_id,
+            )
+        )
+        return r.scalars().one_or_none()
+
+    async def create(
+        self,
+        *,
+        client_id: str,
+        name: str,
+        phone: str | None,
+        email: str | None,
+        sort_order: int | None,
+    ) -> TimeManagerClientContactModel:
+        cid = str(uuid.uuid4())
+        now = _now_utc()
+        row = TimeManagerClientContactModel(
+            id=cid,
+            client_id=client_id,
+            name=name.strip(),
+            phone=(phone or None) and str(phone).strip()[:64] or None,
+            email=(email or None) and str(email).strip()[:320] or None,
+            sort_order=sort_order,
+            created_at=now,
+            updated_at=None,
+        )
+        self._session.add(row)
+        return row
+
+    async def update(self, client_id: str, contact_id: str, patch: dict[str, Any]) -> TimeManagerClientContactModel | None:
+        row = await self.get_by_id(client_id, contact_id)
+        if not row:
+            return None
+        if "name" in patch and patch["name"] is not None:
+            row.name = str(patch["name"]).strip()
+        if "phone" in patch:
+            v = patch["phone"]
+            row.phone = (str(v).strip()[:64] if v is not None and str(v).strip() else None)
+        if "email" in patch:
+            v = patch["email"]
+            row.email = (str(v).strip()[:320] if v is not None and str(v).strip() else None)
+        if "sort_order" in patch:
+            row.sort_order = patch["sort_order"]
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row
+
+    async def delete(self, client_id: str, contact_id: str) -> bool:
+        row = await self.get_by_id(client_id, contact_id)
+        if not row:
+            return False
+        await self._session.execute(
+            delete(TimeManagerClientContactModel).where(
+                TimeManagerClientContactModel.client_id == client_id,
+                TimeManagerClientContactModel.id == contact_id,
+            )
+        )
         return True
 
 

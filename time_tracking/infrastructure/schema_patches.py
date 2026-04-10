@@ -69,6 +69,61 @@ async def apply_time_manager_clients_schema_patch(conn: AsyncConnection) -> None
             """
         )
     )
+    await apply_time_tracking_clients_contact_columns_patch(conn)
+    await apply_time_tracking_clients_is_archived_patch(conn)
+
+
+async def apply_time_tracking_clients_is_archived_patch(conn: AsyncConnection) -> None:
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_clients
+                ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE
+            """
+        )
+    )
+
+
+async def apply_time_tracking_clients_contact_columns_patch(conn: AsyncConnection) -> None:
+    """Телефон/почта клиента и основное контактное лицо."""
+    for col, typ in (
+        ("phone", "VARCHAR(64)"),
+        ("email", "VARCHAR(320)"),
+        ("contact_name", "VARCHAR(500)"),
+        ("contact_phone", "VARCHAR(64)"),
+        ("contact_email", "VARCHAR(320)"),
+    ):
+        await conn.execute(
+            text(f"ALTER TABLE time_tracking_clients ADD COLUMN IF NOT EXISTS {col} {typ}")
+        )
+
+
+async def apply_client_extra_contacts_schema_patch(conn: AsyncConnection) -> None:
+    """Дополнительные контактные лица клиента."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_client_contacts (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES time_tracking_clients (id) ON DELETE CASCADE,
+                name VARCHAR(500) NOT NULL,
+                phone VARCHAR(64),
+                email VARCHAR(320),
+                sort_order INTEGER,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_client_contacts_client
+                ON time_tracking_client_contacts (client_id)
+            """
+        )
+    )
 
 
 async def apply_client_tasks_schema_patch(conn: AsyncConnection) -> None:

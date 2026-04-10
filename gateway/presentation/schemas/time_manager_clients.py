@@ -22,6 +22,12 @@ class TimeManagerClientCreateBody(BaseModel):
     tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
     tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
     discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    contact_name: Optional[str] = Field(None, alias="contactName", max_length=500)
+    contact_phone: Optional[str] = Field(None, alias="contactPhone", max_length=64)
+    contact_email: Optional[str] = Field(None, alias="contactEmail", max_length=320)
+    is_archived: bool = Field(False, alias="isArchived")
 
 
 class TimeManagerClientPatchBody(BaseModel):
@@ -40,3 +46,9 @@ class TimeManagerClientPatchBody(BaseModel):
     tax_percent: Optional[Decimal] = Field(None, alias="taxPercent", ge=0, le=100)
     tax2_percent: Optional[Decimal] = Field(None, alias="tax2Percent", ge=0, le=100)
     discount_percent: Optional[Decimal] = Field(None, alias="discountPercent", ge=0, le=100)
+    phone: Optional[str] = Field(None, max_length=64)
+    email: Optional[str] = Field(None, max_length=320)
+    contact_name: Optional[str] = Field(None, alias="contactName", max_length=500)
+    contact_phone: Optional[str] = Field(None, alias="contactPhone", max_length=64)
+    contact_email: Optional[str] = Field(None, alias="contactEmail", max_length=320)
+    is_archived: Optional[bool] = Field(None, alias="isArchived")

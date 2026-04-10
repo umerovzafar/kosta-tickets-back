@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from infrastructure.database import get_session
-from infrastructure.repositories import ClientExpenseCategoryRepository, ClientRepository
+from infrastructure.repositories import ClientExpenseCategoryRepository
+from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
     TimeManagerClientExpenseCategoryCreateBody,
     TimeManagerClientExpenseCategoryOut,
@@ -32,9 +33,12 @@ def _category_out(row, usage: int) -> TimeManagerClientExpenseCategoryOut:
 
 
 async def _require_client(session: AsyncSession, client_id: str) -> None:
-    repo = ClientRepository(session)
-    if not await repo.get_by_id(client_id):
-        raise HTTPException(status_code=404, detail="Client not found")
+    await get_client_or_404(session, client_id)
+
+
+async def _require_client_mutable(session: AsyncSession, client_id: str) -> None:
+    row = await get_client_or_404(session, client_id)
+    ensure_client_not_archived(row)
 
 
 @router.get("/{client_id}/expense-categories", response_model=list[TimeManagerClientExpenseCategoryOut])
@@ -77,7 +81,7 @@ async def create_client_expense_category(
     body: TimeManagerClientExpenseCategoryCreateBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientExpenseCategoryRepository(session)
     if await repo.has_active_name_conflict(client_id, body.name):
         raise HTTPException(
@@ -113,7 +117,7 @@ async def patch_client_expense_category(
     body: TimeManagerClientExpenseCategoryPatchBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientExpenseCategoryRepository(session)
     patch = body.model_dump(exclude_unset=True, mode="json", by_alias=False)
     if not patch:
@@ -169,7 +173,7 @@ async def delete_client_expense_category(
     category_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientExpenseCategoryRepository(session)
     usage = await repo.usage_count(category_id)
     if usage > 0:

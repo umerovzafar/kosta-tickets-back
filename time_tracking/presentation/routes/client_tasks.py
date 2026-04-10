@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from infrastructure.database import get_session
-from infrastructure.repositories import ClientRepository, ClientTaskRepository
+from infrastructure.repositories import ClientTaskRepository
+from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
     TimeManagerClientTaskCreateBody,
     TimeManagerClientTaskOut,
@@ -20,9 +21,12 @@ def _task_out(row) -> TimeManagerClientTaskOut:
 
 
 async def _require_client(session: AsyncSession, client_id: str) -> None:
-    repo = ClientRepository(session)
-    if not await repo.get_by_id(client_id):
-        raise HTTPException(status_code=404, detail="Client not found")
+    await get_client_or_404(session, client_id)
+
+
+async def _require_client_mutable(session: AsyncSession, client_id: str) -> None:
+    row = await get_client_or_404(session, client_id)
+    ensure_client_not_archived(row)
 
 
 @router.get("/{client_id}/tasks", response_model=list[TimeManagerClientTaskOut])
@@ -53,7 +57,7 @@ async def create_client_task(
     body: TimeManagerClientTaskCreateBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientTaskRepository(session)
     row = await repo.create(
         client_id=client_id,
@@ -74,7 +78,7 @@ async def patch_client_task(
     body: TimeManagerClientTaskPatchBody,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientTaskRepository(session)
     patch = body.model_dump(exclude_unset=True, mode="json", by_alias=False)
     if not patch:
@@ -92,7 +96,7 @@ async def delete_client_task(
     task_id: str,
     session: AsyncSession = Depends(get_session),
 ):
-    await _require_client(session, client_id)
+    await _require_client_mutable(session, client_id)
     repo = ClientTaskRepository(session)
     ok = await repo.delete(client_id, task_id)
     if not ok:
