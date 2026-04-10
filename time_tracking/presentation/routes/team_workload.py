@@ -45,6 +45,7 @@ async def get_team_workload(
     billable_sum = Decimal("0")
     non_sum = Decimal("0")
     team_cap = Decimal("0")
+    team_weekly = Decimal("0")
 
     for u in sorted(rows, key=lambda x: (x.display_name or x.email or "").lower()):
         cap = capacity_for_period(u.weekly_capacity_hours, date_from, date_to)
@@ -53,6 +54,7 @@ async def get_team_workload(
         billable_sum += bill
         non_sum += nonb
         team_cap += cap
+        team_weekly += u.weekly_capacity_hours
         members.append(
             TeamWorkloadMemberOut(
                 auth_user_id=u.auth_user_id,
@@ -70,6 +72,7 @@ async def get_team_workload(
     summary = TeamWorkloadSummaryOut(
         total_hours=total_hours,
         team_capacity_hours=team_cap,
+        team_weekly_capacity_hours=team_weekly,
         billable_hours=billable_sum,
         non_billable_hours=non_sum,
         team_workload_percent=workload_percent(total_hours, team_cap),

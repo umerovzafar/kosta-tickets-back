@@ -97,7 +97,14 @@ class HourlyRatePatchBody(BaseModel):
 
 class TeamWorkloadSummaryOut(BaseModel):
     total_hours: Decimal
-    team_capacity_hours: Decimal
+    team_capacity_hours: Decimal = Field(
+        ...,
+        description="Ёмкость за период (Σ weekly×дней/7), для team_workload_percent",
+    )
+    team_weekly_capacity_hours: Decimal = Field(
+        ...,
+        description="Сумма недельных норм участников (ч/нед), карточка «Ёмкость команды»",
+    )
     billable_hours: Decimal
     non_billable_hours: Decimal
     team_workload_percent: int
