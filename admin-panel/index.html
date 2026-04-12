@@ -11,6 +11,7 @@
     <div class="login-box">
       <h2>Панель администратора</h2>
       <p>Войдите по логину и паролю.</p>
+      <p id="api-health-line" class="login-api-hint" aria-live="polite"></p>
       <div id="login-error" class="error-msg" style="display:none"></div>
       <form id="form-login">
         <div class="form-group">
@@ -36,6 +37,18 @@
         errBox.textContent = 'Ошибка входа. Попробуйте снова.';
         errBox.style.display = 'block';
       }
+      (function checkApi() {
+        var line = document.getElementById('api-health-line');
+        if (!line || !window.adminApp) return;
+        var base = window.adminApp.API_BASE || '—';
+        line.textContent = 'Проверка API: ' + base + ' …';
+        window.adminApp.pingGatewayHealth().then(function (ok) {
+          line.textContent = ok
+            ? ('Связь с API OK — ' + base)
+            : ('API не отвечает — ' + base + ' (запустите gateway, проверьте порт и CORS ADMIN_FRONTEND_URL)');
+        });
+      })();
+
       document.getElementById('form-login').onsubmit = function(e) {
         e.preventDefault();
         var username = document.getElementById('input-username').value.trim();

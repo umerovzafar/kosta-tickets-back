@@ -91,7 +91,7 @@ async def require_admin_or_it(authorization: Optional[str] = Header(None, alias=
     if role not in ROLES_CAN_VIEW_USERS:
         raise HTTPException(
             status_code=403,
-            detail="Only Administrator, Partner, IT department or Office manager can view user details",
+            detail="Only Main Administrator, Administrator, Partner, IT department or Office manager can view user details",
         )
     return user
 
@@ -109,7 +109,7 @@ async def verify_user_detail_access(
     if role not in ROLES_CAN_VIEW_USERS:
         raise HTTPException(
             status_code=403,
-            detail="Only Administrator, Partner, IT department or Office manager can view other users' profiles",
+            detail="Only Main Administrator, Administrator, Partner, IT department or Office manager can view other users' profiles",
         )
     return user
 

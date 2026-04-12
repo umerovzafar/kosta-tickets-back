@@ -8,22 +8,41 @@
     var o = window.location;
     if (!o || !o.protocol || !o.hostname) return 'http://localhost:1234';
     var port = String(o.port || '');
-    // Локально: админка на :8080, gateway в Docker на :1234
-    if ((o.hostname === 'localhost' || o.hostname === '127.0.0.1') && port === '8080') {
-      return 'http://localhost:1234';
-    }
-    // Тот же сценарий по IP/LAN: контейнер admin-panel (:8080/:8081) ≠ gateway (:1234) — иначе POST /api уходит в nginx со статикой → 405
+    var gwPort =
+      typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT != null
+        ? String(window.ADMIN_GATEWAY_PORT).trim()
+        : '1234';
+    // Контейнер admin-panel (:80→8080/8081) ≠ gateway (:1234): иначе POST /api попадает в nginx статики → 405.
     if (port === '8080' || port === '8081') {
-      var gwPort =
-        typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT !== null
-          ? String(window.ADMIN_GATEWAY_PORT).trim()
-          : '1234';
       return o.protocol + '//' + o.hostname + ':' + gwPort;
     }
-    // Прод: один домен и nginx проксирует /api на gateway — origin совпадает с API
+    // Прод: один домен, nginx проксирует /api на gateway.
     return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
   })();
   var TOKEN_KEY = 'admin_access_token';
+
+  function _networkFailureMessage(url) {
+    return (
+      'Сервер недоступен (сеть/CORS). Запрос: ' + url +
+        '. Проверьте: 1) запущен gateway (docker, порт ' +
+        (typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT
+          ? window.ADMIN_GATEWAY_PORT
+          : '1234') +
+        '); 2) в config.js задайте window.ADMIN_API_BASE на URL gateway; ' +
+        '3) в .env gateway: ADMIN_FRONTEND_URL = полный URL этой страницы (или CORS_ALLOW_PRIVATE_NETWORK=true в LAN); ' +
+        '4) HTTPS-страница не может вызывать HTTP API.'
+    );
+  }
+
+  function _fetchWithNetworkHint(url, init) {
+    return fetch(url, init || {}).catch(function (e) {
+      var msg = (e && e.message) ? String(e.message) : '';
+      if (e instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(msg)) {
+        throw new Error(_networkFailureMessage(url));
+      }
+      throw e;
+    });
+  }
 
   function getToken() {
     return localStorage.getItem(TOKEN_KEY);
@@ -46,7 +65,8 @@
       headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify(options.body);
     }
-    return fetch(API_BASE + path, {
+    var url = API_BASE + path;
+    return _fetchWithNetworkHint(url, {
       method: options.method || 'GET',
       headers: headers,
       body: options.body
@@ -75,27 +95,22 @@
     API_BASE: API_BASE,
     ROLES: ROLES,
 
+    /** GET /health на gateway — без токена; для диагностики со страницы входа. */
+    pingGatewayHealth: function () {
+      var url = (API_BASE || '').replace(/\/$/, '') + '/health';
+      return fetch(url, { method: 'GET' }).then(function (r) {
+        return r.ok;
+      }).catch(function () {
+        return false;
+      });
+    },
+
     login: function (username, password) {
       var url = (API_BASE || '').replace(/\/$/, '') + '/api/v1/auth/admin/login';
-      return fetch(url, {
+      return _fetchWithNetworkHint(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username, password: password })
-      }).catch(function (e) {
-        var msg = (e && e.message) ? String(e.message) : '';
-        if (e instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(msg)) {
-          throw new Error(
-            'Сервер недоступен (сеть/CORS). Запрос: ' + url +
-              '. Проверьте: 1) запущен gateway (docker: порт ' +
-              (typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT
-                ? window.ADMIN_GATEWAY_PORT
-                : '1234') +
-              '); 2) в config.js задайте window.ADMIN_API_BASE на URL gateway, если админка не с :8080; ' +
-              '3) в .env gateway: ADMIN_FRONTEND_URL=полный URL страницы входа (или CORS_ALLOW_PRIVATE_NETWORK=true для LAN); ' +
-              '4) страница по HTTPS не может вызывать HTTP API — откройте админку по HTTP или включите TLS на gateway.'
-          );
-        }
-        throw e;
       }).then(function (r) {
         if (r.status === 401) {
           return r.json().then(function (d) { throw new Error(d.detail || 'Неверный логин или пароль'); });
@@ -172,7 +187,13 @@
           window.location.href = 'index.html';
           return Promise.reject(new Error('Unauthorized'));
         }
-        if (r.status === 403) return Promise.reject(new Error('Доступ запрещён. Нужна роль Администратор, Партнер или IT отдел для просмотра списка пользователей.'));
+        if (r.status === 403) {
+          return Promise.reject(
+            new Error(
+              'Доступ запрещён. Список пользователей: Главный администратор, Администратор, Партнёр, IT отдел или Офис менеджер.'
+            )
+          );
+        }
         if (!r.ok) return Promise.reject(new Error('Не удалось загрузить пользователей'));
         return r.json();
       });

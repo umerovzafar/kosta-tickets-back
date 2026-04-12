@@ -93,6 +93,13 @@ body {
 .login-box .form-group input { width: 100%; padding: 0.62rem 0.75rem; border: 1px solid #d1d5db; border-radius: 9px; font-size: 1rem; }
 .login-box #form-login { margin-top: 1rem; }
 .login-box #btn-login-submit { margin-top: 0.5rem; width: 100%; }
+.login-api-hint {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin: 0 0 0.75rem;
+  line-height: 1.35;
+  word-break: break-all;
+}
 
 .btn { display: inline-block; padding: 0.57rem 0.95rem; border-radius: 9px; font-size: 0.92rem; font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
 .btn-primary { background: #1d4ed8; color: #fff; }

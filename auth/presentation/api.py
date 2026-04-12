@@ -25,7 +25,15 @@ def _auth_cors_origins() -> list[str]:
         if url and url != "*":
             origins.extend(u.strip() for u in url.split(",") if u.strip() and u.strip() != "*")
     if not origins:
-        origins = ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080"]
+        origins = [
+            "http://localhost:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+            "http://localhost:5500",
+            "http://127.0.0.1:5500",
+        ]
     return list(dict.fromkeys(origins))
 
 
