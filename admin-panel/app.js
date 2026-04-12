@@ -81,6 +81,21 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username, password: password })
+      }).catch(function (e) {
+        var msg = (e && e.message) ? String(e.message) : '';
+        if (e instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(msg)) {
+          throw new Error(
+            'Сервер недоступен (сеть/CORS). Запрос: ' + url +
+              '. Проверьте: 1) запущен gateway (docker: порт ' +
+              (typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT
+                ? window.ADMIN_GATEWAY_PORT
+                : '1234') +
+              '); 2) в config.js задайте window.ADMIN_API_BASE на URL gateway, если админка не с :8080; ' +
+              '3) в .env gateway: ADMIN_FRONTEND_URL=полный URL страницы входа (или CORS_ALLOW_PRIVATE_NETWORK=true для LAN); ' +
+              '4) страница по HTTPS не может вызывать HTTP API — откройте админку по HTTP или включите TLS на gateway.'
+          );
+        }
+        throw e;
       }).then(function (r) {
         if (r.status === 401) {
           return r.json().then(function (d) { throw new Error(d.detail || 'Неверный логин или пароль'); });
