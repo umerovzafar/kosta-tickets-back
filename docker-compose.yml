@@ -152,7 +152,9 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      # Временный пароль для первого входа, если в .env не задан ADMIN_PASSWORD.
+      # В production задайте в .env свой пароль; после admin-bootstrap пароль берётся из БД.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - ADMIN_BOOTSTRAP_SECRET=${ADMIN_BOOTSTRAP_SECRET:-}
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:1236/health || exit 1"]

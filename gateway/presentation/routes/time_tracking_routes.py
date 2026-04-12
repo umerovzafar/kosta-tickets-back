@@ -255,6 +255,59 @@ class UserUpsertBody(BaseModel):
     weekly_capacity_hours: Optional[Decimal] = Field(None, alias="weeklyCapacityHours")
 
 
+def _user_payload_bool(user: dict, snake: str, camel: str) -> bool:
+    """Булево из ответа auth (snake_case или camelCase)."""
+    v = user.get(snake)
+    if v is not None:
+        return v is True or v == 1 or str(v).lower() == "true"
+    v = user.get(camel)
+    if v is not None:
+        return v is True or v == 1 or str(v).lower() == "true"
+    return False
+
+
+def _self_time_tracking_user_upsert_payload(user: dict, body: UserUpsertBody) -> dict:
+    """Тело POST /users для самого пользователя: роль и блокировки из токена, не из тела запроса."""
+    my_id = _current_auth_user_id(user)
+    tt_auth_role = (user.get("time_tracking_role") or user.get("timeTrackingRole") or "").strip()
+    if tt_auth_role not in {"user", "manager"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Нет роли в учёте времени (сотрудник или менеджер). Обратитесь к администратору организации.",
+        )
+    email = (str(user.get("email") or "").strip()) or (body.email or "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="У пользователя нет email для синхронизации с учётом времени")
+
+    disp = user.get("display_name")
+    if disp is None:
+        disp = user.get("displayName")
+    if disp is None:
+        display_name = body.display_name
+    else:
+        s = str(disp).strip()
+        display_name = s if s else None
+
+    pic = user.get("picture")
+    if pic is None:
+        picture = body.picture
+    else:
+        s = str(pic).strip()
+        picture = s if s else None
+
+    safe = UserUpsertBody(
+        auth_user_id=my_id,
+        email=email,
+        display_name=display_name,
+        picture=picture,
+        role=tt_auth_role,
+        is_blocked=_user_payload_bool(user, "is_blocked", "isBlocked"),
+        is_archived=_user_payload_bool(user, "is_archived", "isArchived"),
+        weekly_capacity_hours=body.weekly_capacity_hours,
+    )
+    return _alias_free_payload(safe, "user upsert")
+
+
 @router.get("/users/{auth_user_id}/hourly-rates")
 async def list_hourly_rates(
     auth_user_id: int,
@@ -375,9 +428,20 @@ async def list_users(_: dict = Depends(require_view_role)):
 @router.post("/users")
 async def upsert_user(
     body: UserUpsertBody,
-    _: dict = Depends(require_manage_role),
+    user: dict = Depends(get_current_user),
 ):
-    payload = _alias_free_payload(body, "user upsert")
+    org_role = (user.get("role") or "").strip()
+    if org_role in {"Главный администратор", "Администратор", "Партнер"}:
+        payload = _alias_free_payload(body, "user upsert")
+        return await _tt_json("POST", "/users", json=payload)
+
+    if body.auth_user_id != _current_auth_user_id(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Синхронизировать в учёте времени другого пользователя могут только главный администратор, администратор или партнёр.",
+        )
+
+    payload = _self_time_tracking_user_upsert_payload(user, body)
     return await _tt_json("POST", "/users", json=payload)
 
 

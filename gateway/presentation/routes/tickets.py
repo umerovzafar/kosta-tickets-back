@@ -29,13 +29,20 @@ from presentation.schemas.ticket_schemas import (
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 
-ROLES_FULL_ACCESS = {"IT отдел", "Администратор", "Главный администратор"}
+# Просмотр и правки по любому тикету (не только свои): офис-менеджер — как операционный доступ.
+ROLES_FULL_ACCESS = {
+    "IT отдел",
+    "Администратор",
+    "Главный администратор",
+    "Офис менеджер",
+    "Офис-менеджер",
+}
 
 
 async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
     """Текущий пользователь из auth. 401 если нет токена или токен невалиден."""
     user = await verify_bearer_and_get_user(authorization)
-    return {"id": user["id"], "role": user.get("role") or "Сотрудник"}
+    return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
 
 
 async def _tickets_get(path: str, params: Optional[dict] = None):
@@ -120,7 +127,7 @@ async def list_tickets(
         params["priority"] = priority
     if category is not None:
         params["category"] = category
-    # IT отдел и Администратор видят все тикеты; для остальных — только свои
+    # IT, админы и офис-менеджер видят все тикеты; для остальных — только свои
     if current_user["role"] not in ROLES_FULL_ACCESS:
         params["created_by_user_id"] = current_user["id"]
     return await _tickets_get("", params=params)
@@ -150,7 +157,7 @@ async def get_ticket_attachment(filename: str):
 
 
 def _can_access_ticket(ticket: dict, current_user: dict) -> bool:
-    """Проверка доступа: свои тикеты или роль IT/Администратор."""
+    """Проверка доступа: свои тикеты или роль IT / администраторы / офис-менеджер."""
     if current_user["role"] in ROLES_FULL_ACCESS:
         return True
     return ticket.get("created_by_user_id") == current_user["id"]
