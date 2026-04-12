@@ -131,16 +131,19 @@ ROLES_CAN_VIEW_USER_DIRECTORY = {
     Role.ADMIN.value,
     Role.PARTNER.value,
     Role.IT_DEPARTMENT.value,
+    Role.OFFICE_MANAGER.value,
+    # Иногда в БД/выгрузках встречается дефис вместо пробела — считаем тем же доступом.
+    "Офис-менеджер",
 }
 
 
 def require_view_user_directory(current_user: User = Depends(get_current_user)) -> User:
-    """Список пользователей — только админские роли и IT."""
+    """Список пользователей — админские роли, IT и офис-менеджер (в т.ч. отчёты посещаемости)."""
     role = (current_user.role or "").strip()
     if role not in ROLES_CAN_VIEW_USER_DIRECTORY:
         raise HTTPException(
             status_code=403,
-            detail="Only Main Administrator, Administrator, Partner or IT department can list users",
+            detail="Only Main Administrator, Administrator, Partner, IT department or Office manager can list users",
         )
     return current_user
 
@@ -156,7 +159,7 @@ def require_user_detail_access(
     if role not in ROLES_CAN_VIEW_USER_DIRECTORY:
         raise HTTPException(
             status_code=403,
-            detail="Only Main Administrator, Administrator, Partner or IT department can view this profile",
+            detail="Only Main Administrator, Administrator, Partner, IT department or Office manager can view this profile",
         )
     return current_user
 

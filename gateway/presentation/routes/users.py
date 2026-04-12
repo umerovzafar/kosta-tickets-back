@@ -25,8 +25,17 @@ MAIN_ADMIN_ROLE = "Главный администратор"
 ADMIN_ROLE = "Администратор"
 PARTNER_ROLE = "Партнер"
 IT_ROLE = "IT отдел"
+OFFICE_MANAGER_ROLE = "Офис менеджер"
+OFFICE_MANAGER_ROLE_ALT = "Офис-менеджер"
 
-ROLES_CAN_VIEW_USERS = {MAIN_ADMIN_ROLE, ADMIN_ROLE, PARTNER_ROLE, IT_ROLE}
+ROLES_CAN_VIEW_USERS = {
+    MAIN_ADMIN_ROLE,
+    ADMIN_ROLE,
+    PARTNER_ROLE,
+    IT_ROLE,
+    OFFICE_MANAGER_ROLE,
+    OFFICE_MANAGER_ROLE_ALT,
+}
 ROLES_CAN_MANAGE_USERS = {MAIN_ADMIN_ROLE, ADMIN_ROLE, PARTNER_ROLE}
 
 
@@ -76,13 +85,13 @@ async def require_main_admin_or_administrator(authorization: Optional[str] = Hea
 
 
 async def require_admin_or_it(authorization: Optional[str] = Header(None, alias="Authorization")):
-    """Администратор, Партнер или IT отдел — просмотр списка и деталей пользователей."""
+    """Администратор, Партнёр, IT или офис-менеджер — просмотр списка и деталей пользователей."""
     user = await _get_current_user_optional(authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_VIEW_USERS:
         raise HTTPException(
             status_code=403,
-            detail="Only Administrator, Partner or IT department can view user details",
+            detail="Only Administrator, Partner, IT department or Office manager can view user details",
         )
     return user
 
@@ -100,7 +109,7 @@ async def verify_user_detail_access(
     if role not in ROLES_CAN_VIEW_USERS:
         raise HTTPException(
             status_code=403,
-            detail="Only Administrator, Partner or IT department can view other users' profiles",
+            detail="Only Administrator, Partner, IT department or Office manager can view other users' profiles",
         )
     return user
 

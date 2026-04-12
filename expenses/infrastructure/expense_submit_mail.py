@@ -700,6 +700,148 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
     _log.info("expense moderation mail sent to %s expense_id=%s", recipients, expense_id)
 
 
+async def notify_partner_expense_recorded(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
+    """Информационное письмо получателям из routing: расход партнёра добавлен, согласование не требуется."""
+    if not _smtp_ready(settings):
+        _log.warning(
+            "expense partner notify: SMTP не настроен (%s), expense_id=%s",
+            ", ".join(_smtp_missing_env_names(settings)),
+            ctx.expense_id,
+        )
+        return
+    recipients = resolve_expense_notify_recipients(
+        settings,
+        department_id=ctx.department_id,
+        expense_type=ctx.expense_type,
+        project_id=ctx.project_id,
+        is_reimbursable=ctx.is_reimbursable,
+    )
+    if not recipients:
+        _log.warning("expense partner notify: нет получателей (ROUTING / EXPENSE_NOTIFY_TO), skip")
+        return
+
+    expense_id = ctx.expense_id
+    author_line = (ctx.author_name or "").strip() or "—"
+    if ctx.author_email:
+        author_line = f"{author_line} ({ctx.author_email})" if author_line != "—" else ctx.author_email
+
+    desc = (ctx.description or "").strip() or "—"
+    et = (ctx.expense_type or "").strip() or "—"
+    sub = (ctx.expense_subtype or "").strip() or "—"
+    vendor = (ctx.vendor or "").strip() or "—"
+    expense_date_fmt = _format_date(ctx.expense_date)
+    pd_fmt = _format_date(ctx.payment_deadline)
+    money_fmt = _format_money(ctx.amount_uzs)
+    rate_fmt = _format_rate(ctx.exchange_rate)
+    eq_fmt = _format_money(ctx.equivalent_amount)
+    reimb = "да" if ctx.is_reimbursable else "нет"
+    dept = (ctx.department_id or "").strip() or "—"
+    proj = (ctx.project_id or "").strip() or "—"
+
+    open_link = _build_open_link(settings, expense_id)
+    link_plain = open_link or ""
+    link_html = ""
+    if open_link:
+        su = html.escape(open_link, quote=True)
+        link_html = f'<p style="margin:16px 0 0 0;"><a href="{su}" style="color:#2563eb;font-weight:600;">Открыть в системе</a></p>'
+
+    safe_id = html.escape(expense_id)
+    subject = f"Расход партнёра {expense_id} — учтён в системе"
+
+    plain_lines = [
+        f"В систему добавлен расход партнёра {expense_id} (без согласования).",
+        f"Автор: {author_line}",
+        f"Дата расхода: {expense_date_fmt}",
+        f"Срок оплаты: {pd_fmt}",
+        f"Подтип: {sub}",
+        f"Сумма (UZS): {money_fmt}",
+        f"Курс: {rate_fmt}",
+        f"Эквивалент (USD): {eq_fmt}",
+        f"Возмещаемый: {reimb}",
+        f"Подразделение: {dept}",
+        f"Проект: {proj}",
+        f"Контрагент: {vendor}",
+        f"Описание: {desc}",
+    ]
+    if link_plain:
+        plain_lines.extend(["", f"Ссылка: {link_plain}"])
+    plain_lines.extend(["", "— Kosta Legal · расходы"])
+    text_body = "\n".join(plain_lines)
+
+    html_body = f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"/></head>
+<body style="margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;color:#0f172a;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;padding:24px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;padding:28px 24px;">
+      <tr><td>
+        <p style="margin:0 0 8px 0;font-size:16px;font-weight:700;color:#0f172a;">Расход партнёра учтён</p>
+        <p style="margin:0 0 16px 0;font-size:14px;line-height:1.55;color:#334155;">
+          Запись <strong>{safe_id}</strong> добавлена в систему. Согласование не требуется.
+        </p>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+          {_detail_row("Автор", html.escape(author_line))}
+          {_detail_row("Дата расхода", html.escape(expense_date_fmt))}
+          {_detail_row("Срок оплаты", html.escape(pd_fmt))}
+          {_detail_row("Тип / подтип", html.escape(f"{et} / {sub}"))}
+          {_detail_row("Сумма (UZS)", html.escape(money_fmt))}
+          {_detail_row("Курс", html.escape(rate_fmt))}
+          {_detail_row("Эквивалент", html.escape(eq_fmt))}
+          {_detail_row("Возмещаемый", html.escape(reimb))}
+          {_detail_row("Подразделение", html.escape(dept))}
+          {_detail_row("Проект", html.escape(proj))}
+          {_detail_row("Контрагент", html.escape(vendor))}
+          {_detail_row("Описание", html.escape(desc).replace("\n", "<br/>"))}
+        </table>
+        {link_html}
+        <p style="margin:24px 0 0 0;font-size:13px;color:#64748b;">Kosta Legal · расходы</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>"""
+
+    from_addr = (settings.expense_mail_from or settings.smtp_user or "").strip()
+    if not from_addr:
+        _log.warning(
+            "expense partner notify: пустой отправитель — задайте EXPENSE_MAIL_FROM или EXPENSE_SMTP_USER, expense_id=%s",
+            expense_id,
+        )
+        return
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = ", ".join(recipients)
+    msg.attach(MIMEText(text_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    _log.info(
+        "expense partner notify: отправка SMTP expense_id=%s to=%s host=%s",
+        expense_id,
+        recipients,
+        settings.smtp_host.strip(),
+    )
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host.strip(),
+            port=int(settings.smtp_port),
+            username=settings.smtp_user.strip(),
+            password=settings.smtp_password,
+            start_tls=bool(settings.smtp_use_tls),
+        )
+    except Exception as e:
+        _log.error(
+            "expense partner notify: ошибка SMTP expense_id=%s: %s: %s",
+            expense_id,
+            type(e).__name__,
+            e,
+        )
+        raise
+    _log.info("expense partner notify: отправлено expense_id=%s", expense_id)
+
+
 async def notify_expense_submitted(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
     """Письмо модераторам при отправке на согласование (submit → pending_approval)."""
     await _send_moderation_message(settings, ctx)

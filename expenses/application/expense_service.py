@@ -70,6 +70,10 @@ def validate_expense_type(code: str) -> str:
     return c
 
 
+def is_partner_expense(expense_type: str | None) -> bool:
+    return (expense_type or "").strip() == "partner_expense"
+
+
 def validate_expense_subtype_rules(expense_type: str, expense_subtype: str | None) -> None:
     """Для partner_expense обязателен subtype из whitelist."""
     if (expense_type or "").strip() != "partner_expense":
@@ -128,6 +132,9 @@ def validate_submit_fields(
         raise ValueError("isReimbursable is required")
     if expense_amount_limit_uzs is not None and amount_uzs > expense_amount_limit_uzs:
         raise ValueError("amountUzs exceeds allowed limit; additional approval may be required")
+    # Расход партнёра — только учёт в системе, без цепочки согласования и без требований к вложениям/проекту.
+    if is_partner_expense(expense_type):
+        return
     if is_reimbursable:
         if not (project_id or "").strip():
             raise ValueError("Для возмещаемого расхода укажите projectId")

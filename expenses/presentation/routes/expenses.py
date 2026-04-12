@@ -12,7 +12,12 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import FileResponse
 
-from application.expense_service import calc_equivalent, validate_expense_subtype_rules, validate_submit_fields
+from application.expense_service import (
+    calc_equivalent,
+    is_partner_expense,
+    validate_expense_subtype_rules,
+    validate_submit_fields,
+)
 from infrastructure.config import get_settings
 from infrastructure.database import get_session
 from infrastructure.auth_users import fetch_users_by_ids
@@ -24,6 +29,7 @@ from infrastructure.expense_submit_mail import (
     AttachmentEmailItem,
     ExpenseModerationEmailContext,
     notify_expense_submitted,
+    notify_partner_expense_recorded,
 )
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
@@ -56,6 +62,7 @@ router = APIRouter(prefix="/expenses", tags=["expenses"])
 _log = logging.getLogger(__name__)
 # В том же запросе, не BackgroundTasks — иначе за gateway фоновая задача может не выполниться.
 _MODERATION_MAIL_TIMEOUT_SEC = 90.0
+_PARTNER_RECORD_MAIL_TIMEOUT_SEC = 90.0
 
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
 # Документ для оплаты — до «Выплачено» (черновик, доработка, на согласовании, одобрено).
@@ -118,6 +125,23 @@ async def _run_moderation_mail(ctx: ExpenseModerationEmailContext) -> None:
         )
     except Exception:
         _log.exception("expense moderation mail failed expense_id=%s", ctx.expense_id)
+
+
+async def _run_partner_recorded_mail(ctx: ExpenseModerationEmailContext) -> None:
+    _log.info("expense partner recorded mail: запуск expense_id=%s", ctx.expense_id)
+    try:
+        await asyncio.wait_for(
+            notify_partner_expense_recorded(get_settings(), ctx),
+            timeout=_PARTNER_RECORD_MAIL_TIMEOUT_SEC,
+        )
+    except asyncio.TimeoutError:
+        _log.error(
+            "expense partner recorded mail: timeout after %ss expense_id=%s",
+            _PARTNER_RECORD_MAIL_TIMEOUT_SEC,
+            ctx.expense_id,
+        )
+    except Exception:
+        _log.exception("expense partner recorded mail failed expense_id=%s", ctx.expense_id)
 
 
 def _utc_now() -> datetime:
@@ -401,6 +425,8 @@ async def create_expense(
     rid = await next_kl_id(session)
     uid = int(user["id"])
     repo = ExpenseRepository(session)
+    partner = is_partner_expense(body.expense_type)
+    now = _utc_now()
     row = await repo.create(
         id_=rid,
         description=body.description or "",
@@ -418,7 +444,7 @@ async def create_expense(
         vendor=body.vendor,
         business_purpose=body.business_purpose,
         comment=body.comment,
-        status="draft",
+        status="approved" if partner else "draft",
         created_by_user_id=uid,
         updated_by_user_id=uid,
     )
@@ -430,8 +456,20 @@ async def create_expense(
         new_value=None,
         performed_by_user_id=uid,
     )
+    if partner:
+        row.submitted_at = now
+        row.approved_at = now
+        await repo.add_status_history(
+            expense_request_id=row.id,
+            from_status=None,
+            to_status="approved",
+            changed_by_user_id=uid,
+            comment="Расход партнёра — без согласования",
+        )
     await session.commit()
     row = await repo.get_by_id(row.id, load_children=True)
+    if partner:
+        await _run_partner_recorded_mail(_moderation_email_context(row, user))
     return await _detail_response(row, authorization)
 
 
@@ -610,15 +648,43 @@ async def submit_expense(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     prev = row.status
+    now = _utc_now()
+    uid_submit = int(user["id"])
+    if is_partner_expense(row.expense_type):
+        row.status = "approved"
+        row.submitted_at = row.submitted_at or now
+        row.approved_at = row.approved_at or now
+        row.updated_by_user_id = uid_submit
+        row.updated_at = now
+        await repo.add_status_history(
+            expense_request_id=row.id,
+            from_status=prev,
+            to_status="approved",
+            changed_by_user_id=uid_submit,
+            comment="Расход партнёра — без согласования",
+        )
+        await repo.add_audit(
+            expense_request_id=row.id,
+            action="submitted",
+            field_name="status",
+            old_value=prev,
+            new_value="approved",
+            performed_by_user_id=uid_submit,
+        )
+        await session.commit()
+        row = await repo.get_by_id(expense_id, load_children=True)
+        await _run_partner_recorded_mail(_moderation_email_context(row, user))
+        return await _detail_response(row, authorization)
+
     row.status = "pending_approval"
-    row.submitted_at = row.submitted_at or _utc_now()
-    row.updated_by_user_id = int(user["id"])
-    row.updated_at = _utc_now()
+    row.submitted_at = row.submitted_at or now
+    row.updated_by_user_id = uid_submit
+    row.updated_at = now
     await repo.add_status_history(
         expense_request_id=row.id,
         from_status=prev,
         to_status="pending_approval",
-        changed_by_user_id=int(user["id"]),
+        changed_by_user_id=uid_submit,
         comment=None,
     )
     await repo.add_audit(
@@ -627,7 +693,7 @@ async def submit_expense(
         field_name="status",
         old_value=prev,
         new_value="pending_approval",
-        performed_by_user_id=int(user["id"]),
+        performed_by_user_id=uid_submit,
     )
     await session.commit()
     row = await repo.get_by_id(expense_id, load_children=True)

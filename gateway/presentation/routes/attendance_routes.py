@@ -35,14 +35,33 @@ class AttendanceExplanationUpsertBody(BaseModel):
 router = APIRouter(prefix="/api/v1/attendance", tags=["attendance"])
 router_compat = APIRouter(tags=["attendance-compat"])  # /hikvision/attendance для старого фронта
 
-ROLES_CAN_VIEW = {"Главный администратор", "Администратор", "Партнер", "IT отдел", "Офис менеджер", "Сотрудник"}
+ROLES_CAN_VIEW = {
+    "Главный администратор",
+    "Администратор",
+    "Партнер",
+    "IT отдел",
+    "Офис менеджер",
+    "Офис-менеджер",
+    "Сотрудник",
+}
 
-# Как права на раздел «Расходы»: IT может вести операционные настройки, связанные с инфраструктурой.
+# Как права на раздел «Расходы»: IT может вести операционные настройки; офис-менеджер — операционный день офиса.
 ROLES_CAN_UPDATE_WORKDAY_SETTINGS = {
     "Главный администратор",
     "Администратор",
     "Партнер",
     "IT отдел",
+    "Офис менеджер",
+    "Офис-менеджер",
+}
+
+# Привязка сотрудников камеры к учётным записям — админы, партнёр, офис-менеджер.
+ROLES_CAN_MANAGE_HIKVISION_MAPPINGS = {
+    "Главный администратор",
+    "Администратор",
+    "Партнер",
+    "Офис менеджер",
+    "Офис-менеджер",
 }
 
 
@@ -52,7 +71,7 @@ async def get_current_user(authorization: Optional[str] = Header(None, alias="Au
     if role not in ROLES_CAN_VIEW:
         raise HTTPException(
             status_code=403,
-            detail="Only administrators and office managers can view attendance",
+            detail="Only administrators, IT, office managers and employees can view attendance",
         )
     return user
 
@@ -177,8 +196,11 @@ async def upsert_hikvision_mapping(
 ):
     user = _
     role = (user.get("role") or "").strip()
-    if role not in ("Главный администратор", "Администратор", "Партнер"):
-        raise HTTPException(status_code=403, detail="Only administrators can manage Hikvision mappings")
+    if role not in ROLES_CAN_MANAGE_HIKVISION_MAPPINGS:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators, partner or office manager can manage Hikvision mappings",
+        )
 
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
@@ -204,8 +226,11 @@ async def delete_hikvision_mapping(
 ):
     user = _
     role = (user.get("role") or "").strip()
-    if role not in ("Главный администратор", "Администратор", "Партнер"):
-        raise HTTPException(status_code=403, detail="Only administrators can manage Hikvision mappings")
+    if role not in ROLES_CAN_MANAGE_HIKVISION_MAPPINGS:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators, partner or office manager can manage Hikvision mappings",
+        )
 
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
@@ -256,7 +281,14 @@ async def upsert_attendance_explanation(
 ):
     user = _
     role = (user.get("role") or "").strip()
-    if role not in ("Главный администратор", "Администратор", "Партнер", "Офис менеджер", "Сотрудник"):
+    if role not in (
+        "Главный администратор",
+        "Администратор",
+        "Партнер",
+        "Офис менеджер",
+        "Офис-менеджер",
+        "Сотрудник",
+    ):
         raise HTTPException(status_code=403, detail="Role is not allowed to submit explanations")
 
     settings = get_settings()
@@ -287,7 +319,14 @@ async def upload_attendance_explanation_photo(
 ):
     user = _
     role = (user.get("role") or "").strip()
-    if role not in ("Главный администратор", "Администратор", "Партнер", "Офис менеджер", "Сотрудник"):
+    if role not in (
+        "Главный администратор",
+        "Администратор",
+        "Партнер",
+        "Офис менеджер",
+        "Офис-менеджер",
+        "Сотрудник",
+    ):
         raise HTTPException(status_code=403, detail="Role is not allowed to submit explanations")
 
     settings = get_settings()
@@ -583,7 +622,7 @@ async def update_workday_settings(
     if role not in ROLES_CAN_UPDATE_WORKDAY_SETTINGS:
         raise HTTPException(
             status_code=403,
-            detail="Нет прав на изменение настроек рабочего дня (нужна роль администратора, партнёра или IT отдела).",
+            detail="Нет прав на изменение настроек рабочего дня (нужна роль администратора, партнёра, IT отдела или офис-менеджера).",
         )
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
