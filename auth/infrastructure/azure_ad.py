@@ -5,8 +5,9 @@ import msal
 
 from infrastructure.config import get_settings
 
-# openid/profile/email — заявки в ID-токене; User.Read — Microsoft Graph (фото профиля в AAD).
-AZURE_LOGIN_SCOPES = ["openid", "profile", "email", "User.Read"]
+# email — claim в ID-токене; User.Read — Microsoft Graph (фото профиля в AAD).
+# openid и profile добавляются MSAL автоматически, указывать их явно нельзя.
+AZURE_LOGIN_SCOPES = ["email", "User.Read"]
 
 
 def get_msal_app():
