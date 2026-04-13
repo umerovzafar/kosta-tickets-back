@@ -338,6 +338,67 @@ async def apply_time_entries_task_id_schema_patch(conn: AsyncConnection) -> None
     )
 
 
+async def apply_reports_schema_patch(conn: AsyncConnection) -> None:
+    """Таблицы модуля отчётов: saved views, snapshots, snapshot rows."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS tt_report_saved_views (
+                id VARCHAR(36) PRIMARY KEY,
+                name VARCHAR(500) NOT NULL,
+                owner_user_id INTEGER NOT NULL,
+                filters_json TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_rsv_owner ON tt_report_saved_views (owner_user_id)")
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS tt_report_snapshots (
+                id VARCHAR(36) PRIMARY KEY,
+                name VARCHAR(500) NOT NULL,
+                report_type VARCHAR(64) NOT NULL,
+                group_by VARCHAR(64),
+                filters_json TEXT NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                created_by_user_id INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_snap_owner ON tt_report_snapshots (created_by_user_id)")
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS tt_report_snapshot_rows (
+                id VARCHAR(36) PRIMARY KEY,
+                snapshot_id VARCHAR(36) NOT NULL REFERENCES tt_report_snapshots (id) ON DELETE CASCADE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                source_type VARCHAR(64) NOT NULL,
+                source_id VARCHAR(64) NOT NULL,
+                frozen_data_json TEXT NOT NULL,
+                overrides_json TEXT,
+                edited_by_user_id INTEGER,
+                edited_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_snap_rows_snap ON tt_report_snapshot_rows (snapshot_id)")
+    )
+
+
 async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> None:
     """Точность поля hours: NUMERIC(12,2) → NUMERIC(16,6), чтобы сохранялись секунды в долях часа."""
     await conn.execute(

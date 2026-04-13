@@ -385,6 +385,32 @@ class ExpenseRepository:
         total_uzs, count = r.one()
         return {"total_amount_uzs": float(total_uzs), "count": int(count)}
 
+    async def list_for_report(
+        self,
+        *,
+        date_from: date,
+        date_to: date,
+        user_ids: list[int] | None = None,
+        project_ids: list[str] | None = None,
+    ) -> list[ExpenseRequestModel]:
+        """Строки расходов для модуля отчётов TT (approved/paid/closed)."""
+        statuses = ("approved", "paid", "closed")
+        conds = [
+            ExpenseRequestModel.status.in_(list(statuses)),
+            ExpenseRequestModel.expense_date >= date_from,
+            ExpenseRequestModel.expense_date <= date_to,
+        ]
+        if user_ids:
+            conds.append(ExpenseRequestModel.created_by_user_id.in_(user_ids))
+        if project_ids:
+            conds.append(ExpenseRequestModel.project_id.in_(project_ids))
+        q = (
+            select(ExpenseRequestModel)
+            .where(and_(*conds))
+            .order_by(ExpenseRequestModel.expense_date.asc(), ExpenseRequestModel.created_at.asc())
+        )
+        return list((await self._session.execute(q)).scalars().all())
+
     async def list_expense_types(self) -> list[ExpenseTypeModel]:
         r = await self._session.execute(select(ExpenseTypeModel).order_by(ExpenseTypeModel.sort_order))
         return list(r.scalars().all())

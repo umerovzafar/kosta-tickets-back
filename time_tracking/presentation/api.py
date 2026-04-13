@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
+from infrastructure import models_reports  # noqa: F401 — таблицы отчётов
 from infrastructure.schema_patches import (
     apply_client_expense_categories_schema_patch,
     apply_client_projects_schema_patch,
@@ -13,6 +14,7 @@ from infrastructure.schema_patches import (
     apply_user_project_access_patch,
     apply_time_entries_task_id_schema_patch,
     apply_time_entries_hours_precision_patch,
+    apply_reports_schema_patch,
 )
 from presentation.routes import (
     client_contacts,
@@ -23,6 +25,7 @@ from presentation.routes import (
     health,
     hourly_rates,
     project_access,
+    reports,
     team_workload,
     time_entries,
     users,
@@ -42,6 +45,7 @@ async def lifespan(app: FastAPI):
         await apply_user_project_access_patch(conn)
         await apply_time_entries_task_id_schema_patch(conn)
         await apply_time_entries_hours_precision_patch(conn)
+        await apply_reports_schema_patch(conn)
     yield
 
 
@@ -64,4 +68,5 @@ app.include_router(hourly_rates.router)
 app.include_router(time_entries.router)
 app.include_router(project_access.router)
 app.include_router(users.router)
+app.include_router(reports.router)
 app.include_router(client_projects._global_projects_router)

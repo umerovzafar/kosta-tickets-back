@@ -1,6 +1,7 @@
-"""Справочники: типы расходов, подразделения, проекты, курсы."""
+"""Справочники: типы расходов, подразделения, проекты, курсы + данные для отчётов TT."""
 
 from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +59,55 @@ async def get_project_expense_totals(
     check_view_role(user)
     repo = ExpenseRepository(session)
     return await repo.aggregate_expenses_for_project(project_id, date_from, date_to)
+
+
+@router.get("/expenses/report-data")
+async def get_expense_report_data(
+    dateFrom: str = Query(..., alias="dateFrom"),
+    dateTo: str = Query(..., alias="dateTo"),
+    userIds: Optional[str] = Query(None, alias="userIds"),
+    projectIds: Optional[str] = Query(None, alias="projectIds"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Строки расходов (approved/paid/closed) для модуля отчётов TT — внутренний endpoint."""
+    try:
+        df = date.fromisoformat(dateFrom.strip()[:10])
+        dt = date.fromisoformat(dateTo.strip()[:10])
+    except (ValueError, AttributeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date: {e}")
+
+    uid_list: list[int] | None = None
+    if userIds:
+        uid_list = [int(x.strip()) for x in userIds.split(",") if x.strip().isdigit()]
+
+    pid_list: list[str] | None = None
+    if projectIds:
+        pid_list = [x.strip() for x in projectIds.split(",") if x.strip()]
+
+    repo = ExpenseRepository(session)
+    rows = await repo.list_for_report(
+        date_from=df,
+        date_to=dt,
+        user_ids=uid_list or None,
+        project_ids=pid_list or None,
+    )
+    return [
+        {
+            "id": r.id,
+            "expense_date": r.expense_date.isoformat() if r.expense_date else None,
+            "project_id": r.project_id,
+            "expense_category_id": r.expense_category_id,
+            "amount_uzs": float(r.amount_uzs),
+            "exchange_rate": float(r.exchange_rate),
+            "equivalent_amount": float(r.equivalent_amount),
+            "expense_type": r.expense_type,
+            "status": r.status,
+            "created_by_user_id": r.created_by_user_id,
+            "description": r.description or "",
+            "is_reimbursable": r.is_reimbursable,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/exchange-rates", response_model=ExchangeRateOut)
