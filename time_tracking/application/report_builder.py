@@ -12,7 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import httpx
-from sqlalchemy import and_, case, func, literal, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import pick_rate_for_date
@@ -213,42 +213,40 @@ async def build_report_summary(
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
-    _zero = literal(0)
-    bill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=_zero)), _zero
-    )
-    nonbill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=_zero)), _zero
-    )
-    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), _zero)
 
-    q = select(total_hrs.label("t"), bill_hrs.label("b"), nonbill_hrs.label("nb")).select_from(TimeEntryModel).where(and_(*cond))
-    row = (await session.execute(q)).one()
-    total, billable, non_billable = _d(row.t), _d(row.b), _d(row.nb)
+    entries_q = select(
+        TimeEntryModel.auth_user_id,
+        TimeEntryModel.work_date,
+        TimeEntryModel.hours,
+        TimeEntryModel.is_billable,
+    ).where(and_(*cond))
+    entries = (await session.execute(entries_q)).all()
 
     rates_map = await _load_user_rates(session, user_ids)
-    billable_amount = Decimal(0)
+
+    total = _ZERO
+    billable = _ZERO
+    non_billable = _ZERO
+    billable_amount = _ZERO
     currency = "USD"
+    line_count = 0
 
-    entries_q = (
-        select(
-            TimeEntryModel.auth_user_id,
-            TimeEntryModel.work_date,
-            TimeEntryModel.hours,
-            TimeEntryModel.is_billable,
-        )
-        .where(and_(*cond))
-        .where(TimeEntryModel.is_billable.is_(True))
-    )
-    for e in (await session.execute(entries_q)).all():
-        amt, cur = _billable_amount_for_entry(
-            _d(e.hours), True, e.work_date, rates_map.get(e.auth_user_id)
-        )
-        billable_amount += amt
-        if cur != "USD":
-            currency = cur
+    for e in entries:
+        h = _d(e.hours)
+        total += h
+        line_count += 1
+        if e.is_billable:
+            billable += h
+            amt, cur = _billable_amount_for_entry(
+                h, True, e.work_date, rates_map.get(e.auth_user_id),
+            )
+            billable_amount += amt
+            if cur != "USD":
+                currency = cur
+        else:
+            non_billable += h
 
-    base = {
+    base: dict[str, Any] = {
         "reportType": report_type,
         "period": period,
         "totalHours": _hours(total),
@@ -260,9 +258,7 @@ async def build_report_summary(
     if report_type == "time":
         base["unbilledAmount"] = {"value": _money(billable_amount), "currency": currency}
     elif report_type == "detailed-time":
-        entry_count_q = select(func.count()).select_from(TimeEntryModel).where(and_(*cond))
-        lc = (await session.execute(entry_count_q)).scalar_one()
-        base["lineCount"] = int(lc or 0)
+        base["lineCount"] = line_count
     elif report_type == "contractor":
         base["contractorHours"] = _hours(total)
         base["contractorCost"] = {"value": 0, "currency": currency}
@@ -430,54 +426,6 @@ async def _table_detailed_time(
 
 
 # ---------------------------------------------------------------------------
-# Billable amount aggregation per group key
-# ---------------------------------------------------------------------------
-
-
-async def _compute_group_billable_amounts(
-    session: AsyncSession,
-    cond: list,
-    group: str,
-    rates_map: dict[int, list[UserHourlyRateModel]],
-    projects: dict[str, TimeManagerClientProjectModel],
-) -> dict[Any, tuple[Decimal, str]]:
-    """Return {group_key: (total_billable_amount, currency)} by iterating
-    over individual billable entries and applying hourly rates."""
-    eq = (
-        select(
-            TimeEntryModel.auth_user_id,
-            TimeEntryModel.project_id,
-            TimeEntryModel.task_id,
-            TimeEntryModel.work_date,
-            TimeEntryModel.hours,
-        )
-        .where(and_(*cond))
-        .where(TimeEntryModel.is_billable.is_(True))
-    )
-    entries = (await session.execute(eq)).all()
-
-    accum: dict[Any, tuple[Decimal, str]] = {}
-    for e in entries:
-        if group == "team":
-            gid = e.auth_user_id
-        elif group == "projects":
-            gid = e.project_id
-        elif group == "clients":
-            p = projects.get(e.project_id) if e.project_id else None
-            gid = p.client_id if p else None
-        else:  # tasks
-            gid = e.task_id
-
-        amt, cur = _billable_amount_for_entry(
-            _d(e.hours), True, e.work_date, rates_map.get(e.auth_user_id),
-        )
-        prev_amt, prev_cur = accum.get(gid, (_ZERO, "USD"))
-        accum[gid] = (prev_amt + amt, cur if cur != "USD" else prev_cur)
-
-    return accum
-
-
-# ---------------------------------------------------------------------------
 # Aggregated table (time / contractor / uninvoiced)
 # ---------------------------------------------------------------------------
 
@@ -504,96 +452,91 @@ async def _table_aggregated(
     if report_type == "uninvoiced":
         cond.append(TimeEntryModel.is_billable.is_(True))
 
-    _zero = literal(0)
-    bill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=_zero)), _zero
-    ).label("billable_hours")
-    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), _zero).label("total_hours")
+    entries_q = select(
+        TimeEntryModel.auth_user_id,
+        TimeEntryModel.project_id,
+        TimeEntryModel.task_id,
+        TimeEntryModel.work_date,
+        TimeEntryModel.hours,
+        TimeEntryModel.is_billable,
+    ).where(and_(*cond))
+    entries = (await session.execute(entries_q)).all()
 
-    if group == "team":
-        group_col = TimeEntryModel.auth_user_id
-        q = select(group_col.label("gid"), total_hrs, bill_hrs).where(and_(*cond)).group_by(group_col)
-    elif group == "projects":
-        group_col = TimeEntryModel.project_id
-        q = select(group_col.label("gid"), total_hrs, bill_hrs).where(and_(*cond)).group_by(group_col)
-    elif group == "clients":
-        q = (
-            select(
-                TimeManagerClientProjectModel.client_id.label("gid"),
-                total_hrs,
-                bill_hrs,
-            )
-            .select_from(TimeEntryModel)
-            .outerjoin(
-                TimeManagerClientProjectModel,
-                TimeManagerClientProjectModel.id == TimeEntryModel.project_id,
-            )
-            .where(and_(*cond))
-            .group_by(TimeManagerClientProjectModel.client_id)
-        )
-    else:  # tasks
-        q = (
-            select(
-                TimeEntryModel.task_id.label("gid"),
-                total_hrs,
-                bill_hrs,
-            )
-            .where(and_(*cond))
-            .group_by(TimeEntryModel.task_id)
-        )
-
-    if sort == "hours_asc":
-        q = q.order_by(total_hrs.asc())
-    else:
-        q = q.order_by(total_hrs.desc())
-
-    all_rows = (await session.execute(q)).all()
-    total_count = len(all_rows)
-    page_rows = all_rows[(page - 1) * page_size: page * page_size]
-
-    users = await _load_users_map(session)
-    projects = await _load_projects_map(session)
-    clients = await _load_clients_map(session)
-    tasks = await _load_tasks_map(session)
+    users_map = await _load_users_map(session)
+    projects_map = await _load_projects_map(session)
+    clients_map = await _load_clients_map(session)
+    tasks_map = await _load_tasks_map(session)
     rates_map = await _load_user_rates(session, user_ids)
 
-    billable_amounts = await _compute_group_billable_amounts(
-        session, cond, group, rates_map, projects,
+    buckets: dict[Any, dict] = {}
+    for e in entries:
+        if group == "team":
+            gid = e.auth_user_id
+        elif group == "projects":
+            gid = e.project_id
+        elif group == "clients":
+            p = projects_map.get(e.project_id) if e.project_id else None
+            gid = p.client_id if p else None
+        else:
+            gid = e.task_id
+
+        bkt = buckets.get(gid)
+        if bkt is None:
+            bkt = {"total": _ZERO, "billable": _ZERO, "amount": _ZERO, "currency": "USD"}
+            buckets[gid] = bkt
+
+        h = _d(e.hours)
+        bkt["total"] += h
+        if e.is_billable:
+            bkt["billable"] += h
+            amt, cur = _billable_amount_for_entry(
+                h, True, e.work_date, rates_map.get(e.auth_user_id),
+            )
+            bkt["amount"] += amt
+            if cur != "USD":
+                bkt["currency"] = cur
+
+    sorted_keys = sorted(
+        buckets.keys(),
+        key=lambda k: float(buckets[k]["total"]),
+        reverse=(sort != "hours_asc"),
     )
 
+    total_count = len(sorted_keys)
+    page_keys = sorted_keys[(page - 1) * page_size: page * page_size]
+
     rows: list[dict] = []
-    for r in page_rows:
-        gid = r.gid
-        total_h = _d(r.total_hours)
-        bill_h = _d(r.billable_hours)
-        amt_info = billable_amounts.get(gid, (_ZERO, "USD"))
+    for gid in page_keys:
+        bkt = buckets[gid]
+        total_h = bkt["total"]
+        bill_h = bkt["billable"]
         row: dict[str, Any] = {
             "hours": _hours(total_h),
             "billableHours": _hours(bill_h),
             "nonBillableHours": _hours(total_h - bill_h),
-            "billableAmount": _money(amt_info[0]),
-            "currency": amt_info[1],
+            "billableAmount": _money(bkt["amount"]),
+            "currency": bkt["currency"],
             "invoicedAmount": 0,
         }
         if group == "team":
-            u = users.get(gid) if gid else None
+            u = users_map.get(gid) if gid else None
             row["userId"] = gid
             row["name"] = (u.display_name or u.email) if u else str(gid or "N/A")
         elif group == "projects":
-            p = projects.get(gid) if gid else None
+            p = projects_map.get(gid) if gid else None
             row["projectId"] = gid
             row["name"] = p.name if p else "Без проекта"
             row["code"] = p.code if p else None
             if p and p.client_id:
-                c = clients.get(p.client_id)
+                c = clients_map.get(p.client_id)
                 row["clientId"] = p.client_id
                 row["clientName"] = c.name if c else None
         elif group == "clients":
-            c = clients.get(gid) if gid else None
+            c = clients_map.get(gid) if gid else None
             row["clientId"] = gid
             row["name"] = c.name if c else "Без клиента"
-        else:  # tasks
-            t = tasks.get(gid) if gid else None
+        else:
+            t = tasks_map.get(gid) if gid else None
             row["taskId"] = gid
             row["name"] = t.name if t else "Без задачи"
         rows.append(row)
