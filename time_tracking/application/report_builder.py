@@ -35,6 +35,7 @@ GROUP_OPTIONS = frozenset({"tasks", "clients", "projects", "team"})
 
 _Q2 = Decimal("0.01")
 _Q6 = Decimal("0.000001")
+_ZERO = Decimal(0)
 
 
 def _d(v: Any) -> Decimal:
@@ -428,6 +429,54 @@ async def _table_detailed_time(
 
 
 # ---------------------------------------------------------------------------
+# Billable amount aggregation per group key
+# ---------------------------------------------------------------------------
+
+
+async def _compute_group_billable_amounts(
+    session: AsyncSession,
+    cond: list,
+    group: str,
+    rates_map: dict[int, list[UserHourlyRateModel]],
+    projects: dict[str, TimeManagerClientProjectModel],
+) -> dict[Any, tuple[Decimal, str]]:
+    """Return {group_key: (total_billable_amount, currency)} by iterating
+    over individual billable entries and applying hourly rates."""
+    eq = (
+        select(
+            TimeEntryModel.auth_user_id,
+            TimeEntryModel.project_id,
+            TimeEntryModel.task_id,
+            TimeEntryModel.work_date,
+            TimeEntryModel.hours,
+        )
+        .where(and_(*cond))
+        .where(TimeEntryModel.is_billable.is_(True))
+    )
+    entries = (await session.execute(eq)).all()
+
+    accum: dict[Any, tuple[Decimal, str]] = {}
+    for e in entries:
+        if group == "team":
+            gid = e.auth_user_id
+        elif group == "projects":
+            gid = e.project_id
+        elif group == "clients":
+            p = projects.get(e.project_id) if e.project_id else None
+            gid = p.client_id if p else None
+        else:  # tasks
+            gid = e.task_id
+
+        amt, cur = _billable_amount_for_entry(
+            _d(e.hours), True, e.work_date, rates_map.get(e.auth_user_id),
+        )
+        prev_amt, prev_cur = accum.get(gid, (_ZERO, "USD"))
+        accum[gid] = (prev_amt + amt, cur if cur != "USD" else prev_cur)
+
+    return accum
+
+
+# ---------------------------------------------------------------------------
 # Aggregated table (time / contractor / uninvoiced)
 # ---------------------------------------------------------------------------
 
@@ -504,16 +553,25 @@ async def _table_aggregated(
     projects = await _load_projects_map(session)
     clients = await _load_clients_map(session)
     tasks = await _load_tasks_map(session)
+    rates_map = await _load_user_rates(session, user_ids)
+
+    billable_amounts = await _compute_group_billable_amounts(
+        session, cond, group, rates_map, projects,
+    )
 
     rows: list[dict] = []
     for r in page_rows:
         gid = r.gid
         total_h = _d(r.total_hours)
         bill_h = _d(r.billable_hours)
+        amt_info = billable_amounts.get(gid, (_ZERO, "USD"))
         row: dict[str, Any] = {
             "hours": _hours(total_h),
             "billableHours": _hours(bill_h),
             "nonBillableHours": _hours(total_h - bill_h),
+            "billableAmount": _money(amt_info[0]),
+            "currency": amt_info[1],
+            "invoicedAmount": 0,
         }
         if group == "team":
             u = users.get(gid) if gid else None
@@ -524,6 +582,10 @@ async def _table_aggregated(
             row["projectId"] = gid
             row["name"] = p.name if p else "Без проекта"
             row["code"] = p.code if p else None
+            if p and p.client_id:
+                c = clients.get(p.client_id)
+                row["clientId"] = p.client_id
+                row["clientName"] = c.name if c else None
         elif group == "clients":
             c = clients.get(gid) if gid else None
             row["clientId"] = gid
