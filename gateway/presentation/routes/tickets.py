@@ -156,11 +156,46 @@ async def get_ticket_attachment(filename: str):
     )
 
 
+def _same_user_id(a, b) -> bool:
+    """Сравнение id пользователя из разных источников (int / str из JSON)."""
+    try:
+        return int(a) == int(b)
+    except (TypeError, ValueError):
+        return False
+
+
 def _can_access_ticket(ticket: dict, current_user: dict) -> bool:
     """Проверка доступа: свои тикеты или роль IT / администраторы / офис-менеджер."""
     if current_user["role"] in ROLES_FULL_ACCESS:
         return True
-    return ticket.get("created_by_user_id") == current_user["id"]
+    return _same_user_id(ticket.get("created_by_user_id"), current_user.get("id"))
+
+
+# Действия WS, для которых в payload есть ticket_uuid и нужна проверка как у REST.
+_WS_ACTIONS_WITH_TICKET_UUID = frozenset(
+    {"get_ticket", "update_ticket", "archive_ticket", "list_comments", "add_comment"}
+)
+# Справочники без привязки к тикету — без токена (как публичные GET /statuses, /priorities).
+_WS_PUBLIC_ACTIONS = frozenset({"list_statuses", "list_priorities"})
+
+
+async def _ws_precheck_ticket_access(settings, ticket_uuid: str, ws_user: dict) -> str | None:
+    """
+    None — доступ есть; иначе код ошибки для клиента WS.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"{settings.tickets_service_url}/tickets/{ticket_uuid}")
+    except httpx.RequestError:
+        return "Tickets service unavailable."
+    if r.status_code == 404:
+        return "Ticket not found"
+    if r.status_code >= 400:
+        return "Tickets service error"
+    ticket = r.json()
+    if not _can_access_ticket(ticket, ws_user):
+        return "Access denied to this ticket"
+    return None
 
 
 @router.get("/{ticket_uuid}", response_model=TicketResponse)
@@ -339,12 +374,27 @@ async def ws_tickets_proxy(websocket: WebSocket):
                         data = json.loads(msg)
                         action = data.get("action")
                         payload = dict(data.get("payload") or {})
-                        if action in ("create_ticket", "add_comment") and not ws_user:
+                        if action not in _WS_PUBLIC_ACTIONS and not ws_user:
                             await websocket.send_json({
                                 "request_id": data.get("request_id"),
                                 "error": "Authorization required. Connect with ?token=...",
                             })
                             continue
+                        if ws_user and action in _WS_ACTIONS_WITH_TICKET_UUID:
+                            tu = (payload.get("ticket_uuid") or "").strip()
+                            if not tu:
+                                await websocket.send_json({
+                                    "request_id": data.get("request_id"),
+                                    "error": "ticket_uuid is required",
+                                })
+                                continue
+                            err = await _ws_precheck_ticket_access(settings, tu, ws_user)
+                            if err:
+                                await websocket.send_json({
+                                    "request_id": data.get("request_id"),
+                                    "error": err,
+                                })
+                                continue
                         if ws_user:
                             if action == "create_ticket":
                                 payload["created_by_user_id"] = ws_user["id"]

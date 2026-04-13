@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import DateTime
 
 from infrastructure.models import TimeEntryModel, TimeManagerClientTaskModel
-from infrastructure.repository_shared import _now_utc, _to_decimal
+from infrastructure.repository_shared import _now_utc, _to_decimal, normalize_time_entry_hours
 
 
 class TimeEntryRepository:
@@ -190,13 +190,12 @@ class TimeEntryRepository:
         task_id: str | None = None,
         description: str | None,
     ) -> TimeEntryModel:
-        if hours <= 0:
-            raise ValueError("Количество часов должно быть больше нуля")
+        hours_norm = normalize_time_entry_hours(hours)
         row = TimeEntryModel(
             id=entry_id,
             auth_user_id=auth_user_id,
             work_date=work_date,
-            hours=hours,
+            hours=hours_norm,
             is_billable=is_billable,
             project_id=project_id,
             task_id=task_id,
@@ -219,9 +218,7 @@ class TimeEntryRepository:
             raise LookupError("not_found")
         if "hours" in patch:
             hours = _to_decimal(patch["hours"])
-            if hours <= 0:
-                raise ValueError("Количество часов должно быть больше нуля")
-            row.hours = hours
+            row.hours = normalize_time_entry_hours(hours)
         if "work_date" in patch:
             row.work_date = patch["work_date"]
         if "is_billable" in patch:

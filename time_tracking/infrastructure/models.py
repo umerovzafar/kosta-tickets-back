@@ -71,7 +71,8 @@ class TimeEntryModel(Base):
         nullable=False,
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
-    hours: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    # Дробные часы с точностью до ~0.04 с (6 знаков после запятой) — таймеры, короткие интервалы.
+    hours: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     task_id: Mapped[str | None] = mapped_column(

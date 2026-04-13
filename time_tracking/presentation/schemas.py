@@ -154,7 +154,10 @@ class TimeEntryCreateBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     work_date: date = Field(..., alias="workDate")
-    hours: Decimal
+    hours: Decimal = Field(
+        ...,
+        description="Длительность в часах (дробь); до 6 знаков после запятой, напр. 10 с ≈ 0.002778",
+    )
     is_billable: bool = Field(True, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")

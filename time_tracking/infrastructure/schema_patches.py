@@ -336,3 +336,15 @@ async def apply_time_entries_task_id_schema_patch(conn: AsyncConnection) -> None
             """
         )
     )
+
+
+async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> None:
+    """Точность поля hours: NUMERIC(12,2) → NUMERIC(16,6), чтобы сохранялись секунды в долях часа."""
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+            ALTER COLUMN hours TYPE NUMERIC(16,6)
+            """
+        )
+    )

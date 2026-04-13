@@ -12,6 +12,7 @@ from infrastructure.schema_patches import (
     apply_time_manager_clients_schema_patch,
     apply_user_project_access_patch,
     apply_time_entries_task_id_schema_patch,
+    apply_time_entries_hours_precision_patch,
 )
 from presentation.routes import (
     client_contacts,
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
         await apply_client_projects_schema_patch(conn)
         await apply_user_project_access_patch(conn)
         await apply_time_entries_task_id_schema_patch(conn)
+        await apply_time_entries_hours_precision_patch(conn)
     yield
 
 

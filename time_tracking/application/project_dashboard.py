@@ -1,7 +1,7 @@
 """Агрегаты дашборда проекта из time entries (в т.ч. non-billable по флагу is_billable)."""
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,8 @@ from infrastructure.repositories import (
 
 
 def _hours_json(d: Decimal) -> float:
-    return float(d.quantize(Decimal("0.01")))
+    """В JSON не терять доли часа меньше минуты (таймеры)."""
+    return float(d.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
 
 
 async def build_client_project_dashboard(
