@@ -41,6 +41,15 @@ class UserProjectAccessRepository:
         )
         return [int(x) for x in r.scalars().all()]
 
+    async def list_peer_auth_user_ids_for_manager(self, manager_auth_user_id: int) -> list[int]:
+        """Пользователи с доступом к тем же проектам, что и менеджер (включая самого менеджера)."""
+        my_projects = await self.list_project_ids(manager_auth_user_id)
+        ids: set[int] = {int(manager_auth_user_id)}
+        for pid in my_projects:
+            for uid in await self.list_auth_user_ids_for_project(pid):
+                ids.add(int(uid))
+        return sorted(ids)
+
     async def replace_all(
         self,
         auth_user_id: int,

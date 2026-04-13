@@ -88,6 +88,12 @@ def is_moderator(user: dict) -> bool:
     return _role_in_set(user.get("role") or "", ROLES_MODERATE)
 
 
+def is_time_tracking_manager(user: dict) -> bool:
+    """Роль в учёте времени из auth (GET /users/me): manager — может смотреть заявки в зоне общих проектов."""
+    tt = (user.get("time_tracking_role") or user.get("timeTrackingRole") or "").strip().lower()
+    return tt == "manager"
+
+
 def created_by_filter_for_user(user: dict) -> int | None:
     """Сотрудник видит только свои заявки; остальные роли — все."""
     if _normalize_role_key(user.get("role") or "") == _normalize_role_key("Сотрудник"):

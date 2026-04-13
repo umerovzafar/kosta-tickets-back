@@ -5,7 +5,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.database import get_session
-from infrastructure.repositories import TimeTrackingUserRepository
+from infrastructure.repositories import TimeTrackingUserRepository, UserProjectAccessRepository
 from presentation.schemas import UserResponse, UserUpsertBody, WeeklyCapacityPatchBody
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -33,6 +33,41 @@ async def list_users(
         )
         for row in rows
     ]
+
+
+@router.get(
+    "/managed-scope/{manager_auth_user_id}",
+    response_model=list[UserResponse],
+    summary="Пользователи в зоне видимости менеджера TT (общие проекты)",
+)
+async def list_users_in_manager_scope(
+    manager_auth_user_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> list[UserResponse]:
+    """Список auth_user_id: менеджер + все, у кого есть доступ хотя бы к одному из проектов менеджера."""
+    par = UserProjectAccessRepository(session)
+    ur = TimeTrackingUserRepository(session)
+    scope_ids = set(await par.list_peer_auth_user_ids_for_manager(manager_auth_user_id))
+    rows = await ur.list_users()
+    out: list[UserResponse] = []
+    for row in rows:
+        if row.auth_user_id not in scope_ids:
+            continue
+        out.append(
+            UserResponse(
+                id=row.auth_user_id,
+                email=row.email,
+                display_name=row.display_name,
+                picture=row.picture,
+                role=row.role,
+                is_blocked=row.is_blocked,
+                is_archived=row.is_archived,
+                weekly_capacity_hours=row.weekly_capacity_hours,
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+        )
+    return out
 
 
 @router.get("/{auth_user_id}", response_model=UserResponse, summary="Один пользователь учёта времени")

@@ -34,6 +34,7 @@ from infrastructure.expense_submit_mail import (
 from infrastructure.file_storage import save_attachment
 from infrastructure.models import ExpenseRequestModel
 from infrastructure.repositories import ExpenseRepository, _MISSING, next_kl_id
+from infrastructure.tt_manager_scope import fetch_managed_scope_user_ids
 from presentation.deps import (
     check_moderate_role,
     check_view_role,
@@ -42,6 +43,7 @@ from presentation.deps import (
     get_current_user,
     is_admin_editor,
     is_moderator,
+    is_time_tracking_manager,
 )
 from presentation.schemas import (
     AttachmentOut,
@@ -162,10 +164,17 @@ def _can_author_edit(row: ExpenseRequestModel, user_id: int) -> bool:
     return row.created_by_user_id == user_id and row.status in ("draft", "revision_required")
 
 
-def _ensure_access(row: ExpenseRequestModel, user: dict) -> None:
+async def _ensure_access(row: ExpenseRequestModel, user: dict) -> None:
     uid_filter = created_by_filter_for_user(user)
-    if uid_filter is not None and row.created_by_user_id != uid_filter:
-        raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
+    if uid_filter is None:
+        return
+    if row.created_by_user_id == uid_filter:
+        return
+    if is_time_tracking_manager(user):
+        scope = await fetch_managed_scope_user_ids(int(user["id"]))
+        if row.created_by_user_id in scope:
+            return
+    raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
 
 
 def _ensure_can_edit(row: ExpenseRequestModel, user: dict) -> None:
@@ -386,7 +395,16 @@ async def list_expenses(
     check_view_role(user)
     uid_filter = created_by_filter_for_user(user)
     if uid_filter is not None:
-        eff_creator = uid_filter
+        if is_time_tracking_manager(user) and employee_user_id is not None:
+            scope = await fetch_managed_scope_user_ids(int(user["id"]))
+            if int(employee_user_id) not in scope:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Нет доступа к заявкам выбранного пользователя (вне зоны общих проектов учёта времени)",
+                )
+            eff_creator = int(employee_user_id)
+        else:
+            eff_creator = uid_filter
     else:
         eff_creator = employee_user_id
     repo = ExpenseRepository(session)
@@ -485,7 +503,7 @@ async def get_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     return await _detail_response(row, authorization)
 
 
@@ -502,7 +520,7 @@ async def update_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     _ensure_can_edit(row, user)
 
     before = {
@@ -713,7 +731,7 @@ async def approve_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     if row.status == "approved":
         return await _detail_response(row, authorization)
     if row.status != "pending_approval":
@@ -768,7 +786,7 @@ async def reject_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     if row.status == "rejected":
         return await _detail_response(row, authorization)
     if row.status != "pending_approval":
@@ -824,7 +842,7 @@ async def revise_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     if row.status != "pending_approval":
         raise HTTPException(
             status_code=409,
@@ -869,7 +887,7 @@ async def pay_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     if row.status != "approved":
         raise HTTPException(status_code=400, detail="Выплата только для approved")
     ensure_not_moderating_own_expense(user, row.created_by_user_id)
@@ -920,7 +938,7 @@ async def close_expense(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     ensure_not_moderating_own_expense(user, row.created_by_user_id)
     prev = row.status
     if row.status == "paid":
@@ -1011,7 +1029,7 @@ async def list_attachments(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     return [
         AttachmentOut(
             id=a.id,
@@ -1042,7 +1060,7 @@ async def download_attachment_file(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")
@@ -1072,7 +1090,7 @@ async def upload_attachment(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     kind_norm: str | None = None
     if attachment_kind is not None and str(attachment_kind).strip():
         k = str(attachment_kind).strip()
@@ -1172,7 +1190,7 @@ async def delete_attachment(
     row = await repo.get_by_id(expense_id, load_children=True)
     if not row:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    _ensure_access(row, user)
+    await _ensure_access(row, user)
     att_row = next((a for a in (row.attachments or []) if a.id == attachment_id), None)
     if not att_row:
         raise HTTPException(status_code=404, detail="Вложение не найдено")

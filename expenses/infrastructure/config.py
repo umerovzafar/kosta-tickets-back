@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     media_path: str = "./media"
     service_name: str = "expenses"
     auth_service_url: str = "http://auth:1236"
+    time_tracking_service_url: str = Field(
+        default="http://time_tracking:1241",
+        validation_alias=AliasChoices("TIME_TRACKING_SERVICE_URL", "time_tracking_service_url"),
+    )
 
     @field_validator("auth_service_url", mode="before")
     @classmethod

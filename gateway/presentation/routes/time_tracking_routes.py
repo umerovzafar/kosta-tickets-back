@@ -161,14 +161,23 @@ async def require_view_project_access(
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     tt_role = await _fetch_time_tracking_user_role(int(my_id))
     if tt_role == "manager":
-        return user
+        scope = await _tt_managed_scope_user_ids(int(my_id))
+        if auth_user_id in scope:
+            return user
+        raise HTTPException(
+            status_code=403,
+            detail="Менеджер учёта времени видит доступ к проектам только у сотрудников с общими проектами",
+        )
     raise HTTPException(
         status_code=403,
         detail="Недостаточно прав для просмотра доступа к проектам",
     )
 
 
-async def require_manage_project_access(user: dict = Depends(get_current_user)):
+async def require_manage_project_access(
+    auth_user_id: int,
+    user: dict = Depends(get_current_user),
+):
     role = (user.get("role") or "").strip()
     if role in {"Главный администратор", "Администратор", "Партнер"}:
         return user
@@ -177,7 +186,13 @@ async def require_manage_project_access(user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     tt_role = await _fetch_time_tracking_user_role(int(my_id))
     if tt_role == "manager":
-        return user
+        scope = await _tt_managed_scope_user_ids(int(my_id))
+        if auth_user_id in scope:
+            return user
+        raise HTTPException(
+            status_code=403,
+            detail="Менеджер может настраивать доступ к проектам только сотрудникам с общими проектами",
+        )
     raise HTTPException(
         status_code=403,
         detail="Недостаточно прав для настройки доступа к проектам",
@@ -202,11 +217,49 @@ def _current_auth_user_id(user: dict) -> int:
     return int(uid)
 
 
+async def _tt_managed_scope_user_ids(manager_auth_user_id: int) -> set[int]:
+    """auth_user_id в зоне менеджера: сам менеджер и пользователи с общими проектами (см. time_tracking)."""
+    r = await _tt_request("GET", f"/users/managed-scope/{manager_auth_user_id}", timeout=15.0)
+    if r.status_code >= 400:
+        return {int(manager_auth_user_id)}
+    try:
+        data = r.json()
+    except (TypeError, ValueError):
+        return {int(manager_auth_user_id)}
+    if not isinstance(data, list):
+        return {int(manager_auth_user_id)}
+    out: set[int] = set()
+    for u in data:
+        if not isinstance(u, dict):
+            continue
+        try:
+            out.add(int(u.get("id")))
+        except (TypeError, ValueError):
+            continue
+    if not out:
+        out.add(int(manager_auth_user_id))
+    return out
+
+
+async def require_view_time_tracking_user_directory(user: dict = Depends(get_current_user)):
+    """Список пользователей TT: офис / админы или менеджер учёта времени (ограниченный список — отдельный маршрут)."""
+    role = (user.get("role") or "").strip()
+    if role in _VIEW_ROLES_TIME_ENTRIES:
+        return user
+    tt_role = await _fetch_time_tracking_user_role(_current_auth_user_id(user))
+    if tt_role == "manager":
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="Only administrators and office managers can view time tracking users",
+    )
+
+
 async def require_time_entry_read(
     auth_user_id: int,
     user: dict = Depends(get_current_user),
 ):
-    """Свои записи — любой авторизованный пользователь; чужие — офис / менеджер TT."""
+    """Свои записи — любой авторизованный пользователь; чужие — офис / менеджер TT (только общие проекты)."""
     if _current_auth_user_id(user) == auth_user_id:
         return user
     role = (user.get("role") or "").strip()
@@ -214,7 +267,13 @@ async def require_time_entry_read(
         return user
     tt_role = await _fetch_time_tracking_user_role(_current_auth_user_id(user))
     if tt_role == "manager":
-        return user
+        scope = await _tt_managed_scope_user_ids(_current_auth_user_id(user))
+        if auth_user_id in scope:
+            return user
+        raise HTTPException(
+            status_code=403,
+            detail="Менеджер учёта времени видит записи только сотрудников с общими проектами доступа",
+        )
     raise HTTPException(
         status_code=403,
         detail="Можно просматривать только свои записи времени либо нужна роль офиса или менеджера учёта времени",
@@ -225,7 +284,7 @@ async def require_time_entry_write(
     auth_user_id: int,
     user: dict = Depends(get_current_user),
 ):
-    """Создание/изменение/удаление своих записей; чужие — админы партнёрства или менеджер TT."""
+    """Создание/изменение/удаление своих записей; чужие — админы партнёрства или менеджер TT (общие проекты)."""
     if _current_auth_user_id(user) == auth_user_id:
         return user
     role = (user.get("role") or "").strip()
@@ -233,7 +292,13 @@ async def require_time_entry_write(
         return user
     tt_role = await _fetch_time_tracking_user_role(_current_auth_user_id(user))
     if tt_role == "manager":
-        return user
+        scope = await _tt_managed_scope_user_ids(_current_auth_user_id(user))
+        if auth_user_id in scope:
+            return user
+        raise HTTPException(
+            status_code=403,
+            detail="Менеджер учёта времени может менять записи только сотрудников с общими проектами доступа",
+        )
     raise HTTPException(
         status_code=403,
         detail="Можно изменять только свои записи времени либо нужны права администратора или менеджера учёта времени",
@@ -421,8 +486,12 @@ async def proxy_put_project_access(
 
 
 @router.get("/users")
-async def list_users(_: dict = Depends(require_view_role)):
-    return await _tt_json("GET", "/users")
+async def list_users(user: dict = Depends(require_view_time_tracking_user_directory)):
+    role = (user.get("role") or "").strip()
+    if role in _VIEW_ROLES_TIME_ENTRIES:
+        return await _tt_json("GET", "/users")
+    mid = _current_auth_user_id(user)
+    return await _tt_json("GET", f"/users/managed-scope/{mid}")
 
 
 @router.post("/users")
