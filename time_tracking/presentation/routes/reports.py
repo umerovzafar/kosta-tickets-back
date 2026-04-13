@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
+import traceback
 from datetime import date
 from io import StringIO
 from typing import Optional
@@ -11,6 +13,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
+
+_log = logging.getLogger(__name__)
 
 from application.report_builder import (
     REPORT_TYPES,
@@ -141,16 +145,23 @@ async def get_report_summary(
     rt = _validate_report_type(reportType)
     df = _parse_date(dateFrom, "dateFrom")
     dt = _parse_date(dateTo, "dateTo")
-    return await build_report_summary(
-        session,
-        report_type=rt,
-        date_from=df,
-        date_to=dt,
-        user_ids=_parse_ids_int(userIds),
-        project_ids=_parse_ids_str(projectIds),
-        client_ids=_parse_ids_str(clientIds),
-        include_fixed_fee=includeFixedFeeProjects,
-    )
+    try:
+        return await build_report_summary(
+            session,
+            report_type=rt,
+            date_from=df,
+            date_to=dt,
+            user_ids=_parse_ids_int(userIds),
+            project_ids=_parse_ids_str(projectIds),
+            client_ids=_parse_ids_str(clientIds),
+            include_fixed_fee=includeFixedFeeProjects,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        tb = traceback.format_exc()
+        _log.error("reports/summary error: %s\n%s", exc, tb)
+        raise HTTPException(status_code=500, detail=f"Report summary error: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -177,20 +188,27 @@ async def get_report_table(
     _validate_group(group)
     df = _parse_date(dateFrom, "dateFrom")
     dt = _parse_date(dateTo, "dateTo")
-    return await build_report_table(
-        session,
-        report_type=rt,
-        group=group,
-        date_from=df,
-        date_to=dt,
-        user_ids=_parse_ids_int(userIds),
-        project_ids=_parse_ids_str(projectIds),
-        client_ids=_parse_ids_str(clientIds),
-        include_fixed_fee=includeFixedFeeProjects,
-        sort=sort,
-        page=page,
-        page_size=pageSize,
-    )
+    try:
+        return await build_report_table(
+            session,
+            report_type=rt,
+            group=group,
+            date_from=df,
+            date_to=dt,
+            user_ids=_parse_ids_int(userIds),
+            project_ids=_parse_ids_str(projectIds),
+            client_ids=_parse_ids_str(clientIds),
+            include_fixed_fee=includeFixedFeeProjects,
+            sort=sort,
+            page=page,
+            page_size=pageSize,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        tb = traceback.format_exc()
+        _log.error("reports/table error: %s\n%s", exc, tb)
+        raise HTTPException(status_code=500, detail=f"Report table error: {exc}")
 
 
 # ---------------------------------------------------------------------------

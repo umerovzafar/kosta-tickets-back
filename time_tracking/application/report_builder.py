@@ -12,7 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import httpx
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import pick_rate_for_date
@@ -213,15 +213,16 @@ async def build_report_summary(
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
+    _zero = literal(0)
     bill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0)), 0
+        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=_zero)), _zero
     )
     nonbill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0)), 0
+        func.sum(case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=_zero)), _zero
     )
-    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), 0)
+    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), _zero)
 
-    q = select(total_hrs.label("t"), bill_hrs.label("b"), nonbill_hrs.label("nb")).where(and_(*cond))
+    q = select(total_hrs.label("t"), bill_hrs.label("b"), nonbill_hrs.label("nb")).select_from(TimeEntryModel).where(and_(*cond))
     row = (await session.execute(q)).one()
     total, billable, non_billable = _d(row.t), _d(row.b), _d(row.nb)
 
@@ -503,10 +504,11 @@ async def _table_aggregated(
     if report_type == "uninvoiced":
         cond.append(TimeEntryModel.is_billable.is_(True))
 
+    _zero = literal(0)
     bill_hrs = func.coalesce(
-        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0)), 0
+        func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=_zero)), _zero
     ).label("billable_hours")
-    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total_hours")
+    total_hrs = func.coalesce(func.sum(TimeEntryModel.hours), _zero).label("total_hours")
 
     if group == "team":
         group_col = TimeEntryModel.auth_user_id
