@@ -447,6 +447,18 @@ class ClientProjectRepository:
         r = await self._session.execute(q)
         return list(r.scalars().all())
 
+    async def list_all_global(
+        self,
+        *,
+        include_archived: bool = False,
+    ) -> list[TimeManagerClientProjectModel]:
+        q = select(TimeManagerClientProjectModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientProjectModel.name.asc())
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
     async def get_by_id(
         self,
         client_id: str,

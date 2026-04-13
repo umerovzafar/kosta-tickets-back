@@ -110,6 +110,7 @@ class ExpenseRequestListItemOut(BaseModel):
     payment_method: Optional[str] = Field(None, serialization_alias="paymentMethod")
     department_id: Optional[str] = Field(None, serialization_alias="departmentId")
     project_id: Optional[str] = Field(None, serialization_alias="projectId")
+    expense_category_id: Optional[str] = Field(None, serialization_alias="expenseCategoryId")
     vendor: Optional[str] = None
     business_purpose: Optional[str] = Field(None, serialization_alias="businessPurpose")
     comment: Optional[str] = None
@@ -167,6 +168,7 @@ class ExpenseCreateBody(BaseModel):
     payment_method: Optional[str] = Field(None, validation_alias=AliasChoices("paymentMethod", "payment_method"))
     department_id: Optional[str] = Field(None, validation_alias=AliasChoices("departmentId", "department_id"))
     project_id: Optional[str] = Field(None, validation_alias=AliasChoices("projectId", "project_id"))
+    expense_category_id: Optional[str] = Field(None, validation_alias=AliasChoices("expenseCategoryId", "expense_category_id"))
     vendor: Optional[str] = None
     business_purpose: Optional[str] = Field(None, validation_alias=AliasChoices("businessPurpose", "business_purpose"))
     comment: Optional[str] = None
@@ -217,6 +219,7 @@ class ExpenseUpdateBody(BaseModel):
     payment_method: Optional[str] = Field(None, validation_alias=AliasChoices("paymentMethod", "payment_method"))
     department_id: Optional[str] = Field(None, validation_alias=AliasChoices("departmentId", "department_id"))
     project_id: Optional[str] = Field(None, validation_alias=AliasChoices("projectId", "project_id"))
+    expense_category_id: Optional[str] = Field(None, validation_alias=AliasChoices("expenseCategoryId", "expense_category_id"))
     vendor: Optional[str] = None
     business_purpose: Optional[str] = Field(None, validation_alias=AliasChoices("businessPurpose", "business_purpose"))
     comment: Optional[str] = None

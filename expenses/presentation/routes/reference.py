@@ -46,6 +46,20 @@ async def list_projects(
     return [ProjectRefOut(id=r.id, name=r.name) for r in rows]
 
 
+@router.get("/expenses/project-totals/{project_id}")
+async def get_project_expense_totals(
+    project_id: str,
+    date_from: date | None = Query(None, alias="dateFrom"),
+    date_to: date | None = Query(None, alias="dateTo"),
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Агрегация расходов по project_id (approved/paid/closed) — для дашборда проекта TT."""
+    check_view_role(user)
+    repo = ExpenseRepository(session)
+    return await repo.aggregate_expenses_for_project(project_id, date_from, date_to)
+
+
 @router.get("/exchange-rates", response_model=ExchangeRateOut)
 async def get_exchange_rate(
     date_param: date = Query(..., alias="date"),

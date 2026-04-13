@@ -169,12 +169,13 @@ class ExpenseRepository:
         payment_method: str | None,
         department_id: str | None,
         project_id: str | None,
-        vendor: str | None,
-        business_purpose: str | None,
-        comment: str | None,
-        status: str,
-        created_by_user_id: int,
-        updated_by_user_id: int,
+        expense_category_id: str | None = None,
+        vendor: str | None = None,
+        business_purpose: str | None = None,
+        comment: str | None = None,
+        status: str = "draft",
+        created_by_user_id: int = 0,
+        updated_by_user_id: int = 0,
     ) -> ExpenseRequestModel:
         now = _now_utc()
         row = ExpenseRequestModel(
@@ -191,6 +192,7 @@ class ExpenseRepository:
             payment_method=payment_method,
             department_id=department_id,
             project_id=project_id,
+            expense_category_id=expense_category_id,
             vendor=vendor,
             business_purpose=business_purpose,
             comment=comment,
@@ -220,11 +222,12 @@ class ExpenseRepository:
         payment_method: str | None,
         department_id: str | None,
         project_id: str | None,
-        vendor: str | None,
-        business_purpose: str | None,
-        comment: str | None,
-        current_approver_id: int | None,
-        updated_by_user_id: int,
+        expense_category_id: str | None = None,
+        vendor: str | None = None,
+        business_purpose: str | None = None,
+        comment: str | None = None,
+        current_approver_id: int | None = None,
+        updated_by_user_id: int = 0,
     ) -> None:
         if description is not None:
             row.description = description.strip()
@@ -250,6 +253,8 @@ class ExpenseRepository:
             row.department_id = department_id
         if project_id is not None:
             row.project_id = project_id
+        if expense_category_id is not None:
+            row.expense_category_id = expense_category_id
         if vendor is not None:
             row.vendor = vendor
         if business_purpose is not None:
@@ -352,6 +357,33 @@ class ExpenseRepository:
             return False
 
     # --- reference ---
+
+    async def aggregate_expenses_for_project(
+        self,
+        project_id: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> dict:
+        """Суммы расходов по проекту (approved + paid + closed) для дашборда TT."""
+        statuses = ("approved", "paid", "closed")
+        from sqlalchemy import and_
+
+        conds = [
+            ExpenseRequestModel.project_id == project_id,
+            ExpenseRequestModel.status.in_(list(statuses)),
+        ]
+        if date_from is not None:
+            conds.append(ExpenseRequestModel.expense_date >= date_from)
+        if date_to is not None:
+            conds.append(ExpenseRequestModel.expense_date <= date_to)
+
+        stmt = select(
+            func.coalesce(func.sum(ExpenseRequestModel.amount_uzs), 0),
+            func.count(),
+        ).where(and_(*conds))
+        r = await self._session.execute(stmt)
+        total_uzs, count = r.one()
+        return {"total_amount_uzs": float(total_uzs), "count": int(count)}
 
     async def list_expense_types(self) -> list[ExpenseTypeModel]:
         r = await self._session.execute(select(ExpenseTypeModel).order_by(ExpenseTypeModel.sort_order))

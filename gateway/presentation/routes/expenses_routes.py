@@ -168,6 +168,17 @@ async def proxy_projects(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(get_current_user),
 ):
+    """Возвращает список проектов из TT (канонический справочник), а не из seed expense_projects."""
+    settings = get_settings()
+    tt_base = (settings.time_tracking_service_url or "").rstrip("/")
+    if tt_base:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.get(f"{tt_base}/projects-for-expenses")
+            if r.status_code == 200:
+                return Response(content=r.content, status_code=200, headers={"Content-Type": "application/json"})
+        except httpx.RequestError:
+            pass
     return await _forward(request, "projects", authorization, timeout=30.0)
 
 

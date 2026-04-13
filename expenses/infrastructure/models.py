@@ -34,6 +34,7 @@ class ExpenseRequestModel(Base):
     payment_method: Mapped[str | None] = mapped_column(String(64), nullable=True)
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    expense_category_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     vendor: Mapped[str | None] = mapped_column(String(512), nullable=True)
     business_purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)

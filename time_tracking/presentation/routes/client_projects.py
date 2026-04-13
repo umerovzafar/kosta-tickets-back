@@ -26,6 +26,61 @@ from presentation.schemas import (
 
 router = APIRouter(prefix="/clients", tags=["client_projects"])
 
+# --- Глобальный список проектов (все клиенты) для формы расходов ---
+
+_global_projects_router = APIRouter(tags=["projects_global"])
+
+
+@_global_projects_router.get("/projects-for-expenses")
+async def list_all_projects_for_expenses(
+    include_archived: bool = Query(False, alias="includeArchived"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Плоский список проектов всех клиентов для справочника расходов (id + name + clientName)."""
+    repo = ClientProjectRepository(session)
+    from infrastructure.repositories import ClientRepository
+
+    cr = ClientRepository(session)
+    clients = {c.id: c for c in await cr.list_all(include_archived=True)}
+    rows = await repo.list_all_global(include_archived=include_archived)
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "code": r.code,
+            "clientId": r.client_id,
+            "clientName": clients[r.client_id].name if r.client_id in clients else None,
+            "isArchived": r.is_archived,
+        }
+        for r in rows
+    ]
+
+
+@_global_projects_router.get("/projects/{project_id}/expense-categories")
+async def list_expense_categories_for_project(
+    project_id: str,
+    include_archived: bool = Query(False, alias="includeArchived"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Категории расходов клиента, к которому относится проект (для формы расхода)."""
+    repo = ClientProjectRepository(session)
+    row = await repo.get_by_id_global(project_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+    from infrastructure.repositories import ClientExpenseCategoryRepository
+
+    ec_repo = ClientExpenseCategoryRepository(session)
+    cats = await ec_repo.list_for_client(row.client_id, include_archived=include_archived)
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "hasUnitPrice": c.has_unit_price,
+            "isArchived": c.is_archived,
+        }
+        for c in cats
+    ]
+
 
 def _parse_dashboard_date(param: str | None) -> date | None:
     if param is None or not str(param).strip():

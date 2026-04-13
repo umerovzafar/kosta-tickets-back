@@ -717,6 +717,33 @@ async def export_client_project(
     return Response(content=r.content, status_code=r.status_code, headers=out_headers)
 
 
+@router.get("/projects-for-expenses")
+async def list_projects_for_expenses(
+    include_archived: bool = Query(False, alias="includeArchived"),
+    _: dict = Depends(get_current_user),
+):
+    """Плоский список проектов всех клиентов для выбора в форме расхода."""
+    return await _tt_json(
+        "GET",
+        "/projects-for-expenses",
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
+
+
+@router.get("/projects/{project_id}/expense-categories")
+async def list_expense_categories_for_project(
+    project_id: str,
+    include_archived: bool = Query(False, alias="includeArchived"),
+    _: dict = Depends(get_current_user),
+):
+    """Категории расходов клиента, к которому привязан проект (для формы расхода)."""
+    return await _tt_json(
+        "GET",
+        f"/projects/{project_id}/expense-categories",
+        params={"includeArchived": "true" if include_archived else "false"},
+    )
+
+
 @router.get("/clients/{client_id}/projects")
 async def list_client_projects(
     client_id: str,
@@ -752,12 +779,36 @@ async def get_client_project_dashboard(
         params["date_from"] = date_from
     if date_to:
         params["date_to"] = date_to
-    return await _tt_json(
+    dashboard = await _tt_json(
         "GET",
         f"/clients/{client_id}/projects/{project_id}/dashboard",
         timeout=30.0,
         params=params or None,
     )
+    expense_params: dict[str, str] = {}
+    if date_from:
+        expense_params["dateFrom"] = date_from
+    if date_to:
+        expense_params["dateTo"] = date_to
+    try:
+        expenses_base = (get_settings().expenses_service_url or "").rstrip("/")
+        if expenses_base:
+            r = await send_upstream_request(
+                "GET",
+                f"{expenses_base}/expenses/project-totals/{project_id}",
+                params=expense_params or None,
+                timeout=10.0,
+                unavailable_status=503,
+                unavailable_detail="Expenses service unavailable",
+            )
+            if r.status_code == 200:
+                exp = r.json()
+                if isinstance(dashboard, dict) and isinstance(dashboard.get("totals"), dict):
+                    dashboard["totals"]["expense_amount_uzs"] = exp.get("total_amount_uzs", 0)
+                    dashboard["totals"]["expense_count"] = exp.get("count", 0)
+    except Exception:
+        pass
+    return dashboard
 
 
 @router.get("/clients/{client_id}/projects/{project_id}/team-workload")
