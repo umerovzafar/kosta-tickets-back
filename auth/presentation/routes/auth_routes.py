@@ -8,7 +8,12 @@ from application.ports import UserRepositoryPort, TokenServicePort, RoleReposito
 from infrastructure.database import get_session
 from infrastructure.repositories import UserRepository, RoleRepository
 from infrastructure.jwt_service import JWTService
-from infrastructure.azure_ad import get_login_url, get_logout_url, acquire_token_by_code
+from infrastructure.azure_ad import (
+    get_login_url,
+    get_logout_url,
+    acquire_token_by_code,
+    resolve_profile_picture_from_tokens,
+)
 from infrastructure.oauth_state_jwt import create_oauth_state_token, parse_oauth_state_token
 from domain.roles import Role
 from infrastructure.config import get_settings
@@ -148,11 +153,12 @@ async def callback(
         _clear_oauth_cookies(resp)
         return resp
     claims = tokens["id_token_claims"]
-    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims)
+    azure_oid, email, display_name, _ = _claims_to_user_and_token(claims)
     if not azure_oid or not email:
         resp = _error_redirect(settings, target_t, "missing_claims")
         _clear_oauth_cookies(resp)
         return resp
+    picture = await resolve_profile_picture_from_tokens(tokens, claims)
     user, access_token = await uc.execute(
         azure_oid, email, display_name, picture, Role.EMPLOYEE.value
     )
@@ -269,9 +275,10 @@ async def exchange(
     if not tokens or "id_token_claims" not in tokens:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
     claims = tokens["id_token_claims"]
-    azure_oid, email, display_name, picture = _claims_to_user_and_token(claims)
+    azure_oid, email, display_name, _ = _claims_to_user_and_token(claims)
     if not azure_oid or not email:
         raise HTTPException(status_code=400, detail="Missing user claims")
+    picture = await resolve_profile_picture_from_tokens(tokens, claims)
     user, access_token = await uc.execute(
         azure_oid, email, display_name, picture, Role.EMPLOYEE.value
     )

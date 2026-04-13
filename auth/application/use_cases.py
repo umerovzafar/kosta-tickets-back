@@ -27,6 +27,15 @@ class AzureLoginUseCase:
             user = await self._user_repo.create(
                 azure_oid, email, display_name, picture, role
             )
+        else:
+            dn = (display_name or "").strip() or None
+            pic: Optional[str] = None
+            if isinstance(picture, str):
+                pic = picture.strip() or None
+            if dn is not None or pic is not None:
+                updated = await self._user_repo.update_profile(user.id, dn, pic, None)
+                if updated is not None:
+                    user = updated
         token = self._token_service.create_access_token(user.id, user.azure_oid)
         return user, token
 

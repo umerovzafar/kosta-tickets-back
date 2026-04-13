@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Any, Optional
+
+import httpx
 import msal
+
 from infrastructure.config import get_settings
 
-AZURE_LOGIN_SCOPES = ["email"]
+# openid/profile/email — заявки в ID-токене; User.Read — Microsoft Graph (фото профиля в AAD).
+AZURE_LOGIN_SCOPES = ["openid", "profile", "email", "User.Read"]
 
 
 def get_msal_app():
@@ -43,3 +47,41 @@ def acquire_token_by_code(code: str) -> Optional[dict]:
     if "error" in result:
         return None
     return result
+
+
+async def fetch_graph_profile_photo_download_url(access_token: str) -> Optional[str]:
+    """
+    Возвращает временный URL картинки из Graph (поле @microsoft.graph.downloadUrl).
+    Для учётных записей без фото в Azure — 404, возвращаем None.
+    """
+    if not (access_token or "").strip():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                "https://graph.microsoft.com/v1.0/me/photo",
+                headers={"Authorization": f"Bearer {access_token.strip()}"},
+            )
+    except httpx.HTTPError:
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        data: dict[str, Any] = r.json()
+    except (ValueError, TypeError):
+        return None
+    link = data.get("@microsoft.graph.downloadUrl")
+    if isinstance(link, str) and link.strip():
+        return link.strip()
+    return None
+
+
+async def resolve_profile_picture_from_tokens(tokens: dict, claims: dict) -> Optional[str]:
+    """Сначала picture из ID-токена; если нет — фото через Graph по access_token."""
+    pic = claims.get("picture")
+    if isinstance(pic, str) and pic.strip():
+        return pic.strip()
+    access = tokens.get("access_token")
+    if not access:
+        return None
+    return await fetch_graph_profile_photo_download_url(access)
