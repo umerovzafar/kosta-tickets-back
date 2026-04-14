@@ -1068,3 +1068,148 @@ async def reports_export_snapshot(
     if cd := r.headers.get("content-disposition"):
         out_headers["Content-Disposition"] = cd
     return Response(content=r.content, status_code=r.status_code, headers=out_headers)
+
+
+# ---------------------------------------------------------------------------
+# Invoices (биллинг)
+# ---------------------------------------------------------------------------
+
+
+def _invoice_actor_qs(user: dict) -> dict[str, str]:
+    return {"actorAuthUserId": str(_current_auth_user_id(user))}
+
+
+@router.get("/invoices/unbilled-time")
+async def invoices_unbilled_time(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/invoices/unbilled-time", params=dict(request.query_params), timeout=30.0)
+
+
+@router.get("/invoices/unbilled-expenses")
+async def invoices_unbilled_expenses(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/invoices/unbilled-expenses", params=dict(request.query_params), timeout=30.0)
+
+
+@router.get("/invoices")
+async def invoices_list(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/invoices", params=dict(request.query_params), timeout=30.0)
+
+
+@router.post("/invoices")
+async def invoices_create(
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    body = await request.json()
+    return await _tt_json("POST", "/invoices", json=body, params=_invoice_actor_qs(user), timeout=60.0)
+
+
+@router.get("/invoices/{invoice_id}/audit")
+async def invoices_audit(
+    invoice_id: str,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", f"/invoices/{invoice_id}/audit", timeout=30.0)
+
+
+@router.get("/invoices/{invoice_id}")
+async def invoices_get(
+    invoice_id: str,
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json(
+        "GET",
+        f"/invoices/{invoice_id}",
+        params=dict(request.query_params),
+        timeout=30.0,
+    )
+
+
+@router.patch("/invoices/{invoice_id}")
+async def invoices_patch(
+    invoice_id: str,
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    body = await request.json()
+    return await _tt_json(
+        "PATCH",
+        f"/invoices/{invoice_id}",
+        json=body,
+        params=_invoice_actor_qs(user),
+        timeout=60.0,
+    )
+
+
+@router.post("/invoices/{invoice_id}/send")
+async def invoices_send(
+    invoice_id: str,
+    user: dict = Depends(require_view_role),
+):
+    return await _tt_json("POST", f"/invoices/{invoice_id}/send", params=_invoice_actor_qs(user), timeout=30.0)
+
+
+@router.post("/invoices/{invoice_id}/mark-viewed")
+async def invoices_mark_viewed(
+    invoice_id: str,
+    user: dict = Depends(require_view_role),
+):
+    return await _tt_json(
+        "POST",
+        f"/invoices/{invoice_id}/mark-viewed",
+        params=_invoice_actor_qs(user),
+        timeout=30.0,
+    )
+
+
+@router.post("/invoices/{invoice_id}/payments")
+async def invoices_add_payment(
+    invoice_id: str,
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    body = await request.json()
+    return await _tt_json(
+        "POST",
+        f"/invoices/{invoice_id}/payments",
+        json=body,
+        params=_invoice_actor_qs(user),
+        timeout=30.0,
+    )
+
+
+@router.post("/invoices/{invoice_id}/cancel")
+async def invoices_cancel(
+    invoice_id: str,
+    user: dict = Depends(require_view_role),
+):
+    return await _tt_json(
+        "POST",
+        f"/invoices/{invoice_id}/cancel",
+        params=_invoice_actor_qs(user),
+        timeout=30.0,
+    )
+
+
+@router.delete("/invoices/{invoice_id}", status_code=204)
+async def invoices_delete_draft(
+    invoice_id: str,
+    user: dict = Depends(require_view_role),
+):
+    r = await _tt_request(
+        "DELETE",
+        f"/invoices/{invoice_id}",
+        params=_invoice_actor_qs(user),
+        timeout=30.0,
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
+    return None

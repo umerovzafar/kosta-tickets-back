@@ -399,6 +399,134 @@ async def apply_reports_schema_patch(conn: AsyncConnection) -> None:
     )
 
 
+async def apply_invoices_schema_patch(conn: AsyncConnection) -> None:
+    """Счета, строки, платежи, аудит — идемпотентно."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_invoice_counters (
+                year INTEGER PRIMARY KEY,
+                last_seq INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_invoices (
+                id VARCHAR(36) PRIMARY KEY,
+                client_id VARCHAR(36) NOT NULL REFERENCES time_tracking_clients (id) ON DELETE RESTRICT,
+                project_id VARCHAR(36) REFERENCES time_tracking_client_projects (id) ON DELETE SET NULL,
+                invoice_number VARCHAR(64) NOT NULL UNIQUE,
+                issue_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                currency VARCHAR(10) NOT NULL DEFAULT 'USD',
+                status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                subtotal NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                discount_percent NUMERIC(8, 4),
+                tax_percent NUMERIC(8, 4),
+                tax2_percent NUMERIC(8, 4),
+                discount_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                tax_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                total_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                amount_paid NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                client_note TEXT,
+                internal_note TEXT,
+                sent_at TIMESTAMPTZ,
+                last_sent_at TIMESTAMPTZ,
+                viewed_at TIMESTAMPTZ,
+                canceled_at TIMESTAMPTZ,
+                created_by_auth_user_id INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_invoices_client ON time_tracking_invoices (client_id)")
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_invoices_project ON time_tracking_invoices (project_id)")
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_invoices_status ON time_tracking_invoices (status)")
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_invoices_issue_date ON time_tracking_invoices (issue_date)")
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_invoice_line_items (
+                id VARCHAR(36) PRIMARY KEY,
+                invoice_id VARCHAR(36) NOT NULL REFERENCES time_tracking_invoices (id) ON DELETE CASCADE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                line_kind VARCHAR(20) NOT NULL,
+                description TEXT NOT NULL,
+                quantity NUMERIC(18, 6) NOT NULL DEFAULT 1,
+                unit_amount NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                line_total NUMERIC(18, 4) NOT NULL DEFAULT 0,
+                time_entry_id VARCHAR(36),
+                expense_request_id VARCHAR(40)
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_tt_inv_lines_invoice ON time_tracking_invoice_line_items (invoice_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_tt_inv_lines_time_entry ON time_tracking_invoice_line_items (time_entry_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_tt_inv_lines_expense ON time_tracking_invoice_line_items (expense_request_id)"
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_invoice_payments (
+                id VARCHAR(36) PRIMARY KEY,
+                invoice_id VARCHAR(36) NOT NULL REFERENCES time_tracking_invoices (id) ON DELETE CASCADE,
+                amount NUMERIC(18, 4) NOT NULL,
+                payment_method VARCHAR(64),
+                note TEXT,
+                recorded_by_auth_user_id INTEGER NOT NULL,
+                paid_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_inv_pay_invoice ON time_tracking_invoice_payments (invoice_id)")
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_invoice_audit_logs (
+                id SERIAL PRIMARY KEY,
+                invoice_id VARCHAR(36) NOT NULL REFERENCES time_tracking_invoices (id) ON DELETE CASCADE,
+                action VARCHAR(64) NOT NULL,
+                detail TEXT,
+                actor_auth_user_id INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_tt_inv_audit_invoice ON time_tracking_invoice_audit_logs (invoice_id)")
+    )
+
+
 async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> None:
     """Точность поля hours: NUMERIC(12,2) → NUMERIC(16,6), чтобы сохранялись секунды в долях часа."""
     await conn.execute(

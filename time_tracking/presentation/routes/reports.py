@@ -17,8 +17,9 @@ from starlette.responses import Response
 _log = logging.getLogger(__name__)
 
 from application.report_builder import (
-    REPORT_TYPES,
+    DETAILED_TIME_REPORT_COLUMNS,
     GROUP_OPTIONS,
+    REPORT_TYPES,
     build_report_summary,
     build_report_table,
     build_table_rows_flat,
@@ -256,7 +257,12 @@ async def export_report_table(
     # CSV
     buf = StringIO()
     if rows:
-        w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+        if rt == "detailed-time":
+            _tech = ("rowId", "sourceType", "sourceId")
+            fieldnames = list(DETAILED_TIME_REPORT_COLUMNS) + list(_tech)
+            w = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore", restval="")
+        else:
+            w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()), restval="")
         w.writeheader()
         w.writerows(rows)
     csv_text = "\ufeff" + buf.getvalue()

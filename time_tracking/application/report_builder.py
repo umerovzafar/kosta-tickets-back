@@ -12,7 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import httpx
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.hourly_rate_logic import pick_rate_for_date
@@ -25,6 +25,7 @@ from infrastructure.models import (
     TimeTrackingUserModel,
     UserHourlyRateModel,
 )
+from infrastructure.models_invoices import InvoiceLineItemModel, InvoiceModel
 
 _log = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ def _base_entry_conditions(
     project_ids: list[str] | None,
     client_ids: list[str] | None,
     include_fixed_fee: bool,
+    *,
+    exclude_invoiced_time: bool = False,
 ) -> list:
     cond: list = [
         TimeEntryModel.work_date >= date_from,
@@ -89,6 +92,17 @@ def _base_entry_conditions(
                 )
             )
         )
+    if exclude_invoiced_time:
+        inv_exists = exists(
+            select(1)
+            .select_from(InvoiceLineItemModel)
+            .join(InvoiceModel, InvoiceModel.id == InvoiceLineItemModel.invoice_id)
+            .where(
+                InvoiceLineItemModel.time_entry_id == TimeEntryModel.id,
+                InvoiceModel.status != "canceled",
+            )
+        )
+        cond.append(~inv_exists)
     return cond
 
 
@@ -111,6 +125,122 @@ async def _load_user_rates(
     for r in rows:
         out.setdefault(r.auth_user_id, []).append(r)
     return out
+
+
+async def _load_user_cost_rates(
+    session: AsyncSession, user_ids: list[int] | None
+) -> dict[int, list[UserHourlyRateModel]]:
+    """Ставки себестоимости (cost) по пользователям."""
+    q = select(UserHourlyRateModel).where(UserHourlyRateModel.rate_kind == "cost")
+    if user_ids:
+        q = q.where(UserHourlyRateModel.auth_user_id.in_(user_ids))
+    rows = (await session.execute(q)).scalars().all()
+    out: dict[int, list[UserHourlyRateModel]] = {}
+    for r in rows:
+        out.setdefault(r.auth_user_id, []).append(r)
+    return out
+
+
+def _split_employee_name(display_name: str | None, email: str | None) -> tuple[str, str]:
+    """Имя и фамилия для отчёта: из display_name (первый токен — имя, остаток — фамилия)."""
+    raw = (display_name or "").strip()
+    if not raw:
+        raw = (email or "").strip()
+        if "@" in raw:
+            raw = raw.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
+    if not raw:
+        return "", ""
+    parts = raw.split(None, 1)
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1].strip()
+
+
+def _billable_rate_for_entry(
+    work_date: date,
+    user_rates: list[UserHourlyRateModel] | None,
+) -> tuple[Decimal | None, str]:
+    """Ставка за час (billable), действующая на дату; без ставки — (None, USD)."""
+    if not user_rates:
+        return None, "USD"
+    rate = pick_rate_for_date(user_rates, work_date)
+    if not rate:
+        return None, "USD"
+    return _d(rate.amount), (rate.currency or "USD").strip()[:10] or "USD"
+
+
+def _cost_amount_for_entry(
+    hours: Decimal,
+    work_date: date,
+    user_cost_rates: list[UserHourlyRateModel] | None,
+) -> tuple[Decimal, Decimal | None, str]:
+    """(cost_amount, cost_rate_per_hour, currency)."""
+    if not user_cost_rates:
+        return Decimal(0), None, "USD"
+    rate = pick_rate_for_date(user_cost_rates, work_date)
+    if not rate:
+        return Decimal(0), None, "USD"
+    r_amt = _d(rate.amount)
+    amt = (hours * r_amt).quantize(_Q2, rounding=ROUND_HALF_UP)
+    return amt, r_amt, (rate.currency or "USD").strip()[:10] or "USD"
+
+
+async def _invoice_info_for_time_entries(
+    session: AsyncSession, entry_ids: list[str],
+) -> dict[str, tuple[str, str]]:
+    """time_entry_id -> (invoice_uuid, invoice_number) для неотменённых счетов."""
+    if not entry_ids:
+        return {}
+    q = (
+        select(
+            InvoiceLineItemModel.time_entry_id,
+            InvoiceModel.id,
+            InvoiceModel.invoice_number,
+        )
+        .select_from(InvoiceLineItemModel)
+        .join(InvoiceModel, InvoiceModel.id == InvoiceLineItemModel.invoice_id)
+        .where(
+            InvoiceLineItemModel.time_entry_id.in_(entry_ids),
+            InvoiceLineItemModel.time_entry_id.is_not(None),
+            InvoiceModel.status != "canceled",
+        )
+    )
+    rows = (await session.execute(q)).all()
+    out: dict[str, tuple[str, str]] = {}
+    for tid, iid, num in rows:
+        if not tid:
+            continue
+        k = str(tid)
+        if k not in out:
+            out[k] = (str(iid), str(num))
+    return out
+
+
+# Колонки детального отчёта по времени (клиентский экспорт / сверка с Harvest-подобными полями).
+DETAILED_TIME_REPORT_COLUMNS: tuple[str, ...] = (
+    "Date",
+    "Client",
+    "Project",
+    "Project Code",
+    "Task",
+    "Notes",
+    "Hours",
+    "Billable?",
+    "Invoiced?",
+    "Approved?",
+    "First Name",
+    "Last Name",
+    "Employee Id",
+    "Roles",
+    "Employee?",
+    "Billable Rate",
+    "Billable Amount",
+    "Cost Rate",
+    "Cost Amount",
+    "Currency",
+    "External Reference URL",
+    "Invoice ID",
+)
 
 
 def _billable_amount_for_entry(
@@ -211,7 +341,13 @@ async def build_report_summary(
         return await _summary_expense(period, date_from, date_to, user_ids, project_ids)
 
     cond = _base_entry_conditions(
-        date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
+        date_from,
+        date_to,
+        user_ids,
+        project_ids,
+        client_ids,
+        include_fixed_fee,
+        exclude_invoiced_time=(report_type == "uninvoiced"),
     )
 
     entries_q = select(
@@ -370,6 +506,20 @@ async def _table_detailed_time(
     page: int,
     page_size: int,
 ) -> dict:
+    """
+    Детальные строки времени для отчёта (в т.ч. по выбранному клиенту через clientIds / projectIds).
+
+    Логика колонок (модель как в Harvest-подобных выгрузках):
+    - Client / Project / Project Code / Task — из справочников проекта и клиента.
+    - Billable? / Billable Rate / Billable Amount / Currency — по флагу billable и ставкам rate_kind=billable.
+    - Cost Rate / Cost Amount — по ставкам rate_kind=cost (на все часы строки).
+    - Invoiced? / Invoice ID — связь со строкой счёта (счёт не в статусе canceled).
+    - Approved? — отдельного согласования времени в ТТ нет; в колонке выводится «N/A» (зарезервировано под будущий статус).
+    - Roles — роль пользователя в модуле time_tracking (user/manager/…), не корпоративные роли auth.
+    - Employee? — «Yes», если пользователь не в архиве в справочнике TT.
+    - External Reference URL — пока не хранится; пусто.
+    - First Name / Last Name — разбор display_name (первое слово / остаток), иначе локальная часть email.
+    """
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
@@ -387,21 +537,67 @@ async def _table_detailed_time(
 
     users = await _load_users_map(session)
     projects = await _load_projects_map(session)
+    clients = await _load_clients_map(session)
     tasks = await _load_tasks_map(session)
-    rates_map = await _load_user_rates(session, user_ids)
+    page_uids = sorted({e.auth_user_id for e in entries})
+    rates_map = await _load_user_rates(session, page_uids or None)
+    cost_rates_map = await _load_user_cost_rates(session, page_uids or None)
+    inv_map = await _invoice_info_for_time_entries(session, [e.id for e in entries])
 
     rows: list[dict] = []
     for e in entries:
         u = users.get(e.auth_user_id)
         p = projects.get(e.project_id) if e.project_id else None
+        c = clients.get(p.client_id) if p else None
         t = tasks.get(e.task_id) if e.task_id else None
-        amt, cur = _billable_amount_for_entry(
-            _d(e.hours), e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
+        hrs = _d(e.hours)
+        bill_amt, bill_cur = _billable_amount_for_entry(
+            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
         )
-        rows.append({
+        bill_rate, bill_rate_cur = _billable_rate_for_entry(
+            e.work_date, rates_map.get(e.auth_user_id),
+        )
+        cost_amt, cost_rate, cost_cur = _cost_amount_for_entry(
+            hrs, e.work_date, cost_rates_map.get(e.auth_user_id),
+        )
+        inv_t = inv_map.get(e.id)
+        invoiced = inv_t is not None
+        inv_display = inv_t[1] if inv_t else ""
+
+        fn, ln = _split_employee_name(
+            u.display_name if u else None,
+            u.email if u else None,
+        )
+        cur_out = bill_cur if e.is_billable else (cost_cur or bill_cur or "USD")
+
+        row: dict[str, Any] = {
+            "Date": e.work_date.isoformat(),
+            "Client": c.name if c else "",
+            "Project": p.name if p else "",
+            "Project Code": (p.code or "") if p else "",
+            "Task": t.name if t else "",
+            "Notes": (e.description or "").strip(),
+            "Hours": _hours(hrs),
+            "Billable?": "Yes" if e.is_billable else "No",
+            "Invoiced?": "Yes" if invoiced else "No",
+            "Approved?": "N/A",
+            "First Name": fn,
+            "Last Name": ln,
+            "Employee Id": str(e.auth_user_id),
+            "Roles": (u.role or "").strip() if u else "",
+            "Employee?": "Yes" if (u and not u.is_archived) else "No",
+            "Billable Rate": _money(bill_rate) if bill_rate is not None else "",
+            "Billable Amount": _money(bill_amt) if e.is_billable else 0.0,
+            "Cost Rate": _money(cost_rate) if cost_rate is not None else "",
+            "Cost Amount": _money(cost_amt),
+            "Currency": cur_out,
+            "External Reference URL": "",
+            "Invoice ID": inv_display,
+            # Технические поля для снимков и старых интеграций
             "rowId": e.id,
             "sourceType": "time_entry",
             "sourceId": e.id,
+            # Дубли в camelCase для API, ожидающего прежние имена
             "date": e.work_date.isoformat(),
             "userId": e.auth_user_id,
             "userName": (u.display_name or u.email) if u else str(e.auth_user_id),
@@ -410,11 +606,15 @@ async def _table_detailed_time(
             "taskId": e.task_id,
             "taskName": t.name if t else None,
             "description": e.description or "",
-            "hours": _hours(_d(e.hours)),
             "isBillable": e.is_billable,
-            "billableAmount": _money(amt),
-            "currency": cur,
-        })
+            "billableAmount": _money(bill_amt),
+            "currency": cur_out,
+            "clientName": c.name if c else None,
+            "invoiced": invoiced,
+            "invoiceNumber": inv_display or None,
+            "invoiceUuid": inv_t[0] if inv_t else None,
+        }
+        rows.append(row)
 
     return {
         "rows": rows,
@@ -446,7 +646,13 @@ async def _table_aggregated(
     page_size: int,
 ) -> dict:
     cond = _base_entry_conditions(
-        date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
+        date_from,
+        date_to,
+        user_ids,
+        project_ids,
+        client_ids,
+        include_fixed_fee,
+        exclude_invoiced_time=(report_type == "uninvoiced"),
     )
 
     if report_type == "uninvoiced":
