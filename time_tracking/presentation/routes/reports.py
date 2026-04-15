@@ -1,50 +1,61 @@
-"""Эндпоинты модуля отчётов time_tracking."""
+"""Эндпоинты модуля отчётов time_tracking.
+
+GET /reports/time/{group_by}          — time report (clients/projects/tasks/team)
+GET /reports/time/{group_by}/export   — экспорт (csv/xlsx)
+GET /reports/expenses/{group_by}      — expense report (clients/projects/categories/team)
+GET /reports/expenses/{group_by}/export
+GET /reports/uninvoiced               — uninvoiced report
+GET /reports/uninvoiced/export
+GET /reports/project-budget           — project budget report
+GET /reports/project-budget/export
+GET /reports/meta
+GET /reports/users-for-filter
+"""
 
 from __future__ import annotations
 
-import csv
-import json
 import logging
 import traceback
 from datetime import date
-from io import StringIO
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import Response
 
 _log = logging.getLogger(__name__)
 
-from application.report_builder import (
-    DETAILED_TIME_REPORT_COLUMNS,
-    GROUP_OPTIONS,
-    REPORT_TYPES,
-    build_report_summary,
-    build_report_table,
-    build_table_rows_flat,
+from application.services.reports.time_report_service import (
+    get_time_report,
+    get_time_report_all_rows,
 )
+from application.services.reports.expense_report_service import (
+    get_expense_report,
+    get_expense_report_all_rows,
+)
+from application.services.reports.uninvoiced_report_service import (
+    get_uninvoiced_report,
+    get_uninvoiced_report_all_rows,
+)
+from application.services.reports.budget_report_service import (
+    get_budget_report,
+    get_budget_report_all_rows,
+)
+from application.services.reports.export_service import export_report
 from infrastructure.database import get_session
-from infrastructure.repository_reports import (
-    ReportSavedViewRepository,
-    ReportSnapshotRepository,
-)
 from infrastructure.repository_users import TimeTrackingUserRepository
 from presentation.schemas_reports import (
+    ExportFormat,
+    ExpenseGroupBy,
     ReportMetaOut,
-    ReportSummaryOut,
-    ReportTableOut,
+    ReportResponseOut,
     ReportUserForFilterOut,
-    SavedViewCreateBody,
-    SavedViewOut,
-    SavedViewPatchBody,
-    SnapshotCreateBody,
-    SnapshotOut,
-    SnapshotRowOut,
-    SnapshotRowPatchBody,
+    TimeGroupBy,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+_TIME_GROUP_OPTIONS = frozenset({"clients", "projects", "tasks", "team"})
+_EXPENSE_GROUP_OPTIONS = frozenset({"clients", "projects", "categories", "team"})
 
 
 # ---------------------------------------------------------------------------
@@ -82,16 +93,10 @@ def _parse_ids_str(raw: str | None) -> list[str] | None:
     return out or None
 
 
-def _validate_report_type(rt: str) -> str:
-    if rt not in REPORT_TYPES:
-        raise HTTPException(status_code=400, detail=f"Unknown reportType: {rt}")
-    return rt
-
-
-def _validate_group(g: str | None) -> str | None:
-    if g and g not in GROUP_OPTIONS:
-        raise HTTPException(status_code=400, detail=f"Unknown group: {g}")
-    return g
+def _parse_bool(raw: str | None) -> bool | None:
+    if raw is None:
+        return None
+    return raw.lower() in ("1", "true", "yes")
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +107,8 @@ def _validate_group(g: str | None) -> str | None:
 @router.get("/meta", response_model=ReportMetaOut)
 async def get_reports_meta():
     return ReportMetaOut(
-        reportTypes=sorted(REPORT_TYPES),
-        groupOptions=sorted(GROUP_OPTIONS),
+        reportTypes=sorted(["time", "expenses", "uninvoiced", "project-budget"]),
+        groupOptions=sorted(list(_TIME_GROUP_OPTIONS | _EXPENSE_GROUP_OPTIONS)),
     )
 
 
@@ -128,532 +133,316 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
 
 
 # ---------------------------------------------------------------------------
-# Summary
+# Time Reports  GET /reports/time/{group_by}
 # ---------------------------------------------------------------------------
 
 
-@router.get("/summary")
-async def get_report_summary(
-    reportType: str = Query(..., alias="reportType"),
-    dateFrom: str = Query(..., alias="dateFrom"),
-    dateTo: str = Query(..., alias="dateTo"),
-    userIds: Optional[str] = Query(None, alias="userIds"),
-    projectIds: Optional[str] = Query(None, alias="projectIds"),
-    clientIds: Optional[str] = Query(None, alias="clientIds"),
-    includeFixedFeeProjects: bool = Query(True, alias="includeFixedFeeProjects"),
-    session: AsyncSession = Depends(get_session),
-):
-    rt = _validate_report_type(reportType)
-    df = _parse_date(dateFrom, "dateFrom")
-    dt = _parse_date(dateTo, "dateTo")
-    try:
-        return await build_report_summary(
-            session,
-            report_type=rt,
-            date_from=df,
-            date_to=dt,
-            user_ids=_parse_ids_int(userIds),
-            project_ids=_parse_ids_str(projectIds),
-            client_ids=_parse_ids_str(clientIds),
-            include_fixed_fee=includeFixedFeeProjects,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        tb = traceback.format_exc()
-        _log.error("reports/summary error: %s\n%s", exc, tb)
-        raise HTTPException(status_code=500, detail=f"Report summary error: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Table
-# ---------------------------------------------------------------------------
-
-
-@router.get("/table")
-async def get_report_table(
-    reportType: str = Query(..., alias="reportType"),
-    dateFrom: str = Query(..., alias="dateFrom"),
-    dateTo: str = Query(..., alias="dateTo"),
-    group: Optional[str] = Query(None),
-    userIds: Optional[str] = Query(None, alias="userIds"),
-    projectIds: Optional[str] = Query(None, alias="projectIds"),
-    clientIds: Optional[str] = Query(None, alias="clientIds"),
-    includeFixedFeeProjects: bool = Query(True, alias="includeFixedFeeProjects"),
-    sort: str = Query("date_asc"),
+@router.get(
+    "/time/{group_by}",
+    response_model=ReportResponseOut,
+    summary="Time report grouped by clients/projects/tasks/team",
+)
+async def get_time_report_endpoint(
+    group_by: TimeGroupBy,
+    from_date: str = Query(..., alias="from", description="Start date YYYY-MM-DD"),
+    to_date: str = Query(..., alias="to", description="End date YYYY-MM-DD"),
+    client_id: Optional[str] = Query(None, description="Comma-separated client IDs"),
+    project_id: Optional[str] = Query(None, description="Comma-separated project IDs"),
+    user_id: Optional[str] = Query(None, description="Comma-separated user IDs (int)"),
+    task_id: Optional[str] = Query(None, description="Comma-separated task IDs"),
+    is_billable: Optional[str] = Query(None, description="true/false"),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
     page: int = Query(1, ge=1),
-    pageSize: int = Query(50, ge=1, le=500, alias="pageSize"),
+    per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    rt = _validate_report_type(reportType)
-    _validate_group(group)
-    df = _parse_date(dateFrom, "dateFrom")
-    dt = _parse_date(dateTo, "dateTo")
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
     try:
-        return await build_report_table(
+        return await get_time_report(
             session,
-            report_type=rt,
-            group=group,
+            group_by=group_by.value,
             date_from=df,
             date_to=dt,
-            user_ids=_parse_ids_int(userIds),
-            project_ids=_parse_ids_str(projectIds),
-            client_ids=_parse_ids_str(clientIds),
-            include_fixed_fee=includeFixedFeeProjects,
-            sort=sort,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            task_ids=_parse_ids_str(task_id),
+            is_billable=_parse_bool(is_billable),
+            include_fixed_fee=include_fixed_fee,
             page=page,
-            page_size=pageSize,
+            per_page=per_page,
         )
     except HTTPException:
         raise
     except Exception as exc:
-        tb = traceback.format_exc()
-        _log.error("reports/table error: %s\n%s", exc, tb)
-        raise HTTPException(status_code=500, detail=f"Report table error: {exc}")
+        _log.error("reports/time/%s error: %s\n%s", group_by, exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Time report error: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Table export (CSV)
-# ---------------------------------------------------------------------------
-
-
-@router.get("/table/export")
-async def export_report_table(
-    reportType: str = Query(..., alias="reportType"),
-    dateFrom: str = Query(..., alias="dateFrom"),
-    dateTo: str = Query(..., alias="dateTo"),
-    group: Optional[str] = Query(None),
-    userIds: Optional[str] = Query(None, alias="userIds"),
-    projectIds: Optional[str] = Query(None, alias="projectIds"),
-    clientIds: Optional[str] = Query(None, alias="clientIds"),
-    includeFixedFeeProjects: bool = Query(True, alias="includeFixedFeeProjects"),
-    sort: str = Query("date_asc"),
-    format: str = Query("csv", alias="format"),
+@router.get(
+    "/time/{group_by}/export",
+    summary="Export time report as CSV or XLSX",
+)
+async def export_time_report_endpoint(
+    group_by: TimeGroupBy,
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    task_id: Optional[str] = Query(None),
+    is_billable: Optional[str] = Query(None),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
+    format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    rt = _validate_report_type(reportType)
-    _validate_group(group)
-    df = _parse_date(dateFrom, "dateFrom")
-    dt = _parse_date(dateTo, "dateTo")
-    rows = await build_table_rows_flat(
-        session,
-        report_type=rt,
-        group=group,
-        date_from=df,
-        date_to=dt,
-        user_ids=_parse_ids_int(userIds),
-        project_ids=_parse_ids_str(projectIds),
-        client_ids=_parse_ids_str(clientIds),
-        include_fixed_fee=includeFixedFeeProjects,
-        sort=sort,
-    )
-    if format == "json":
-        body = json.dumps(rows, ensure_ascii=False, indent=2, default=str)
-        return Response(
-            content=body.encode("utf-8"),
-            media_type="application/json; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="report_{rt}.json"'},
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        rows = await get_time_report_all_rows(
+            session,
+            group_by=group_by.value,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            task_ids=_parse_ids_str(task_id),
+            is_billable=_parse_bool(is_billable),
+            include_fixed_fee=include_fixed_fee,
         )
-    # CSV
-    buf = StringIO()
-    if rows:
-        if rt == "detailed-time":
-            _tech = ("rowId", "sourceType", "sourceId")
-            fieldnames = list(DETAILED_TIME_REPORT_COLUMNS) + list(_tech)
-            w = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore", restval="")
-        else:
-            w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()), restval="")
-        w.writeheader()
-        w.writerows(rows)
-    csv_text = "\ufeff" + buf.getvalue()
-    return Response(
-        content=csv_text.encode("utf-8"),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="report_{rt}.csv"'},
-    )
+        return export_report(rows, format.value, "time", group_by.value, df, dt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/time/%s/export error: %s\n%s", group_by, exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Time report export error: {exc}")
 
 
 # ---------------------------------------------------------------------------
-# Saved views
+# Expense Reports  GET /reports/expenses/{group_by}
 # ---------------------------------------------------------------------------
 
 
-@router.get("/saved-views", response_model=list[SavedViewOut])
-async def list_saved_views(
-    ownerUserId: int = Query(..., alias="ownerUserId"),
+@router.get(
+    "/expenses/{group_by}",
+    response_model=ReportResponseOut,
+    summary="Expense report grouped by clients/projects/categories/team",
+)
+async def get_expense_report_endpoint(
+    group_by: ExpenseGroupBy,
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    repo = ReportSavedViewRepository(session)
-    rows = await repo.list_for_user(ownerUserId)
-    return [
-        SavedViewOut(
-            id=r.id,
-            name=r.name,
-            ownerUserId=r.owner_user_id,
-            filters=r.filters_json,
-            createdAt=r.created_at,
-            updatedAt=r.updated_at,
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        return await get_expense_report(
+            session,
+            group_by=group_by.value,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            page=page,
+            per_page=per_page,
         )
-        for r in rows
-    ]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/expenses/%s error: %s\n%s", group_by, exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Expense report error: {exc}")
 
 
-@router.post("/saved-views", response_model=SavedViewOut)
-async def create_saved_view(
-    body: SavedViewCreateBody,
-    session: AsyncSession = Depends(get_session),
-    ownerUserId: int = Query(..., alias="ownerUserId"),
-):
-    repo = ReportSavedViewRepository(session)
-    row = await repo.create(
-        name=body.name,
-        owner_user_id=ownerUserId,
-        filters=body.filters.model_dump(mode="json", exclude_none=True),
-    )
-    await session.commit()
-    await session.refresh(row)
-    return SavedViewOut(
-        id=row.id,
-        name=row.name,
-        ownerUserId=row.owner_user_id,
-        filters=row.filters_json,
-        createdAt=row.created_at,
-        updatedAt=row.updated_at,
-    )
-
-
-@router.get("/saved-views/{view_id}", response_model=SavedViewOut)
-async def get_saved_view(
-    view_id: str,
+@router.get(
+    "/expenses/{group_by}/export",
+    summary="Export expense report as CSV or XLSX",
+)
+async def export_expense_report_endpoint(
+    group_by: ExpenseGroupBy,
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    repo = ReportSavedViewRepository(session)
-    row = await repo.get_by_id(view_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Saved view not found")
-    return SavedViewOut(
-        id=row.id,
-        name=row.name,
-        ownerUserId=row.owner_user_id,
-        filters=row.filters_json,
-        createdAt=row.created_at,
-        updatedAt=row.updated_at,
-    )
-
-
-@router.patch("/saved-views/{view_id}", response_model=SavedViewOut)
-async def patch_saved_view(
-    view_id: str,
-    body: SavedViewPatchBody,
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSavedViewRepository(session)
-    patch: dict = {}
-    if body.name is not None:
-        patch["name"] = body.name
-    if body.filters is not None:
-        patch["filters"] = body.filters.model_dump(mode="json", exclude_none=True)
-    if not patch:
-        raise HTTPException(status_code=400, detail="No fields to update")
-    row = await repo.update(view_id, patch)
-    if not row:
-        raise HTTPException(status_code=404, detail="Saved view not found")
-    await session.commit()
-    await session.refresh(row)
-    return SavedViewOut(
-        id=row.id,
-        name=row.name,
-        ownerUserId=row.owner_user_id,
-        filters=row.filters_json,
-        createdAt=row.created_at,
-        updatedAt=row.updated_at,
-    )
-
-
-@router.delete("/saved-views/{view_id}", status_code=204)
-async def delete_saved_view(
-    view_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSavedViewRepository(session)
-    ok = await repo.delete(view_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Saved view not found")
-    await session.commit()
-    return Response(status_code=204)
-
-
-# ---------------------------------------------------------------------------
-# Snapshots
-# ---------------------------------------------------------------------------
-
-
-@router.get("/snapshots")
-async def list_snapshots(
-    createdByUserId: int = Query(..., alias="createdByUserId"),
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSnapshotRepository(session)
-    snaps = await repo.list_for_user(createdByUserId)
-    out = []
-    for s in snaps:
-        rc = await repo.row_count(s.id)
-        out.append(
-            SnapshotOut(
-                id=s.id,
-                name=s.name,
-                reportType=s.report_type,
-                groupBy=s.group_by,
-                filters=s.filters_json,
-                version=s.version,
-                createdByUserId=s.created_by_user_id,
-                createdAt=s.created_at,
-                updatedAt=s.updated_at,
-                rowCount=rc,
-            )
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        rows = await get_expense_report_all_rows(
+            session,
+            group_by=group_by.value,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
         )
-    return out
-
-
-@router.post("/snapshots")
-async def create_snapshot(
-    body: SnapshotCreateBody,
-    createdByUserId: int = Query(..., alias="createdByUserId"),
-    session: AsyncSession = Depends(get_session),
-):
-    rt = _validate_report_type(body.reportType)
-    filters_dict = body.filters.model_dump(mode="json", exclude_none=True)
-    df = _parse_date(filters_dict.get("dateFrom"), "dateFrom")
-    dt = _parse_date(filters_dict.get("dateTo"), "dateTo")
-
-    flat_rows = await build_table_rows_flat(
-        session,
-        report_type=rt,
-        group=body.group,
-        date_from=df,
-        date_to=dt,
-        user_ids=filters_dict.get("userIds"),
-        project_ids=filters_dict.get("projectIds"),
-        client_ids=filters_dict.get("clientIds"),
-        include_fixed_fee=filters_dict.get("includeFixedFeeProjects", True),
-        sort=filters_dict.get("sort", "date_asc"),
-    )
-
-    rows_data = [
-        {
-            "source_type": r.get("sourceType", "row"),
-            "source_id": r.get("sourceId") or r.get("rowId", ""),
-            "data": r,
-        }
-        for r in flat_rows
-    ]
-
-    repo = ReportSnapshotRepository(session)
-    snap = await repo.create(
-        name=body.name,
-        report_type=rt,
-        group_by=body.group,
-        filters=filters_dict,
-        created_by_user_id=createdByUserId,
-        rows_data=rows_data,
-    )
-    await session.commit()
-    rc = await repo.row_count(snap.id)
-    return SnapshotOut(
-        id=snap.id,
-        name=snap.name,
-        reportType=snap.report_type,
-        groupBy=snap.group_by,
-        filters=snap.filters_json,
-        version=snap.version,
-        createdByUserId=snap.created_by_user_id,
-        createdAt=snap.created_at,
-        updatedAt=snap.updated_at,
-        rowCount=rc,
-    )
-
-
-@router.get("/snapshots/{snapshot_id}")
-async def get_snapshot(
-    snapshot_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSnapshotRepository(session)
-    snap = await repo.get_by_id(snapshot_id, load_rows=True)
-    if not snap:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    rows_out = [
-        SnapshotRowOut(
-            id=r.id,
-            sortOrder=r.sort_order,
-            sourceType=r.source_type,
-            sourceId=r.source_id,
-            data=r.frozen_data_json,
-            overrides=r.overrides_json,
-            editedByUserId=r.edited_by_user_id,
-            editedAt=r.edited_at,
-        )
-        for r in (snap.rows or [])
-    ]
-    return SnapshotOut(
-        id=snap.id,
-        name=snap.name,
-        reportType=snap.report_type,
-        groupBy=snap.group_by,
-        filters=snap.filters_json,
-        version=snap.version,
-        createdByUserId=snap.created_by_user_id,
-        createdAt=snap.created_at,
-        updatedAt=snap.updated_at,
-        rowCount=len(rows_out),
-        rows=rows_out,
-    )
-
-
-@router.patch("/snapshots/{snapshot_id}/rows/{row_id}")
-async def patch_snapshot_row(
-    snapshot_id: str,
-    row_id: str,
-    body: SnapshotRowPatchBody,
-    editedByUserId: int = Query(..., alias="editedByUserId"),
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSnapshotRepository(session)
-    snap = await repo.get_by_id(snapshot_id)
-    if not snap:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    row = await repo.patch_row(snapshot_id, row_id, body.overrides, editedByUserId)
-    if not row:
-        raise HTTPException(status_code=404, detail="Snapshot row not found")
-    await session.commit()
-    await session.refresh(row)
-    return SnapshotRowOut(
-        id=row.id,
-        sortOrder=row.sort_order,
-        sourceType=row.source_type,
-        sourceId=row.source_id,
-        data=row.frozen_data_json,
-        overrides=row.overrides_json,
-        editedByUserId=row.edited_by_user_id,
-        editedAt=row.edited_at,
-    )
-
-
-@router.post("/snapshots/{snapshot_id}/rebuild-from-source")
-async def rebuild_snapshot(
-    snapshot_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSnapshotRepository(session)
-    snap = await repo.get_by_id(snapshot_id)
-    if not snap:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-
-    filters = json.loads(snap.filters_json) if isinstance(snap.filters_json, str) else snap.filters_json
-    df = _parse_date(filters.get("dateFrom"), "dateFrom")
-    dt = _parse_date(filters.get("dateTo"), "dateTo")
-
-    flat_rows = await build_table_rows_flat(
-        session,
-        report_type=snap.report_type,
-        group=snap.group_by,
-        date_from=df,
-        date_to=dt,
-        user_ids=filters.get("userIds"),
-        project_ids=filters.get("projectIds"),
-        client_ids=filters.get("clientIds"),
-        include_fixed_fee=filters.get("includeFixedFeeProjects", True),
-        sort=filters.get("sort", "date_asc"),
-    )
-
-    rows_data = [
-        {
-            "source_type": r.get("sourceType", "row"),
-            "source_id": r.get("sourceId") or r.get("rowId", ""),
-            "data": r,
-        }
-        for r in flat_rows
-    ]
-
-    snap = await repo.rebuild_rows(snapshot_id, rows_data)
-    await session.commit()
-    if not snap:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    rc = await repo.row_count(snap.id)
-    return SnapshotOut(
-        id=snap.id,
-        name=snap.name,
-        reportType=snap.report_type,
-        groupBy=snap.group_by,
-        filters=snap.filters_json,
-        version=snap.version,
-        createdByUserId=snap.created_by_user_id,
-        createdAt=snap.created_at,
-        updatedAt=snap.updated_at,
-        rowCount=rc,
-    )
-
-
-@router.delete("/snapshots/{snapshot_id}", status_code=204)
-async def delete_snapshot(
-    snapshot_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    repo = ReportSnapshotRepository(session)
-    ok = await repo.delete(snapshot_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    await session.commit()
-    return Response(status_code=204)
+        return export_report(rows, format.value, "expenses", group_by.value, df, dt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/expenses/%s/export error: %s\n%s", group_by, exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Expense report export error: {exc}")
 
 
 # ---------------------------------------------------------------------------
-# Snapshot export
+# Uninvoiced Report  GET /reports/uninvoiced
 # ---------------------------------------------------------------------------
 
 
-@router.get("/snapshots/{snapshot_id}/export")
-async def export_snapshot(
-    snapshot_id: str,
-    format: str = Query("csv", alias="format"),
+@router.get(
+    "/uninvoiced",
+    response_model=ReportResponseOut,
+    summary="Uninvoiced hours and expenses report",
+)
+async def get_uninvoiced_report_endpoint(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    repo = ReportSnapshotRepository(session)
-    snap = await repo.get_by_id(snapshot_id, load_rows=True)
-    if not snap:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-
-    rows: list[dict] = []
-    for r in (snap.rows or []):
-        data = json.loads(r.frozen_data_json) if isinstance(r.frozen_data_json, str) else {}
-        if r.overrides_json:
-            ov = json.loads(r.overrides_json) if isinstance(r.overrides_json, str) else {}
-            data.update(ov)
-        rows.append(data)
-
-    fname = f"snapshot_{snapshot_id[:8]}"
-    if format == "json":
-        body = json.dumps(rows, ensure_ascii=False, indent=2, default=str)
-        return Response(
-            content=body.encode("utf-8"),
-            media_type="application/json; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{fname}.json"'},
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        return await get_uninvoiced_report(
+            session,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            include_fixed_fee=include_fixed_fee,
+            page=page,
+            per_page=per_page,
         )
-    buf = StringIO()
-    if rows:
-        all_keys: list[str] = []
-        seen: set[str] = set()
-        for row in rows:
-            for k in row:
-                if k not in seen:
-                    all_keys.append(k)
-                    seen.add(k)
-        w = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
-    csv_text = "\ufeff" + buf.getvalue()
-    return Response(
-        content=csv_text.encode("utf-8"),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'},
-    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/uninvoiced error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Uninvoiced report error: {exc}")
+
+
+@router.get(
+    "/uninvoiced/export",
+    summary="Export uninvoiced report as CSV or XLSX",
+)
+async def export_uninvoiced_report_endpoint(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
+    format: ExportFormat = Query(ExportFormat.csv),
+    session: AsyncSession = Depends(get_session),
+):
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        rows = await get_uninvoiced_report_all_rows(
+            session,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            include_fixed_fee=include_fixed_fee,
+        )
+        return export_report(rows, format.value, "uninvoiced", None, df, dt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/uninvoiced/export error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Uninvoiced report export error: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Project Budget Report  GET /reports/project-budget
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/project-budget",
+    response_model=ReportResponseOut,
+    summary="Project budget report with budget_spent and budget_remaining",
+)
+async def get_budget_report_endpoint(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+):
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        return await get_budget_report(
+            session,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            include_fixed_fee=include_fixed_fee,
+            page=page,
+            per_page=per_page,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/project-budget error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Project budget report error: {exc}")
+
+
+@router.get(
+    "/project-budget/export",
+    summary="Export project budget report as CSV or XLSX",
+)
+async def export_budget_report_endpoint(
+    from_date: str = Query(..., alias="from"),
+    to_date: str = Query(..., alias="to"),
+    client_id: Optional[str] = Query(None),
+    project_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(None),
+    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
+    format: ExportFormat = Query(ExportFormat.csv),
+    session: AsyncSession = Depends(get_session),
+):
+    df = _parse_date(from_date, "from")
+    dt = _parse_date(to_date, "to")
+    try:
+        rows = await get_budget_report_all_rows(
+            session,
+            date_from=df,
+            date_to=dt,
+            client_ids=_parse_ids_str(client_id),
+            project_ids=_parse_ids_str(project_id),
+            user_ids=_parse_ids_int(user_id),
+            include_fixed_fee=include_fixed_fee,
+        )
+        return export_report(rows, format.value, "project-budget", None, df, dt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _log.error("reports/project-budget/export error: %s\n%s", exc, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Project budget export error: {exc}")

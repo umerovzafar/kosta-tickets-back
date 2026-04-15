@@ -914,28 +914,24 @@ async def reports_users_for_filter(_: dict = Depends(require_view_role)):
     return await _tt_json("GET", "/reports/users-for-filter")
 
 
-@router.get("/reports/summary")
-async def reports_summary(
+@router.get("/reports/time/{group_by}")
+async def reports_time(
+    group_by: str,
     request: Request,
     user: dict = Depends(require_view_role),
 ):
-    return await _tt_json("GET", "/reports/summary", params=request.query_params, timeout=30.0)
+    return await _tt_json("GET", f"/reports/time/{group_by}", params=request.query_params, timeout=30.0)
 
 
-@router.get("/reports/table")
-async def reports_table(
+@router.get("/reports/time/{group_by}/export")
+async def reports_time_export(
+    group_by: str,
     request: Request,
     user: dict = Depends(require_view_role),
 ):
-    return await _tt_json("GET", "/reports/table", params=request.query_params, timeout=30.0)
-
-
-@router.get("/reports/table/export")
-async def reports_table_export(
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    r = await _tt_request("GET", "/reports/table/export", params=request.query_params, timeout=60.0)
+    r = await _tt_request(
+        "GET", f"/reports/time/{group_by}/export", params=request.query_params, timeout=60.0,
+    )
     raise_for_upstream_status(r, "Time tracking service error")
     out_headers: dict[str, str] = {}
     if ct := r.headers.get("content-type"):
@@ -945,121 +941,73 @@ async def reports_table_export(
     return Response(content=r.content, status_code=r.status_code, headers=out_headers)
 
 
-@router.get("/reports/saved-views")
-async def reports_list_saved_views(
+@router.get("/reports/expenses/{group_by}")
+async def reports_expenses(
+    group_by: str,
     request: Request,
     user: dict = Depends(require_view_role),
 ):
-    return await _tt_json("GET", "/reports/saved-views", params=request.query_params)
+    return await _tt_json("GET", f"/reports/expenses/{group_by}", params=request.query_params, timeout=30.0)
 
 
-@router.post("/reports/saved-views")
-async def reports_create_saved_view(
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    body = await request.json()
-    qs = dict(request.query_params)
-    return await _tt_json("POST", "/reports/saved-views", json=body, params=qs)
-
-
-@router.get("/reports/saved-views/{view_id}")
-async def reports_get_saved_view(
-    view_id: str,
-    user: dict = Depends(require_view_role),
-):
-    return await _tt_json("GET", f"/reports/saved-views/{view_id}")
-
-
-@router.patch("/reports/saved-views/{view_id}")
-async def reports_patch_saved_view(
-    view_id: str,
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    body = await request.json()
-    return await _tt_json("PATCH", f"/reports/saved-views/{view_id}", json=body)
-
-
-@router.delete("/reports/saved-views/{view_id}", status_code=204)
-async def reports_delete_saved_view(
-    view_id: str,
-    user: dict = Depends(require_view_role),
-):
-    await _tt_json("DELETE", f"/reports/saved-views/{view_id}")
-    return None
-
-
-@router.get("/reports/snapshots")
-async def reports_list_snapshots(
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    return await _tt_json("GET", "/reports/snapshots", params=request.query_params)
-
-
-@router.post("/reports/snapshots")
-async def reports_create_snapshot(
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    body = await request.json()
-    qs = dict(request.query_params)
-    return await _tt_json("POST", "/reports/snapshots", json=body, params=qs, timeout=60.0)
-
-
-@router.get("/reports/snapshots/{snapshot_id}")
-async def reports_get_snapshot(
-    snapshot_id: str,
-    user: dict = Depends(require_view_role),
-):
-    return await _tt_json("GET", f"/reports/snapshots/{snapshot_id}", timeout=30.0)
-
-
-@router.patch("/reports/snapshots/{snapshot_id}/rows/{row_id}")
-async def reports_patch_snapshot_row(
-    snapshot_id: str,
-    row_id: str,
-    request: Request,
-    user: dict = Depends(require_view_role),
-):
-    body = await request.json()
-    qs = dict(request.query_params)
-    return await _tt_json(
-        "PATCH", f"/reports/snapshots/{snapshot_id}/rows/{row_id}", json=body, params=qs,
-    )
-
-
-@router.post("/reports/snapshots/{snapshot_id}/rebuild-from-source")
-async def reports_rebuild_snapshot(
-    snapshot_id: str,
-    user: dict = Depends(require_view_role),
-):
-    return await _tt_json(
-        "POST", f"/reports/snapshots/{snapshot_id}/rebuild-from-source", timeout=60.0,
-    )
-
-
-@router.delete("/reports/snapshots/{snapshot_id}", status_code=204)
-async def reports_delete_snapshot(
-    snapshot_id: str,
-    user: dict = Depends(require_view_role),
-):
-    await _tt_json("DELETE", f"/reports/snapshots/{snapshot_id}")
-    return None
-
-
-@router.get("/reports/snapshots/{snapshot_id}/export")
-async def reports_export_snapshot(
-    snapshot_id: str,
+@router.get("/reports/expenses/{group_by}/export")
+async def reports_expenses_export(
+    group_by: str,
     request: Request,
     user: dict = Depends(require_view_role),
 ):
     r = await _tt_request(
-        "GET",
-        f"/reports/snapshots/{snapshot_id}/export",
-        params=request.query_params,
-        timeout=60.0,
+        "GET", f"/reports/expenses/{group_by}/export", params=request.query_params, timeout=60.0,
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
+    out_headers: dict[str, str] = {}
+    if ct := r.headers.get("content-type"):
+        out_headers["Content-Type"] = ct
+    if cd := r.headers.get("content-disposition"):
+        out_headers["Content-Disposition"] = cd
+    return Response(content=r.content, status_code=r.status_code, headers=out_headers)
+
+
+@router.get("/reports/uninvoiced")
+async def reports_uninvoiced(
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/reports/uninvoiced", params=request.query_params, timeout=30.0)
+
+
+@router.get("/reports/uninvoiced/export")
+async def reports_uninvoiced_export(
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    r = await _tt_request(
+        "GET", "/reports/uninvoiced/export", params=request.query_params, timeout=60.0,
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
+    out_headers: dict[str, str] = {}
+    if ct := r.headers.get("content-type"):
+        out_headers["Content-Type"] = ct
+    if cd := r.headers.get("content-disposition"):
+        out_headers["Content-Disposition"] = cd
+    return Response(content=r.content, status_code=r.status_code, headers=out_headers)
+
+
+@router.get("/reports/project-budget")
+async def reports_project_budget(
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/reports/project-budget", params=request.query_params, timeout=30.0)
+
+
+@router.get("/reports/project-budget/export")
+async def reports_project_budget_export(
+    request: Request,
+    user: dict = Depends(require_view_role),
+):
+    r = await _tt_request(
+        "GET", "/reports/project-budget/export", params=request.query_params, timeout=60.0,
     )
     raise_for_upstream_status(r, "Time tracking service error")
     out_headers: dict[str, str] = {}
