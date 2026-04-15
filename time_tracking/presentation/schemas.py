@@ -385,6 +385,16 @@ class ProjectType(str, Enum):
     non_billable = "non_billable"
 
 
+class ProjectCurrency(str, Enum):
+    """Поддерживаемые валюты проекта."""
+
+    USD = "USD"   # Доллар США ($)
+    UZS = "UZS"   # Узбекский сум (сўм)
+    EUR = "EUR"   # Евро (€)
+    RUB = "RUB"   # Российский рубль (₽)
+    GBP = "GBP"   # Британский фунт (£)
+
+
 class TimeManagerClientProjectOut(BaseModel):
     """Проект клиента time manager."""
 
@@ -399,6 +409,7 @@ class TimeManagerClientProjectOut(BaseModel):
     notes: Optional[str] = None
     report_visibility: str
     project_type: str
+    currency: str = "USD"
     billable_rate_type: Optional[str] = None
     budget_type: Optional[str] = None
     budget_amount: Optional[Decimal] = None
@@ -428,6 +439,7 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         alias="reportVisibility",
     )
     project_type: ProjectType = Field(ProjectType.time_and_materials, alias="projectType")
+    currency: ProjectCurrency = Field(ProjectCurrency.USD, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
@@ -455,6 +467,7 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     notes: Optional[str] = None
     report_visibility: Optional[ProjectReportVisibility] = Field(None, alias="reportVisibility")
     project_type: Optional[ProjectType] = Field(None, alias="projectType")
+    currency: Optional[ProjectCurrency] = Field(None, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")

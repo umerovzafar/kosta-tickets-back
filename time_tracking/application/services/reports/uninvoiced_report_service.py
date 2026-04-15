@@ -135,7 +135,9 @@ async def get_uninvoiced_report(
         uninv_h = uninv_hours_by_project.get(pid, _ZERO)
         uninv_exp = uninv_expenses_by_project.get(pid, _ZERO)
         uninv_amt = uninv_amount_by_project.get(pid, _ZERO)
-        currency = uninv_currency_by_project.get(pid, "USD")
+        # Приоритет — валюта проекта; если не задана, берём из ставки
+        project_currency = (getattr(p, "currency", None) or "USD") if p else "USD"
+        currency = project_currency if project_currency != "USD" else uninv_currency_by_project.get(pid, "USD")
 
         # Список пользователей по данному проекту
         user_buckets = user_buckets_by_project.get(pid, {})

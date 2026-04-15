@@ -204,6 +204,9 @@ class TimeManagerClientProjectModel(Base):
         nullable=False,
         default="time_and_materials",
     )
+    currency: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="USD", server_default=text("'USD'")
+    )
     billable_rate_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     budget_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     budget_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)

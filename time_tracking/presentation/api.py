@@ -17,6 +17,7 @@ from infrastructure.schema_patches import (
     apply_time_entries_hours_precision_patch,
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
+    apply_project_currency_patch,
 )
 from presentation.routes import (
     invoices,
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
         await apply_time_entries_hours_precision_patch(conn)
         await apply_reports_schema_patch(conn)
         await apply_invoices_schema_patch(conn)
+        await apply_project_currency_patch(conn)
     yield
 
 

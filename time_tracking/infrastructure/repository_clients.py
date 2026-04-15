@@ -553,6 +553,7 @@ class ClientProjectRepository:
             notes=src.notes,
             report_visibility=src.report_visibility,
             project_type=src.project_type,
+            currency=src.currency,
             billable_rate_type=src.billable_rate_type,
             budget_type=src.budget_type,
             budget_amount=src.budget_amount,
@@ -581,6 +582,7 @@ class ClientProjectRepository:
         notes: str | None,
         report_visibility: str,
         project_type: str = "time_and_materials",
+        currency: str = "USD",
         billable_rate_type: str | None = None,
         budget_type: str | None = None,
         budget_amount: Decimal | None = None,
@@ -594,6 +596,7 @@ class ClientProjectRepository:
     ) -> TimeManagerClientProjectModel:
         rv = report_visibility if report_visibility in _REPORT_VISIBILITY else "managers_only"
         pt = project_type if project_type in _PROJECT_TYPES else "time_and_materials"
+        cur = (currency or "USD").strip().upper()[:10] or "USD"
         row = TimeManagerClientProjectModel(
             id=str(uuid.uuid4()),
             client_id=client_id,
@@ -604,6 +607,7 @@ class ClientProjectRepository:
             notes=notes,
             report_visibility=rv,
             project_type=pt,
+            currency=cur,
             billable_rate_type=_strip_opt(billable_rate_type),
             budget_type=_strip_opt(budget_type),
             budget_amount=budget_amount,
@@ -661,6 +665,9 @@ class ClientProjectRepository:
             row.send_budget_alerts = bool(patch["send_budget_alerts"])
         if "budget_alert_threshold_percent" in patch:
             row.budget_alert_threshold_percent = _decimal_none(patch["budget_alert_threshold_percent"])
+        if "currency" in patch and patch["currency"] is not None:
+            cur = str(patch["currency"]).strip().upper()[:10] or "USD"
+            row.currency = cur
         if "fixed_fee_amount" in patch:
             row.fixed_fee_amount = _decimal_none(patch["fixed_fee_amount"])
         if "is_archived" in patch and patch["is_archived"] is not None:

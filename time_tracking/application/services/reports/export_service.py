@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
-from datetime import date
+import json
+from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO, StringIO
 from typing import Any
 
@@ -20,7 +22,7 @@ def _filename(report_type: str, group_by: str | None, date_from: date, date_to: 
     return "_".join(parts) + f".{fmt}"
 
 
-def _collect_fieldnames(rows: list[dict]) -> list[str]:
+def _collect_fieldnames(rows: list[dict[str, Any]]) -> list[str]:
     seen: set[str] = set()
     keys: list[str] = []
     for row in rows:
@@ -31,19 +33,88 @@ def _collect_fieldnames(rows: list[dict]) -> list[str]:
     return keys
 
 
+def _json_default(o: Any) -> Any:
+    """Сериализация вложенных объектов (Pydantic, Decimal, даты) в JSON для ячейки."""
+    if hasattr(o, "model_dump"):
+        try:
+            return o.model_dump(mode="json")
+        except TypeError:
+            return o.model_dump()
+    if hasattr(o, "dict"):
+        return o.dict()
+    if isinstance(o, (date, datetime)):
+        return o.isoformat()
+    if isinstance(o, Decimal):
+        return float(o)
+    return str(o)
+
+
+def _cell_value_for_export(val: Any) -> Any:
+    """
+    Скаляр для CSV / openpyxl.
+    openpyxl не принимает list/dict в ячейке — всё сложное → JSON-строка (как в ТЗ для users[]).
+    """
+    if val is None:
+        return ""
+    if val is True or val is False:
+        return val
+    if isinstance(val, Decimal):
+        return float(val)
+    if isinstance(val, (int, float)):
+        return val
+    if isinstance(val, (date, datetime)):
+        return val
+    if isinstance(val, str):
+        return val
+    if isinstance(val, (dict, list, tuple, set)):
+        try:
+            return json.dumps(val, ensure_ascii=False, default=_json_default)
+        except TypeError:
+            return str(val)
+    return str(val)
+
+
+def _row_to_plain_dict(row: Any) -> dict[str, Any]:
+    """Строка отчёта → dict (dict / Pydantic / SQLAlchemy Row)."""
+    if isinstance(row, dict):
+        return dict(row)
+    model_dump = getattr(row, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return model_dump(mode="json")
+        except TypeError:
+            return model_dump()
+    dict_m = getattr(row, "dict", None)
+    if callable(dict_m):
+        return dict_m()
+    mapping = getattr(row, "_mapping", None)
+    if mapping is not None:
+        return dict(mapping)
+    raise TypeError(f"Report row must be dict-like, got {type(row)!r}")
+
+
+def _sanitize_export_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        d = _row_to_plain_dict(row)
+        out.append({str(k): _cell_value_for_export(v) for k, v in d.items()})
+    return out
+
+
 def export_csv(
-    rows: list[dict],
+    rows: list[Any],
     report_type: str,
     group_by: str | None,
     date_from: date,
     date_to: date,
 ) -> Response:
     buf = StringIO()
-    if rows:
-        fieldnames = _collect_fieldnames(rows)
+    safe_rows = _sanitize_export_rows(rows)
+    if safe_rows:
+        fieldnames = _collect_fieldnames(safe_rows)
         writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore", restval="")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(safe_rows)
     # UTF-8 BOM for Excel compatibility
     content = ("\ufeff" + buf.getvalue()).encode("utf-8")
     fname = _filename(report_type, group_by, date_from, date_to, "csv")
@@ -55,7 +126,7 @@ def export_csv(
 
 
 def export_xlsx(
-    rows: list[dict],
+    rows: list[Any],
     report_type: str,
     group_by: str | None,
     date_from: date,
@@ -71,7 +142,8 @@ def export_xlsx(
     ws = wb.active
     ws.title = "Report"
 
-    fieldnames = _collect_fieldnames(rows) if rows else []
+    safe_rows = _sanitize_export_rows(rows)
+    fieldnames = _collect_fieldnames(safe_rows) if safe_rows else []
 
     # Header row
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
@@ -82,12 +154,13 @@ def export_xlsx(
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
-    # Data rows
-    for row_idx, row in enumerate(rows, start=2):
+    # Data rows (повторное приведение типов — на случай если openpyxl всё ещё получит list/dict)
+    for row_idx, row in enumerate(safe_rows, start=2):
         for col_idx, name in enumerate(fieldnames, start=1):
-            val = row.get(name, "")
-            if val is None:
-                val = ""
+            raw = row.get(name, "")
+            if raw is None:
+                raw = ""
+            val = _cell_value_for_export(raw)
             ws.cell(row=row_idx, column=col_idx, value=val)
 
     # Auto-width columns
@@ -120,7 +193,7 @@ def _humanize_header(name: str) -> str:
 
 
 def export_report(
-    rows: list[dict],
+    rows: list[Any],
     fmt: str,
     report_type: str,
     group_by: str | None,

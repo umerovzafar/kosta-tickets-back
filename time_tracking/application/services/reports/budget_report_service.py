@@ -111,12 +111,14 @@ async def get_budget_report(
 
         user_buckets = user_buckets_by_project.get(p.id, {})
         users_list = _build_users_list(user_buckets, users_map, budget_by)
+        project_currency = (getattr(p, "currency", None) or "USD")
 
         all_rows.append({
             "client_id": p.client_id,
             "client_name": c.name if c else None,
             "project_id": p.id,
             "project_name": p.name,
+            "currency": project_currency,
             "budget_is_monthly": p.budget_resets_every_month,
             "budget_by": budget_by,
             "is_active": not p.is_archived,

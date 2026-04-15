@@ -74,19 +74,26 @@ async def get_time_report(
     buckets: dict[Any, dict] = {}
     for e in entries:
         gid = _get_group_id(e, group_by, projects_map)
+        # Определяем валюту проекта как приоритетную
+        p = projects_map.get(e.project_id) if e.project_id else None
+        project_currency = (getattr(p, "currency", None) or "USD") if p else "USD"
+
         bkt = buckets.setdefault(gid, {
             "total": _ZERO,
             "billable": _ZERO,
             "amount": _ZERO,
-            "currency": "USD",
+            "currency": project_currency,
             "user_buckets": {},      # uid -> {total, billable, amount, currency}
         })
         h = _d(e.hours)
         bkt["total"] += h
+        # Обновляем валюту из проекта если она ещё не задана
+        if bkt["currency"] == "USD" and project_currency != "USD":
+            bkt["currency"] = project_currency
 
         uid = e.auth_user_id
         ubkt = bkt["user_buckets"].setdefault(uid, {
-            "total": _ZERO, "billable": _ZERO, "amount": _ZERO, "currency": "USD",
+            "total": _ZERO, "billable": _ZERO, "amount": _ZERO, "currency": project_currency,
         })
         ubkt["total"] += h
 
@@ -95,14 +102,14 @@ async def get_time_report(
             amt, cur = _billable_amount_for_entry(
                 h, True, e.work_date, rates_map.get(uid),
             )
+            # Используем валюту проекта, если ставка не переопределяет
+            effective_cur = project_currency if project_currency != "USD" else cur
             bkt["amount"] += amt
-            if cur != "USD":
-                bkt["currency"] = cur
+            bkt["currency"] = effective_cur
 
             ubkt["billable"] += h
             ubkt["amount"] += amt
-            if cur != "USD":
-                ubkt["currency"] = cur
+            ubkt["currency"] = effective_cur
 
     all_rows: list[dict] = []
     for gid, bkt in buckets.items():

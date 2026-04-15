@@ -537,3 +537,12 @@ async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> Non
             """
         )
     )
+
+
+async def apply_project_currency_patch(conn: AsyncConnection) -> None:
+    """Добавить поле currency в таблицу проектов (по умолчанию USD)."""
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_client_projects",
+        ("currency VARCHAR(10) NOT NULL DEFAULT 'USD'",),
+    )
