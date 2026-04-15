@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ReportVisibility = Literal["managers_only", "all_assigned"]
 ProjectType = Literal["time_and_materials", "fixed_fee", "non_billable"]
+ProjectCurrency = Literal["USD", "UZS", "EUR", "RUB", "GBP"]
 
 
 class TimeManagerClientProjectCreateBody(BaseModel):
@@ -20,6 +21,7 @@ class TimeManagerClientProjectCreateBody(BaseModel):
     notes: Optional[str] = None
     report_visibility: ReportVisibility = Field("managers_only", alias="reportVisibility")
     project_type: ProjectType = Field("time_and_materials", alias="projectType")
+    currency: ProjectCurrency = Field("USD", description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
@@ -47,6 +49,7 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     notes: Optional[str] = None
     report_visibility: Optional[ReportVisibility] = Field(None, alias="reportVisibility")
     project_type: Optional[ProjectType] = Field(None, alias="projectType")
+    currency: Optional[ProjectCurrency] = Field(None, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")

@@ -188,7 +188,13 @@ def export_xlsx(
 
 
 def _humanize_header(name: str) -> str:
-    """Преобразовать snake_case в заголовок с заглавной буквы."""
+    """Преобразовать snake_case в заголовок с заглавной буквы.
+
+    Если имя уже содержит пробел — оно уже отформатировано (напр. "Invoice ID",
+    "First Name", "Billable?") и возвращается без изменений.
+    """
+    if " " in name or "?" in name:
+        return name
     return name.replace("_", " ").title()
 
 

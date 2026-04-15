@@ -914,6 +914,31 @@ async def reports_users_for_filter(_: dict = Depends(require_view_role)):
     return await _tt_json("GET", "/reports/users-for-filter")
 
 
+@router.get("/reports/time/detailed")
+async def reports_time_detailed(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/reports/time/detailed", params=request.query_params, timeout=60.0)
+
+
+@router.get("/reports/time/detailed/export")
+async def reports_time_detailed_export(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    r = await _tt_request(
+        "GET", "/reports/time/detailed/export", params=request.query_params, timeout=120.0,
+    )
+    raise_for_upstream_status(r, "Time tracking service error")
+    out_headers: dict[str, str] = {}
+    if ct := r.headers.get("content-type"):
+        out_headers["Content-Type"] = ct
+    if cd := r.headers.get("content-disposition"):
+        out_headers["Content-Disposition"] = cd
+    return Response(content=r.content, status_code=r.status_code, headers=out_headers)
+
+
 @router.get("/reports/time/{group_by}")
 async def reports_time(
     group_by: str,
