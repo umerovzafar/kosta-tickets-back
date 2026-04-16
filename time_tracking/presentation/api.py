@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from infrastructure.database import Base, engine
+from application.client_task_defaults import seed_default_common_tasks_for_all_clients
+from infrastructure.database import Base, async_session_factory, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
 from infrastructure import models_reports  # noqa: F401 — таблицы отчётов
 from infrastructure import models_invoices  # noqa: F401 — счета
@@ -52,6 +53,9 @@ async def lifespan(app: FastAPI):
         await apply_reports_schema_patch(conn)
         await apply_invoices_schema_patch(conn)
         await apply_project_currency_patch(conn)
+    async with async_session_factory() as session:
+        await seed_default_common_tasks_for_all_clients(session)
+        await session.commit()
     yield
 
 
