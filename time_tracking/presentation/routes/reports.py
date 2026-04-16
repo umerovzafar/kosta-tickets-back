@@ -144,7 +144,7 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
 @router.get(
     "/time/detailed",
     response_model=ReportResponseOut,
-    summary="Detailed time report — one row per time entry (22 columns)",
+    summary="Detailed time report — one row per time entry (23 columns)",
 )
 async def get_detailed_time_report_endpoint(
     from_date: str = Query(..., alias="from", description="Start date YYYY-MM-DD"),
@@ -184,7 +184,7 @@ async def get_detailed_time_report_endpoint(
 
 @router.get(
     "/time/detailed/export",
-    summary="Export detailed time report as CSV or XLSX (22 columns, one row per entry)",
+    summary="Export detailed time report as CSV or XLSX (23 columns, one row per entry)",
 )
 async def export_detailed_time_report_endpoint(
     from_date: str = Query(..., alias="from"),

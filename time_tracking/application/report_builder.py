@@ -219,6 +219,7 @@ async def _invoice_info_for_time_entries(
 # Колонки детального отчёта по времени (клиентский экспорт / сверка с Harvest-подобными полями).
 DETAILED_TIME_REPORT_COLUMNS: tuple[str, ...] = (
     "Date",
+    "Recorded At",
     "Client",
     "Project",
     "Project Code",
@@ -516,6 +517,7 @@ async def _table_detailed_time(
     - Roles — роль пользователя в модуле time_tracking (user/manager/…), не корпоративные роли auth.
     - Employee? — «Yes», если пользователь не в архиве в справочнике TT.
     - External Reference URL — пока не хранится; пусто.
+    - Recorded At — момент создания записи времени (ISO 8601).
     - First Name / Last Name — разбор display_name (первое слово / остаток), иначе локальная часть email.
 
     Порядок строк всегда хронологический: work_date по возрастанию, затем created_at, затем id.
@@ -577,6 +579,7 @@ async def _table_detailed_time(
 
         row: dict[str, Any] = {
             "Date": e.work_date.isoformat(),
+            "Recorded At": e.created_at.isoformat(),
             "Client": c.name if c else "",
             "Project": p.name if p else "",
             "Project Code": (p.code or "") if p else "",
@@ -604,6 +607,7 @@ async def _table_detailed_time(
             "sourceId": e.id,
             # Дубли в camelCase для API, ожидающего прежние имена
             "date": e.work_date.isoformat(),
+            "recordedAt": e.created_at.isoformat(),
             "userId": e.auth_user_id,
             "userName": (u.display_name or u.email) if u else str(e.auth_user_id),
             "projectId": e.project_id,

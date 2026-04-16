@@ -1,9 +1,10 @@
 """Детальный подетальный экспорт по времени — одна строка = одна запись времени.
 
-Колонки (точно по ТЗ):
-    Date | Client | Project | Project Code | Task | Notes | Hours | Billable? | Invoiced? |
-    Approved? | First Name | Last Name | Employee Id | Roles | Employee? | Billable Rate |
-    Billable Amount | Cost Rate | Cost Amount | Currency | External Reference URL | Invoice ID
+Колонки:
+    Date | Recorded At | Client | Project | Project Code | Task | Notes | Hours | Billable? |
+    Invoiced? | Approved? | First Name | Last Name | Employee Id | Roles | Employee? |
+    Billable Rate | Billable Amount | Cost Rate | Cost Amount | Currency |
+    External Reference URL | Invoice ID
 """
 
 from __future__ import annotations
@@ -113,6 +114,7 @@ async def get_detailed_time_rows(
 
         rows.append({
             "Date": e.work_date.isoformat(),
+            "Recorded At": e.created_at.isoformat(),
             "Client": c.name if c else "",
             "Project": p.name if p else "",
             "Project Code": (p.code or "") if p else "",
