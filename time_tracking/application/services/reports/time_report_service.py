@@ -4,6 +4,9 @@
 
 Для группировок clients / projects / tasks каждая строка содержит поле `users` —
 список пользователей, вносивших время в этот бакет, с детализацией их часов;
+у строки и у каждого пользователя — `last_recorded_at` (ISO), плюс у пользователя
+`entries` (до 50 последних записей: work_date, recorded_at, hours), `entries_total`,
+`entries_truncated`;
 для tasks в строке также `client_id` / `client_name` (клиент справочника задачи).
 Для группировки team каждая строка сама является пользователем.
 """
@@ -56,12 +59,14 @@ async def get_time_report(
         cond.append(TimeEntryModel.task_id.in_(task_ids))
 
     entries_q = select(
+        TimeEntryModel.id,
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.task_id,
         TimeEntryModel.work_date,
         TimeEntryModel.hours,
         TimeEntryModel.is_billable,
+        TimeEntryModel.created_at,
     ).where(and_(*cond))
     entries = (await session.execute(entries_q)).all()
 
@@ -84,8 +89,11 @@ async def get_time_report(
             "billable": _ZERO,
             "amount": _ZERO,
             "currency": project_currency,
-            "user_buckets": {},      # uid -> {total, billable, amount, currency}
+            "last_recorded_at": None,
+            "user_buckets": {},      # uid -> {total, billable, amount, currency, …}
         })
+        if bkt["last_recorded_at"] is None or e.created_at > bkt["last_recorded_at"]:
+            bkt["last_recorded_at"] = e.created_at
         h = _d(e.hours)
         bkt["total"] += h
         # Обновляем валюту из проекта если она ещё не задана
@@ -94,7 +102,19 @@ async def get_time_report(
 
         uid = e.auth_user_id
         ubkt = bkt["user_buckets"].setdefault(uid, {
-            "total": _ZERO, "billable": _ZERO, "amount": _ZERO, "currency": project_currency,
+            "total": _ZERO,
+            "billable": _ZERO,
+            "amount": _ZERO,
+            "currency": project_currency,
+            "last_recorded_at": None,
+            "entry_events": [],
+        })
+        if ubkt["last_recorded_at"] is None or e.created_at > ubkt["last_recorded_at"]:
+            ubkt["last_recorded_at"] = e.created_at
+        ubkt["entry_events"].append({
+            "work_date": e.work_date.isoformat(),
+            "recorded_at": e.created_at.isoformat(),
+            "hours": _hours(h),
         })
         ubkt["total"] += h
 
@@ -162,11 +182,29 @@ def _get_group_id(e: Any, group_by: str, projects_map: dict) -> Any:
         return e.task_id
 
 
+MAX_ENTRY_LOG_ROWS = 50
+
+
+def _entry_log_payload(ubkt: dict, *, max_n: int = MAX_ENTRY_LOG_ROWS) -> dict[str, Any]:
+    """Журнал записей времени для одного пользователя в бакете (срез + флаги)."""
+    events = sorted(ubkt.get("entry_events") or [], key=lambda x: x["recorded_at"], reverse=True)
+    total_n = len(events)
+    truncated = total_n > max_n
+    last_dt = ubkt.get("last_recorded_at")
+    return {
+        "last_recorded_at": last_dt.isoformat() if last_dt else None,
+        "entries": events[:max_n],
+        "entries_total": total_n,
+        "entries_truncated": truncated,
+    }
+
+
 def _build_users_list(user_buckets: dict, users_map: dict) -> list[dict[str, Any]]:
     """Построить список пользователей с их часами для вложенного поля `users`."""
     result = []
     for uid, ubkt in user_buckets.items():
         u = users_map.get(uid)
+        log = _entry_log_payload(ubkt)
         result.append({
             "user_id": uid,
             "user_name": (u.display_name or u.email) if u else str(uid or ""),
@@ -175,6 +213,7 @@ def _build_users_list(user_buckets: dict, users_map: dict) -> list[dict[str, Any
             "billable_hours": _hours(ubkt["billable"]),
             "billable_amount": _money(ubkt["amount"]),
             "currency": ubkt["currency"],
+            **log,
         })
     result.sort(key=lambda r: r["total_hours"], reverse=True)
     return result
@@ -195,6 +234,9 @@ def _build_row(
         "currency": bkt["currency"],
         "billable_amount": _money(bkt["amount"]),
     }
+
+    last_bucket = bkt.get("last_recorded_at")
+    row["last_recorded_at"] = last_bucket.isoformat() if last_bucket else None
 
     if group_by == "clients":
         c = clients_map.get(gid) if gid else None
@@ -227,5 +269,12 @@ def _build_row(
         row["is_contractor"] = False
         row["weekly_capacity"] = float(u.weekly_capacity_hours) if u else 0.0
         row["avatar_url"] = u.picture if u else None
+        ub = bkt["user_buckets"].get(gid)
+        if ub:
+            row.update(_entry_log_payload(ub))
+        else:
+            row["entries"] = []
+            row["entries_total"] = 0
+            row["entries_truncated"] = False
 
     return row

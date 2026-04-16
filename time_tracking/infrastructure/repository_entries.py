@@ -295,6 +295,25 @@ class TimeEntryRepository:
         r = await self._session.execute(q)
         return [(bool(row.is_billable), _to_decimal(row.hrs)) for row in r.all()]
 
+    async def list_entries_for_project(
+        self,
+        project_id: str,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[TimeEntryModel]:
+        """Все записи времени по проекту в диапазоне дат (для дашборда: суммы, прогресс)."""
+        q = (
+            select(TimeEntryModel)
+            .where(and_(*self._project_entry_conditions(project_id, date_from, date_to)))
+            .order_by(
+                TimeEntryModel.work_date.asc(),
+                TimeEntryModel.created_at.asc(),
+                TimeEntryModel.id.asc(),
+            )
+        )
+        r = await self._session.execute(q)
+        return list(r.scalars().all())
+
     async def delete(self, auth_user_id: int, entry_id: str) -> bool:
         row = await self.get_by_id(auth_user_id, entry_id)
         if not row:
