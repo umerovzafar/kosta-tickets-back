@@ -3,7 +3,8 @@
 Группировки: clients, projects, tasks, team.
 
 Для группировок clients / projects / tasks каждая строка содержит поле `users` —
-список пользователей, вносивших время в этот бакет, с детализацией их часов.
+список пользователей, вносивших время в этот бакет, с детализацией их часов;
+для tasks в строке также `client_id` / `client_name` (клиент справочника задачи).
 Для группировки team каждая строка сама является пользователем.
 """
 
@@ -214,6 +215,9 @@ def _build_row(
         t = tasks_map.get(gid) if gid else None
         row["task_id"] = gid
         row["task_name"] = t.name if t else None
+        row["client_id"] = t.client_id if t else None
+        c = clients_map.get(t.client_id) if (t and t.client_id) else None
+        row["client_name"] = c.name if c else None
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
     else:  # team — строка сама является пользователем
