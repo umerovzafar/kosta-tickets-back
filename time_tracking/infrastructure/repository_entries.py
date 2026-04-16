@@ -164,7 +164,12 @@ class TimeEntryRepository:
                 TimeEntryModel.work_date >= date_from,
                 TimeEntryModel.work_date <= date_to,
             )
-            .order_by(TimeEntryModel.work_date.desc(), TimeEntryModel.id)
+            # Строго хронологически: дата работы → момент создания записи → id (стабильный порядок).
+            .order_by(
+                TimeEntryModel.work_date.asc(),
+                TimeEntryModel.created_at.asc(),
+                TimeEntryModel.id.asc(),
+            )
         )
         r = await self._session.execute(q)
         return list(r.scalars().all())

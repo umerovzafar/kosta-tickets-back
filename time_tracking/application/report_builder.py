@@ -473,7 +473,7 @@ async def build_report_table(
             page_size=page_size,
         )
 
-    # detailed-time
+    # detailed-time — порядок строк всегда хронологический (sort не применяется).
     return await _table_detailed_time(
         session,
         date_from=date_from,
@@ -482,7 +482,6 @@ async def build_report_table(
         project_ids=project_ids,
         client_ids=client_ids,
         include_fixed_fee=include_fixed_fee,
-        sort=sort,
         page=page,
         page_size=page_size,
     )
@@ -502,7 +501,6 @@ async def _table_detailed_time(
     project_ids: list[str] | None,
     client_ids: list[str] | None,
     include_fixed_fee: bool,
-    sort: str,
     page: int,
     page_size: int,
 ) -> dict:
@@ -519,6 +517,8 @@ async def _table_detailed_time(
     - Employee? — «Yes», если пользователь не в архиве в справочнике TT.
     - External Reference URL — пока не хранится; пусто.
     - First Name / Last Name — разбор display_name (первое слово / остаток), иначе локальная часть email.
+
+    Порядок строк всегда хронологический: work_date по возрастанию, затем created_at, затем id.
     """
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
@@ -526,12 +526,17 @@ async def _table_detailed_time(
     count_q = select(func.count()).select_from(TimeEntryModel).where(and_(*cond))
     total_count = int((await session.execute(count_q)).scalar_one() or 0)
 
-    q = select(TimeEntryModel).where(and_(*cond))
-    if sort == "date_desc":
-        q = q.order_by(TimeEntryModel.work_date.desc(), TimeEntryModel.created_at.desc())
-    else:
-        q = q.order_by(TimeEntryModel.work_date.asc(), TimeEntryModel.created_at.asc())
-    q = q.offset((page - 1) * page_size).limit(page_size)
+    q = (
+        select(TimeEntryModel)
+        .where(and_(*cond))
+        .order_by(
+            TimeEntryModel.work_date.asc(),
+            TimeEntryModel.created_at.asc(),
+            TimeEntryModel.id.asc(),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
 
     entries = list((await session.execute(q)).scalars().all())
 

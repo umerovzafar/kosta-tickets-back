@@ -74,6 +74,7 @@ async def list_time_entries(
     date_to: date = Query(..., alias="to"),
     session: AsyncSession = Depends(get_session),
 ) -> list[TimeEntryOut]:
+    """Список записей за период: всегда в хронологическом порядке (work_date ↑, created_at ↑, id ↑)."""
     await _ensure_user(session, auth_user_id)
     if date_to < date_from:
         raise HTTPException(status_code=400, detail="Параметр to не может быть раньше from")

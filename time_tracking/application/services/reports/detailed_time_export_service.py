@@ -15,7 +15,6 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
-    DETAILED_TIME_REPORT_COLUMNS,
     _base_entry_conditions,
     _billable_amount_for_entry,
     _billable_rate_for_entry,
@@ -29,7 +28,7 @@ from application.report_builder import (
     _load_users_map,
     _split_employee_name,
 )
-from application.services.reports._base import _d, _hours, _money, _ZERO, build_response
+from application.services.reports._base import _d, _hours, _money, build_response
 from infrastructure.models import TimeEntryModel
 
 
@@ -44,9 +43,11 @@ async def get_detailed_time_rows(
     task_ids: list[str] | None = None,
     is_billable: bool | None = None,
     include_fixed_fee: bool = True,
-    sort: str = "date_asc",
 ) -> list[dict[str, Any]]:
-    """Вернуть плоские строки детального отчёта по времени (для экспорта и JSON-ответа)."""
+    """Вернуть плоские строки детального отчёта по времени (для экспорта и JSON-ответа).
+
+    Порядок строк всегда хронологический: work_date по возрастанию, затем created_at, затем id.
+    """
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
@@ -55,11 +56,15 @@ async def get_detailed_time_rows(
     if task_ids:
         cond.append(TimeEntryModel.task_id.in_(task_ids))
 
-    q = select(TimeEntryModel).where(and_(*cond))
-    if sort == "date_desc":
-        q = q.order_by(TimeEntryModel.work_date.desc(), TimeEntryModel.created_at.desc())
-    else:
-        q = q.order_by(TimeEntryModel.work_date.asc(), TimeEntryModel.created_at.asc())
+    q = (
+        select(TimeEntryModel)
+        .where(and_(*cond))
+        .order_by(
+            TimeEntryModel.work_date.asc(),
+            TimeEntryModel.created_at.asc(),
+            TimeEntryModel.id.asc(),
+        )
+    )
 
     entries = list((await session.execute(q)).scalars().all())
 
@@ -145,7 +150,6 @@ async def get_detailed_time_report(
     task_ids: list[str] | None = None,
     is_billable: bool | None = None,
     include_fixed_fee: bool = True,
-    sort: str = "date_asc",
     page: int = 1,
     per_page: int = 100,
 ) -> dict:
@@ -160,7 +164,6 @@ async def get_detailed_time_report(
         task_ids=task_ids,
         is_billable=is_billable,
         include_fixed_fee=include_fixed_fee,
-        sort=sort,
     )
     total = len(all_rows)
     start = (page - 1) * per_page

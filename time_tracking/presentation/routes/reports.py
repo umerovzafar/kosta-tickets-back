@@ -155,7 +155,6 @@ async def get_detailed_time_report_endpoint(
     task_id: Optional[str] = Query(None, description="Comma-separated task IDs"),
     is_billable: Optional[str] = Query(None, description="true/false"),
     include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
-    sort: str = Query("date_asc", description="date_asc | date_desc"),
     page: int = Query(1, ge=1),
     per_page: int = Query(100, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
@@ -173,7 +172,6 @@ async def get_detailed_time_report_endpoint(
             task_ids=_parse_ids_str(task_id),
             is_billable=_parse_bool(is_billable),
             include_fixed_fee=include_fixed_fee,
-            sort=sort,
             page=page,
             per_page=per_page,
         )
@@ -197,7 +195,6 @@ async def export_detailed_time_report_endpoint(
     task_id: Optional[str] = Query(None),
     is_billable: Optional[str] = Query(None),
     include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
-    sort: str = Query("date_asc"),
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
@@ -214,7 +211,6 @@ async def export_detailed_time_report_endpoint(
             task_ids=_parse_ids_str(task_id),
             is_billable=_parse_bool(is_billable),
             include_fixed_fee=include_fixed_fee,
-            sort=sort,
         )
         return export_report(rows, format.value, "detailed-time", None, df, dt)
     except HTTPException:
