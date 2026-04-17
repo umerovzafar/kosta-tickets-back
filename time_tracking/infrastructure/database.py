@@ -17,7 +17,8 @@ engine = create_async_engine(
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
-    expire_on_commit=True,
+    # После commit не истечь ORM: иначе row.id / model_validate(row) → MissingGreenlet в async.
+    expire_on_commit=False,
     autocommit=False,
     autoflush=False,
 )
