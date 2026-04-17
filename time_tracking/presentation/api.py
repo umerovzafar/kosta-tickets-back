@@ -24,6 +24,7 @@ from infrastructure.schema_patches import (
     apply_project_currency_patch,
 )
 from presentation.routes import (
+    admin_time_tracking,
     invoices,
     client_contacts,
     client_expense_categories,
@@ -72,6 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(health.router)
+app.include_router(admin_time_tracking.router)
 app.include_router(client_tasks.router)
 app.include_router(client_expense_categories.router)
 app.include_router(client_projects.router)
