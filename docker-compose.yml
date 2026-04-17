@@ -355,9 +355,6 @@ services:
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
-      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
-      # Как у расходов: по умолчанию true в dev/LAN; в проде в .env задайте false.
-      - TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=${TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET:-true}
     healthcheck:
       test:
         [

@@ -5,7 +5,6 @@ from infrastructure.config import get_settings
 from presentation.middleware.security_headers import SecurityHeadersMiddleware
 from presentation.middleware.time_tracking_clients_rewrite import TimeTrackingClientsPathRewriteMiddleware
 from presentation.routes import (
-    admin_time_tracking_reset,
     desktop_backgrounds_public,
     spa_auth_callback,
     health,
@@ -86,7 +85,6 @@ app.include_router(health.router)
 app.include_router(desktop_backgrounds_public.router)
 app.include_router(auth_azure.router)
 app.include_router(auth_admin.router)
-app.include_router(admin_time_tracking_reset.router)
 app.include_router(users.router)
 app.include_router(time_tracking_users_hourly_alias.router)
 app.include_router(tickets.router)

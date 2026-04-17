@@ -198,36 +198,6 @@
       });
     },
 
-    /** Только «Главный администратор». Тело: { confirm: 'RESET_TIME_TRACKING_BUSINESS_DATA' } */
-    resetTimeTrackingBusinessData: function () {
-      return apiFetch('/api/v1/admin/time-tracking/business-data/reset', {
-        method: 'POST',
-        body: { confirm: 'RESET_TIME_TRACKING_BUSINESS_DATA' }
-      }).then(function (r) {
-        if (r.status === 401) {
-          clearToken();
-          window.location.href = 'index.html';
-          return Promise.reject(new Error('Unauthorized'));
-        }
-        if (r.status === 403) {
-          return r.json().catch(function () { return {}; }).then(function (e) {
-            throw new Error(e.detail || 'Доступ запрещён — только главный администратор');
-          });
-        }
-        if (r.status === 409) {
-          return r.json().catch(function () { return {}; }).then(function (e) {
-            throw new Error(e.detail || 'Сброс отключён на сервере (TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET)');
-          });
-        }
-        if (!r.ok) {
-          return r.json().catch(function () { return {}; }).then(function (e) {
-            throw new Error(e.detail || e.message || 'Ошибка сброса данных учёта времени');
-          });
-        }
-        return r.json();
-      });
-    },
-
     loadUsers: function () {
       return apiFetch('/api/v1/users?include_archived=false').then(function (r) {
         if (r.status === 401) {
@@ -363,7 +333,6 @@
         { id: 'dashboard', href: 'dashboard.html', label: 'Дашборд' },
         { id: 'users', href: 'users.html', label: 'Пользователи' },
         { id: 'expenses-db', href: 'expenses-db.html', label: 'База расходов' },
-        { id: 'time-tracking-reset', href: 'time-tracking-reset.html', label: 'Сброс учёта времени' },
         { id: 'hikvision', href: 'hikvision.html', label: 'Камеры Hikvision' }
       ];
       nav.innerHTML = items.map(function (item) {
