@@ -45,7 +45,11 @@ async def reset_time_tracking_business_data(
     if not settings.time_tracking_allow_business_data_reset:
         raise HTTPException(
             status_code=409,
-            detail="Сброс отключён (TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=false).",
+            detail=(
+                "Сброс отключён: для сервиса time_tracking задайте TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=true "
+                "в .env / Portainer и перезапустите контейнер time_tracking. "
+                "Если в .env явно указано false — удалите строку или поставьте true."
+            ),
         )
     if (body.confirm or "").strip() != _RESET_CONFIRM:
         raise HTTPException(

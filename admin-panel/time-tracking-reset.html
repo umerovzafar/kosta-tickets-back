@@ -52,8 +52,9 @@
           <h3>Опасная зона</h3>
           <ul>
             <li>Действие необратимо. При необходимости сделайте резервную копию БД <code>kosta_time_tracking</code>.</li>
-            <li>На сервере в compose для сервиса <code>time_tracking</code> должно быть
-              <code>TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=true</code> (по умолчанию выключено).</li>
+            <li>В Docker из этого репозитория по умолчанию сброс <strong>разрешён</strong> (см. <code>docker-compose.yml</code>).
+              Если видите ошибку 409 — в Portainer/.env для сервиса <code>time_tracking</code> задайте
+              <code>TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=true</code> или уберите строку со значением <code>false</code>, затем перезапустите контейнер <code>time_tracking</code>.</li>
           </ul>
           <p style="margin:1rem 0 0;font-size:0.84rem;color:#64748b;">
             Подтверждение в диалоге и фраза <code>RESET_TIME_TRACKING_BUSINESS_DATA</code>.

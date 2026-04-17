@@ -21,7 +21,7 @@
     var role = (me && me.role) || '';
     if (role === 'Главный администратор') {
       btn.disabled = false;
-      show(info, 'Вы вошли как главный администратор. Перед сбросом включите TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=true для сервиса time_tracking.');
+      show(info, 'Вы вошли как главный администратор. Если сброс вернёт 409 — в окружении контейнера time_tracking должно быть TIME_TRACKING_ALLOW_BUSINESS_DATA_RESET=true (в актуальном compose по умолчанию уже так).');
     } else {
       show(err, 'Сброс доступен только главному администратору.');
     }
