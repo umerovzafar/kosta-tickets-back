@@ -1,4 +1,12 @@
 (function () {
+  function _isPrivateLanHost(hostname) {
+    if (!hostname) return false;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return false;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    return /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+  }
+
   var API_BASE = (function () {
     var cfg =
       typeof window.ADMIN_API_BASE !== 'undefined' && window.ADMIN_API_BASE !== null
@@ -12,9 +20,19 @@
       typeof window.ADMIN_GATEWAY_PORT !== 'undefined' && window.ADMIN_GATEWAY_PORT != null
         ? String(window.ADMIN_GATEWAY_PORT).trim()
         : '1234';
+    var proto = o.protocol;
+    var host = o.hostname;
+    // Уже открыт сам gateway (редко) — API на том же origin.
+    if (port === gwPort) {
+      return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
+    }
     // Контейнер admin-panel (:80→8080/8081) ≠ gateway (:1234): иначе POST /api попадает в nginx статики → 405.
     if (port === '8080' || port === '8081') {
-      return o.protocol + '//' + o.hostname + ':' + gwPort;
+      return proto + '//' + host + ':' + gwPort;
+    }
+    // LAN: админка на IP с любым портом (80, 9000, …), gateway на том же хосте :1234.
+    if (_isPrivateLanHost(host)) {
+      return proto + '//' + host + ':' + gwPort;
     }
     // Прод: один домен, nginx проксирует /api на gateway.
     return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
