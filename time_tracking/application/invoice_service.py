@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from application.report_builder import _billable_amount_for_entry, _fetch_expense_report_data, _load_user_rates
 from application.report_builder import _d as dec
@@ -490,6 +491,8 @@ async def register_payment(
     await session.flush()
     inv.amount_paid = await repo.sum_payments(inv.id)
     _sync_payment_status(inv)
+    flag_modified(inv, "amount_paid")
+    flag_modified(inv, "status")
     inv.updated_at = _now_utc()
     await _audit(
         session,

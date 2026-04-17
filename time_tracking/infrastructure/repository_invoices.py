@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,23 @@ from infrastructure.models_invoices import (
     InvoicePaymentModel,
 )
 from infrastructure.repository_shared import _now_utc
+
+_Q4 = Decimal("0.0001")
+
+
+def _m4(v: Decimal) -> Decimal:
+    return v.quantize(_Q4, rounding=ROUND_HALF_UP)
+
+
+def _sync_orm_payment_status(inv: InvoiceModel) -> None:
+    """Согласовать status с amount_paid/total (как application._sync_payment_status)."""
+    if inv.status in ("canceled", "draft"):
+        return
+    bal = _m4(inv.total_amount - inv.amount_paid)
+    if inv.total_amount > 0 and bal <= 0:
+        inv.status = "paid"
+    elif inv.amount_paid > 0:
+        inv.status = "partial_paid"
 
 
 class InvoiceRepository:
@@ -52,6 +69,13 @@ class InvoiceRepository:
         )
         return (await self._s.execute(q)).scalar_one_or_none()
 
+    def _sum_payments_scalar_subq(self):
+        return (
+            select(func.coalesce(func.sum(InvoicePaymentModel.amount), 0))
+            .where(InvoicePaymentModel.invoice_id == InvoiceModel.id)
+            .scalar_subquery()
+        )
+
     async def list_invoices(
         self,
         *,
@@ -69,13 +93,37 @@ class InvoiceRepository:
         if project_id:
             q = q.where(InvoiceModel.project_id == project_id)
         if status:
+            sum_paid_sq = self._sum_payments_scalar_subq()
             if status == "overdue":
                 today = date.today()
                 q = q.where(
                     and_(
                         InvoiceModel.status.in_(("sent", "viewed", "partial_paid")),
                         InvoiceModel.due_date < today,
-                        InvoiceModel.amount_paid < InvoiceModel.total_amount,
+                        sum_paid_sq < InvoiceModel.total_amount,
+                    )
+                )
+            elif status == "paid":
+                q = q.where(
+                    or_(
+                        InvoiceModel.status == "paid",
+                        and_(
+                            InvoiceModel.status.notin_(("canceled", "draft")),
+                            InvoiceModel.total_amount > 0,
+                            sum_paid_sq >= InvoiceModel.total_amount,
+                        ),
+                    )
+                )
+            elif status == "partial_paid":
+                q = q.where(
+                    or_(
+                        InvoiceModel.status == "partial_paid",
+                        and_(
+                            InvoiceModel.status.notin_(("canceled", "draft")),
+                            InvoiceModel.total_amount > 0,
+                            sum_paid_sq > 0,
+                            sum_paid_sq < InvoiceModel.total_amount,
+                        ),
                     )
                 )
             else:
@@ -85,7 +133,35 @@ class InvoiceRepository:
         if date_to:
             q = q.where(InvoiceModel.issue_date <= date_to)
         q = q.limit(min(limit, 500)).offset(offset)
-        return list((await self._s.execute(q)).scalars().all())
+        rows = list((await self._s.execute(q)).scalars().all())
+        await self._apply_batch_payment_totals(rows)
+        return rows
+
+    async def sum_payments_batch(self, invoice_ids: list[str]) -> dict[str, Decimal]:
+        if not invoice_ids:
+            return {}
+        q = (
+            select(
+                InvoicePaymentModel.invoice_id,
+                func.coalesce(func.sum(InvoicePaymentModel.amount), 0),
+            )
+            .where(InvoicePaymentModel.invoice_id.in_(invoice_ids))
+            .group_by(InvoicePaymentModel.invoice_id)
+        )
+        raw = (await self._s.execute(q)).all()
+        return {str(r[0]): _m4(Decimal(str(r[1]))) for r in raw}
+
+    async def _apply_batch_payment_totals(self, rows: list[InvoiceModel]) -> None:
+        if not rows:
+            return
+        sums = await self.sum_payments_batch([r.id for r in rows])
+        for inv in rows:
+            inv.amount_paid = sums.get(inv.id, Decimal(0))
+            _sync_orm_payment_status(inv)
+
+    async def reconcile_paid_fields(self, inv: InvoiceModel) -> None:
+        inv.amount_paid = _m4(await self.sum_payments(inv.id))
+        _sync_orm_payment_status(inv)
 
     async def time_entry_on_active_invoice(
         self, time_entry_id: str, exclude_invoice_id: str | None = None

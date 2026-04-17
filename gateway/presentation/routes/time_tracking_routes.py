@@ -1155,11 +1155,12 @@ async def invoices_add_payment(
         body: dict = {}
     else:
         try:
-            body = json.loads(raw.decode("utf-8"))
+            parsed = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
-        if not isinstance(body, dict):
-            raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+            raise HTTPException(status_code=400, detail="Некорректный JSON тела запроса") from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="Тело запроса должно быть JSON-объектом")
+        body = parsed
     return await _tt_json(
         "POST",
         f"/invoices/{invoice_id}/payments",

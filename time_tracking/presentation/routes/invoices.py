@@ -148,9 +148,11 @@ async def get_invoice(
     session: AsyncSession = Depends(get_session),
     include_payments: bool = Query(True, alias="includePayments"),
 ):
-    inv = await InvoiceRepository(session).get_with_children(invoice_id)
+    repo = InvoiceRepository(session)
+    inv = await repo.get_with_children(invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Счёт не найден")
+    await repo.reconcile_paid_fields(inv)
     return invoice_to_dict(inv, include_lines=True, include_payments=include_payments)
 
 
