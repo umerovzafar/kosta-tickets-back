@@ -1,12 +1,21 @@
 """Эндпоинты модуля отчётов time_tracking.
 
-GET /reports/time/{group_by}          — time report (clients/projects/tasks/team)
-GET /reports/time/{group_by}/export   — экспорт (csv/xlsx)
-GET /reports/expenses/{group_by}      — expense report (clients/projects/categories/team)
+Все отчёты с данными по периоду принимают диапазон дат (обязательно):
+
+- ``from`` / ``to`` — YYYY-MM-DD, **или**
+- ``dateFrom`` / ``dateTo`` — то же в camelCase (удобно для фронта; ``from`` — зарезервировано в JS).
+
+Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
+
+GET /reports/time/detailed              — детальный отчёт по времени
+GET /reports/time/detailed/export
+GET /reports/time/{group_by}            — time report (clients/projects/tasks/team)
+GET /reports/time/{group_by}/export
+GET /reports/expenses/{group_by}        — expense report
 GET /reports/expenses/{group_by}/export
-GET /reports/uninvoiced               — uninvoiced report
+GET /reports/uninvoiced
 GET /reports/uninvoiced/export
-GET /reports/project-budget           — project budget report
+GET /reports/project-budget
 GET /reports/project-budget/export
 GET /reports/meta
 GET /reports/users-for-filter
@@ -17,7 +26,7 @@ from __future__ import annotations
 import logging
 import traceback
 from datetime import date
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,6 +83,49 @@ def _parse_date(v: str | None, name: str) -> date:
         return date.fromisoformat(str(v).strip()[:10])
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid date for {name}: {v}")
+
+
+def _report_period(
+    frm: str | None = Query(
+        None,
+        alias="from",
+        description="Начало периода YYYY-MM-DD (можно вместо этого передать dateFrom)",
+    ),
+    to_q: str | None = Query(
+        None,
+        alias="to",
+        description="Конец периода YYYY-MM-DD включительно (можно вместо этого передать dateTo)",
+    ),
+    date_from: str | None = Query(
+        None,
+        alias="dateFrom",
+        description="Начало периода YYYY-MM-DD (альтернатива параметру from)",
+    ),
+    date_to: str | None = Query(
+        None,
+        alias="dateTo",
+        description="Конец периода YYYY-MM-DD включительно (альтернатива параметру to)",
+    ),
+) -> tuple[date, date]:
+    """Диапазон дат для всех отчётов: допустимы пары (from, to) или (dateFrom, dateTo)."""
+    start_raw = (date_from or frm or "").strip()
+    end_raw = (date_to or to_q or "").strip()
+    if not start_raw or not end_raw:
+        raise HTTPException(
+            status_code=400,
+            detail="Укажите период: from и to (YYYY-MM-DD) или dateFrom и dateTo.",
+        )
+    d0 = _parse_date(start_raw, "from")
+    d1 = _parse_date(end_raw, "to")
+    if d1 < d0:
+        raise HTTPException(
+            status_code=400,
+            detail="Конец периода (to / dateTo) не может быть раньше начала (from / dateFrom).",
+        )
+    return d0, d1
+
+
+ReportPeriod = Annotated[tuple[date, date], Depends(_report_period)]
 
 
 def _parse_ids_int(raw: str | None) -> list[int] | None:
@@ -147,8 +199,7 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
     summary="Detailed time report — one row per time entry (23 columns)",
 )
 async def get_detailed_time_report_endpoint(
-    from_date: str = Query(..., alias="from", description="Start date YYYY-MM-DD"),
-    to_date: str = Query(..., alias="to", description="End date YYYY-MM-DD"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None, description="Comma-separated client IDs"),
     project_id: Optional[str] = Query(None, description="Comma-separated project IDs"),
     user_id: Optional[str] = Query(None, description="Comma-separated user IDs (int)"),
@@ -159,8 +210,7 @@ async def get_detailed_time_report_endpoint(
     per_page: int = Query(100, ge=1, le=1000),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         return await get_detailed_time_report(
             session,
@@ -187,8 +237,7 @@ async def get_detailed_time_report_endpoint(
     summary="Export detailed time report as CSV or XLSX (23 columns, one row per entry)",
 )
 async def export_detailed_time_report_endpoint(
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -198,8 +247,7 @@ async def export_detailed_time_report_endpoint(
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         rows = await get_detailed_time_rows(
             session,
@@ -232,8 +280,7 @@ async def export_detailed_time_report_endpoint(
 )
 async def get_time_report_endpoint(
     group_by: TimeGroupBy,
-    from_date: str = Query(..., alias="from", description="Start date YYYY-MM-DD"),
-    to_date: str = Query(..., alias="to", description="End date YYYY-MM-DD"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None, description="Comma-separated client IDs"),
     project_id: Optional[str] = Query(None, description="Comma-separated project IDs"),
     user_id: Optional[str] = Query(None, description="Comma-separated user IDs (int)"),
@@ -244,8 +291,7 @@ async def get_time_report_endpoint(
     per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         return await get_time_report(
             session,
@@ -274,8 +320,7 @@ async def get_time_report_endpoint(
 )
 async def export_time_report_endpoint(
     group_by: TimeGroupBy,
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -285,8 +330,7 @@ async def export_time_report_endpoint(
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         rows = await get_time_report_all_rows(
             session,
@@ -320,8 +364,7 @@ async def export_time_report_endpoint(
 )
 async def get_expense_report_endpoint(
     group_by: ExpenseGroupBy,
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -329,8 +372,7 @@ async def get_expense_report_endpoint(
     per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         return await get_expense_report(
             session,
@@ -356,16 +398,14 @@ async def get_expense_report_endpoint(
 )
 async def export_expense_report_endpoint(
     group_by: ExpenseGroupBy,
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         rows = await get_expense_report_all_rows(
             session,
@@ -395,8 +435,7 @@ async def export_expense_report_endpoint(
     summary="Uninvoiced hours and expenses report",
 )
 async def get_uninvoiced_report_endpoint(
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -405,8 +444,7 @@ async def get_uninvoiced_report_endpoint(
     per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         return await get_uninvoiced_report(
             session,
@@ -431,8 +469,7 @@ async def get_uninvoiced_report_endpoint(
     summary="Export uninvoiced report as CSV or XLSX",
 )
 async def export_uninvoiced_report_endpoint(
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -440,8 +477,7 @@ async def export_uninvoiced_report_endpoint(
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         rows = await get_uninvoiced_report_all_rows(
             session,
@@ -471,8 +507,7 @@ async def export_uninvoiced_report_endpoint(
     summary="Project budget report with budget_spent and budget_remaining",
 )
 async def get_budget_report_endpoint(
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -481,8 +516,7 @@ async def get_budget_report_endpoint(
     per_page: int = Query(100, ge=1, le=500),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         return await get_budget_report(
             session,
@@ -507,8 +541,7 @@ async def get_budget_report_endpoint(
     summary="Export project budget report as CSV or XLSX",
 )
 async def export_budget_report_endpoint(
-    from_date: str = Query(..., alias="from"),
-    to_date: str = Query(..., alias="to"),
+    period: ReportPeriod,
     client_id: Optional[str] = Query(None),
     project_id: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
@@ -516,8 +549,7 @@ async def export_budget_report_endpoint(
     format: ExportFormat = Query(ExportFormat.csv),
     session: AsyncSession = Depends(get_session),
 ):
-    df = _parse_date(from_date, "from")
-    dt = _parse_date(to_date, "to")
+    df, dt = period
     try:
         rows = await get_budget_report_all_rows(
             session,
