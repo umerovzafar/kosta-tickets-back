@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.invoice_service import (
@@ -218,10 +219,21 @@ async def mark_viewed_route(
 @router.post("/{invoice_id}/payments")
 async def add_payment_route(
     invoice_id: str,
-    body: InvoicePaymentBody,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     actor: int = Depends(_actor),
 ):
+    raw = await request.body()
+    if not raw.strip():
+        payload: dict[str, Any] = {}
+    else:
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=400, detail="Некорректный JSON тела запроса") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Тело запроса должно быть JSON-объектом")
+    body = InvoicePaymentBody.model_validate(payload)
     inv = await InvoiceRepository(session).get_with_children(invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Счёт не найден")

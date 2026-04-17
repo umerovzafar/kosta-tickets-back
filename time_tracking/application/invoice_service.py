@@ -454,8 +454,8 @@ async def register_payment(
     inv: InvoiceModel,
     *,
     actor_auth_user_id: int,
-    amount: Decimal,
-    paid_at: datetime,
+    amount: Decimal | None,
+    paid_at: datetime | None,
     payment_method: str | None,
     note: str | None,
 ) -> InvoiceModel:
@@ -463,9 +463,16 @@ async def register_payment(
         raise HTTPException(status_code=400, detail="Нельзя принять оплату по отменённому счёту")
     if inv.status == "draft":
         raise HTTPException(status_code=400, detail="Сначала отправьте счёт")
-    amt = _money4(amount)
+    remaining = _money4(inv.total_amount - inv.amount_paid)
+    if amount is None:
+        amt = remaining
+    else:
+        amt = _money4(amount)
     if amt <= 0:
+        if remaining <= 0:
+            raise HTTPException(status_code=400, detail="Счёт уже полностью оплачен")
         raise HTTPException(status_code=400, detail="Сумма оплаты должна быть больше нуля")
+    when = paid_at if paid_at is not None else _now_utc()
     repo = InvoiceRepository(session)
     pid = str(uuid.uuid4())
     repo.add_payment(
@@ -476,7 +483,7 @@ async def register_payment(
             payment_method=(payment_method or "")[:64] or None,
             note=note,
             recorded_by_auth_user_id=actor_auth_user_id,
-            paid_at=paid_at if paid_at.tzinfo else paid_at.replace(tzinfo=timezone.utc),
+            paid_at=when if when.tzinfo else when.replace(tzinfo=timezone.utc),
             created_at=_now_utc(),
         )
     )

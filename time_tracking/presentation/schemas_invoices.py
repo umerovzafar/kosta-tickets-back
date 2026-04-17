@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class InvoiceLineCreateSpec(BaseModel):
@@ -56,7 +56,26 @@ class InvoicePatchBody(BaseModel):
 class InvoicePaymentBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    amount: Decimal
-    paid_at: datetime = Field(..., alias="paidAt")
+    amount: Optional[Decimal] = None
+    paid_at: Optional[datetime] = Field(None, alias="paidAt")
     payment_method: Optional[str] = Field(None, alias="paymentMethod")
     note: Optional[str] = None
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _normalize_amount(cls, v: Any) -> Any:
+        if v is None or isinstance(v, (int, float, Decimal)):
+            return v
+        if isinstance(v, str):
+            s = v.strip().replace(" ", "").replace("\u00a0", "")
+            if not s:
+                return None
+            if "," in s and "." not in s:
+                s = s.replace(",", ".")
+            elif "," in s and "." in s:
+                if s.rfind(",") > s.rfind("."):
+                    s = s.replace(".", "").replace(",", ".")
+                else:
+                    s = s.replace(",", "")
+            return s
+        return v
