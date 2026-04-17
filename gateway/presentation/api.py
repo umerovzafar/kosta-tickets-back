@@ -68,7 +68,7 @@ origins = _cors_origins()
 _settings = get_settings()
 _cors_regex = _CORS_PRIVATE_ORIGIN_REGEX if _settings.cors_allow_private_network else None
 
-# Первым в цепочке: nginx иногда отдаёт /api/v1/clients/... без /time-tracking — иначе 404 на вложенных путях.
+# Первым у приложения: нормализация /api/v1/clients/... и /api/v1/time_tracking/... → /api/v1/time-tracking/...
 app.add_middleware(TimeTrackingClientsPathRewriteMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(

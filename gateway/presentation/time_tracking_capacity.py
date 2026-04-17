@@ -24,8 +24,19 @@ async def fetch_weekly_capacity_hours(auth_user_id: int) -> Optional[float]:
         return None
     if r.status_code != 200:
         return None
-    data = r.json()
-    return float(data["weekly_capacity_hours"])
+    try:
+        data = r.json()
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw = data.get("weekly_capacity_hours")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 async def merge_weekly_capacity_into_user(user: dict[str, Any]) -> dict[str, Any]:

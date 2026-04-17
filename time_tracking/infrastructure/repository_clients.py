@@ -92,6 +92,8 @@ class ClientRepository:
             updated_at=None,
         )
         self._session.add(row)
+        # Иначе последующие INSERT (категории расходов, задачи) падают по FK: клиент ещё не в БД до flush/commit.
+        await self._session.flush()
         return row
 
     async def update(self, client_id: str, patch: dict[str, Any]) -> TimeManagerClientModel | None:
