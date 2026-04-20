@@ -58,13 +58,14 @@ async def get_time_report(
     if task_ids:
         cond.append(TimeEntryModel.task_id.in_(task_ids))
 
+    # Сводный отчёт по времени — всё по округлённым часам (как в счетах и бюджете).
     entries_q = select(
         TimeEntryModel.id,
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.task_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.hours,
+        TimeEntryModel.rounded_hours.label("hours"),
         TimeEntryModel.is_billable,
         TimeEntryModel.created_at,
     ).where(and_(*cond))

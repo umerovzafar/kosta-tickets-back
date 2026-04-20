@@ -44,12 +44,13 @@ async def get_uninvoiced_report(
     )
     all_cond.append(TimeEntryModel.is_billable.is_(True))
 
+    # Uninvoiced всегда считается по округлённым часам (как в счетах).
     all_entries_q = select(
         TimeEntryModel.id,
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.hours,
+        TimeEntryModel.rounded_hours.label("hours"),
     ).where(and_(*all_cond))
     all_entries = (await session.execute(all_entries_q)).all()
 
@@ -65,7 +66,7 @@ async def get_uninvoiced_report(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.hours,
+        TimeEntryModel.rounded_hours.label("hours"),
     ).where(and_(*uninv_cond))
     uninv_entries = (await session.execute(uninv_entries_q)).all()
 

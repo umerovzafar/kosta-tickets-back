@@ -333,6 +333,7 @@
         { id: 'dashboard', href: 'dashboard.html', label: 'Дашборд' },
         { id: 'users', href: 'users.html', label: 'Пользователи' },
         { id: 'expenses-db', href: 'expenses-db.html', label: 'База расходов' },
+        { id: 'tt-rounding', href: 'time-tracking-settings.html', label: 'Учёт времени: округление' },
         { id: 'hikvision', href: 'hikvision.html', label: 'Камеры Hikvision' }
       ];
       nav.innerHTML = items.map(function (item) {

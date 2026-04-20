@@ -65,11 +65,12 @@ async def get_budget_report(
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, target_pids, client_ids, True,
     )
+    # Бюджет проекта считается по округлённым часам (согласовано со счетами и отчётами).
     entries_q = select(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.hours,
+        TimeEntryModel.rounded_hours.label("hours"),
         TimeEntryModel.is_billable,
     ).where(and_(*cond))
     entries = (await session.execute(entries_q)).all()

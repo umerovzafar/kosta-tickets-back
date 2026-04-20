@@ -82,7 +82,8 @@ async def build_client_project_dashboard(
     user_cost: defaultdict[int, Decimal] = defaultdict(lambda: Decimal(0))
 
     for e in entries:
-        h = _d(e.hours)
+        # Дашборд считает суммы и биллинг по округлённым часам (согласовано со счетами/отчётами).
+        h = _d(e.rounded_hours)
         uid = e.auth_user_id
         tid = (
             str(e.task_id)

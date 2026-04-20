@@ -546,3 +546,87 @@ async def apply_project_currency_patch(conn: AsyncConnection) -> None:
         "time_tracking_client_projects",
         ("currency VARCHAR(10) NOT NULL DEFAULT 'USD'",),
     )
+
+
+async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) -> None:
+    """Добавить duration_seconds (источник истины) и rounded_hours (сводные/биллинг)."""
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+                ADD COLUMN IF NOT EXISTS duration_seconds INTEGER
+            """
+        )
+    )
+    # Бэкфилл из hours (NUMERIC(16,6)) → секунды (integer). ROUND HALF_UP на стороне Postgres (ROUND halves away from zero).
+    await conn.execute(
+        text(
+            """
+            UPDATE time_tracking_entries
+            SET duration_seconds = ROUND(hours * 3600)::INTEGER
+            WHERE duration_seconds IS NULL
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+                ALTER COLUMN duration_seconds SET NOT NULL
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+                ADD COLUMN IF NOT EXISTS rounded_hours NUMERIC(16, 6)
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            UPDATE time_tracking_entries
+            SET rounded_hours = hours
+            WHERE rounded_hours IS NULL
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_entries
+                ALTER COLUMN rounded_hours SET NOT NULL
+            """
+        )
+    )
+
+
+async def apply_time_tracking_settings_patch(conn: AsyncConnection) -> None:
+    """Глобальные настройки округления. Одна строка id=1 с дефолтом (up, 15 мин, enabled)."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_settings (
+                id INTEGER PRIMARY KEY,
+                rounding_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                rounding_mode VARCHAR(16) NOT NULL DEFAULT 'up',
+                rounding_step_minutes INTEGER NOT NULL DEFAULT 15,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO time_tracking_settings (
+                id, rounding_enabled, rounding_mode, rounding_step_minutes, created_at
+            )
+            VALUES (1, TRUE, 'up', 15, now())
+            ON CONFLICT (id) DO NOTHING
+            """
+        )
+    )

@@ -134,12 +134,17 @@ class TeamWorkloadOut(BaseModel):
 
 
 class TimeEntryOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: str
     auth_user_id: int
     work_date: date
+    # Источник истины — целое число секунд (устраняет «1 секунду» на round-trip).
+    duration_seconds: int = Field(..., alias="durationSeconds")
+    # Фактические часы (для детальных экранов/экспорта).
     hours: Decimal
+    # Округлённые часы (для сводных отчётов и счетов).
+    rounded_hours: Decimal = Field(..., alias="roundedHours")
     is_billable: bool
     project_id: Optional[str] = None
     task_id: Optional[str] = None
@@ -149,14 +154,24 @@ class TimeEntryOut(BaseModel):
 
 
 class TimeEntryCreateBody(BaseModel):
-    """Тело POST; camelCase как на фронте (через gateway)."""
+    """Тело POST; camelCase как на фронте (через gateway).
+
+    Фронт должен присылать `durationSeconds` (источник истины). `hours` оставлено для обратной
+    совместимости: если прислали только его, сервер сам посчитает секунды (round HALF_UP).
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
     work_date: date = Field(..., alias="workDate")
-    hours: Decimal = Field(
-        ...,
-        description="Длительность в часах (дробь); до 6 знаков после запятой, напр. 10 с ≈ 0.002778",
+    duration_seconds: Optional[int] = Field(
+        None,
+        alias="durationSeconds",
+        ge=1,
+        description="Длительность в секундах (канон). Приоритетнее hours.",
+    )
+    hours: Optional[Decimal] = Field(
+        None,
+        description="Длительность в часах (обратная совместимость). Если передано, seconds = round(hours*3600).",
     )
     is_billable: bool = Field(True, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
@@ -168,6 +183,7 @@ class TimeEntryPatchBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     work_date: Optional[date] = Field(None, alias="workDate")
+    duration_seconds: Optional[int] = Field(None, alias="durationSeconds", ge=1)
     hours: Optional[Decimal] = None
     is_billable: Optional[bool] = Field(None, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
@@ -483,6 +499,31 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     )
     fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
     is_archived: Optional[bool] = Field(None, alias="isArchived")
+
+
+class RoundingMode(str, Enum):
+    up = "up"
+    nearest = "nearest"
+
+
+class RoundingSettingsOut(BaseModel):
+    """Глобальные настройки округления учёта времени."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    rounding_enabled: bool = Field(..., alias="roundingEnabled")
+    rounding_mode: RoundingMode = Field(..., alias="roundingMode")
+    rounding_step_minutes: int = Field(..., alias="roundingStepMinutes", ge=1, le=60)
+
+
+class RoundingSettingsPutBody(BaseModel):
+    """Тело PUT; все поля обязательны."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    rounding_enabled: bool = Field(..., alias="roundingEnabled")
+    rounding_mode: RoundingMode = Field(..., alias="roundingMode")
+    rounding_step_minutes: int = Field(..., alias="roundingStepMinutes", ge=1, le=60)
 
 
 class TimeManagerClientProjectCodeHintOut(BaseModel):

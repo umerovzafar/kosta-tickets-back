@@ -100,6 +100,7 @@ async def create_time_entry(
             entry_id=str(uuid.uuid4()),
             auth_user_id=auth_user_id,
             work_date=body.work_date,
+            duration_seconds=body.duration_seconds,
             hours=body.hours,
             is_billable=is_billable,
             project_id=project_id,

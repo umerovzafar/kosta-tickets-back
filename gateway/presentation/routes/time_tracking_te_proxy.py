@@ -20,10 +20,13 @@ def _base() -> str:
 
 
 class TimeEntryCreateBody(BaseModel):
+    """Фронт шлёт `durationSeconds` (источник истины). `hours` — для обратной совместимости."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     work_date: date = Field(..., alias="workDate")
-    hours: Decimal
+    duration_seconds: Optional[int] = Field(None, alias="durationSeconds", ge=1)
+    hours: Optional[Decimal] = None
     is_billable: bool = Field(True, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
@@ -34,6 +37,7 @@ class TimeEntryPatchBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     work_date: Optional[date] = Field(None, alias="workDate")
+    duration_seconds: Optional[int] = Field(None, alias="durationSeconds", ge=1)
     hours: Optional[Decimal] = None
     is_billable: Optional[bool] = Field(None, alias="isBillable")
     project_id: Optional[str] = Field(None, alias="projectId")
