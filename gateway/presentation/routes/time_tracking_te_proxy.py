@@ -31,6 +31,11 @@ class TimeEntryCreateBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
+    billable_fx_as_of: Optional[date] = Field(
+        None,
+        alias="billableFxAsOf",
+        description="Дата курса ЦБ (например закрытие недели), иначе курс на work_date.",
+    )
 
 
 class TimeEntryPatchBody(BaseModel):
@@ -43,6 +48,7 @@ class TimeEntryPatchBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
+    billable_fx_as_of: Optional[date] = Field(None, alias="billableFxAsOf")
 
 
 async def time_entries_list_gateway(auth_user_id: int, request: Request) -> Any:

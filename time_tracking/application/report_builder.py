@@ -259,6 +259,20 @@ def _billable_amount_for_entry(
     return (hours * _d(rate.amount)).quantize(_Q2, rounding=ROUND_HALF_UP), rate.currency or "USD"
 
 
+def billable_amount_from_entry(
+    entry: TimeEntryModel,
+    hours: Decimal,
+    work_date: date,
+    user_rates: list[UserHourlyRateModel] | None,
+) -> tuple[Decimal, str]:
+    """Billable в валюте проекта: из снимка на записи или fallback (старая логика без FX)."""
+    if getattr(entry, "fx_rate_source", None) == "CBU_UNAVAILABLE":
+        return Decimal(0), (entry.billable_currency or "USD")
+    if entry.billable_amount is not None and entry.billable_currency:
+        return _d(entry.billable_amount), entry.billable_currency
+    return _billable_amount_for_entry(hours, entry.is_billable, work_date, user_rates)
+
+
 # ---------------------------------------------------------------------------
 # Cross-service: expense data
 # ---------------------------------------------------------------------------
@@ -351,14 +365,9 @@ async def build_report_summary(
         exclude_invoiced_time=(report_type == "uninvoiced"),
     )
 
-    # Сводные KPI и деньги — по фактическим часам (duration уже кратен минуте).
-    entries_q = select(
-        TimeEntryModel.auth_user_id,
-        TimeEntryModel.work_date,
-        TimeEntryModel.hours,
-        TimeEntryModel.is_billable,
-    ).where(and_(*cond))
-    entries = (await session.execute(entries_q)).all()
+    # Сводные KPI и деньги — по фактическим часам; billable в валюте проекта (снимок на записи).
+    entries_q = select(TimeEntryModel).where(and_(*cond))
+    entries = list((await session.execute(entries_q)).scalars().all())
 
     rates_map = await _load_user_rates(session, user_ids)
 
@@ -375,8 +384,8 @@ async def build_report_summary(
         line_count += 1
         if e.is_billable:
             billable += h
-            amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id),
+            amt, cur = billable_amount_from_entry(
+                e, h, e.work_date, rates_map.get(e.auth_user_id),
             )
             billable_amount += amt
             if cur != "USD":
@@ -559,8 +568,8 @@ async def _table_detailed_time(
         c = clients.get(p.client_id) if p else None
         t = tasks.get(e.task_id) if e.task_id else None
         hrs = _d(e.hours)
-        bill_amt, bill_cur = _billable_amount_for_entry(
-            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
+        bill_amt, bill_cur = billable_amount_from_entry(
+            e, hrs, e.work_date, rates_map.get(e.auth_user_id),
         )
         bill_rate, bill_rate_cur = _billable_rate_for_entry(
             e.work_date, rates_map.get(e.auth_user_id),
@@ -668,16 +677,9 @@ async def _table_aggregated(
     if report_type == "uninvoiced":
         cond.append(TimeEntryModel.is_billable.is_(True))
 
-    # Агрегаты сводных отчётов — по фактическим часам (minute-квант).
-    entries_q = select(
-        TimeEntryModel.auth_user_id,
-        TimeEntryModel.project_id,
-        TimeEntryModel.task_id,
-        TimeEntryModel.work_date,
-        TimeEntryModel.hours,
-        TimeEntryModel.is_billable,
-    ).where(and_(*cond))
-    entries = (await session.execute(entries_q)).all()
+    # Агрегаты сводных отчётов — billable в валюте проекта.
+    entries_q = select(TimeEntryModel).where(and_(*cond))
+    entries = list((await session.execute(entries_q)).scalars().all())
 
     users_map = await _load_users_map(session)
     projects_map = await _load_projects_map(session)
@@ -706,8 +708,8 @@ async def _table_aggregated(
         bkt["total"] += h
         if e.is_billable:
             bkt["billable"] += h
-            amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id),
+            amt, cur = billable_amount_from_entry(
+                e, h, e.work_date, rates_map.get(e.auth_user_id),
             )
             bkt["amount"] += amt
             if cur != "USD":

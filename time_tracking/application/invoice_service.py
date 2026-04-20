@@ -13,7 +13,11 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from application.report_builder import _billable_amount_for_entry, _fetch_expense_report_data, _load_user_rates
+from application.report_builder import (
+    _fetch_expense_report_data,
+    _load_user_rates,
+    billable_amount_from_entry,
+)
 from application.report_builder import _d as dec
 from infrastructure.models import (
     TimeEntryModel,
@@ -249,9 +253,9 @@ async def _append_time_line(
         await session.flush()
     rates = await _load_user_rates(session, None)
     user_rates = rates.get(entry.auth_user_id)
-    # В счёте количество часов и сумма считаются по фактическим часам (duration уже кратен минуте).
+    # В счёте количество часов и сумма — billable в валюте проекта (конвертация по ЦБ).
     qty = dec(entry.hours)
-    amt, _cur = _billable_amount_for_entry(qty, True, entry.work_date, user_rates)
+    amt, _cur = billable_amount_from_entry(entry, qty, entry.work_date, user_rates)
     line_total = _money4(amt)
     unit = _money4(line_total / qty) if qty > 0 else Decimal(0)
     desc = (entry.description or "").strip() or f"Время {entry.work_date.isoformat()}"
@@ -619,7 +623,7 @@ async def list_unbilled_time_entries(
         if e.id in invoiced:
             continue
         h = dec(e.hours)
-        amt, cur = _billable_amount_for_entry(h, True, e.work_date, rates.get(e.auth_user_id))
+        amt, cur = billable_amount_from_entry(e, h, e.work_date, rates.get(e.auth_user_id))
         out.append(
             {
                 "id": e.id,

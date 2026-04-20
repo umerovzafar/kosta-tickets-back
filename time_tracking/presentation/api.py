@@ -23,7 +23,9 @@ from infrastructure.schema_patches import (
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
     apply_project_currency_patch,
+    apply_fx_cache_and_billable_columns_patch,
 )
+from application.billable_fx import backfill_billable_for_all_entries
 from application.settings_sync import renormalize_time_entries_to_minute
 from presentation.routes import (
     invoices,
@@ -59,11 +61,13 @@ async def lifespan(app: FastAPI):
         await apply_invoices_schema_patch(conn)
         await apply_project_currency_patch(conn)
         await apply_time_entries_seconds_and_rounded_patch(conn)
+        await apply_fx_cache_and_billable_columns_patch(conn)
     async with async_session_factory() as session:
         await seed_default_common_tasks_for_all_clients(session)
         await seed_default_expense_categories_for_all_clients(session)
         # Одноразовый идемпотентный бэкфилл: квантуем duration_seconds до минут, выравниваем hours/rounded_hours.
         await renormalize_time_entries_to_minute(session)
+        await backfill_billable_for_all_entries(session)
         await session.commit()
     yield
 

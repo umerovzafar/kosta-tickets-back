@@ -9,7 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
-    _billable_amount_for_entry,
+    billable_amount_from_entry,
     _cost_amount_for_entry,
     _fetch_expense_report_data,
     _invoice_info_for_time_entries,
@@ -92,7 +92,7 @@ async def build_client_project_dashboard(
         )
 
         if e.is_billable:
-            amt, _cur = _billable_amount_for_entry(h, True, e.work_date, rates_map.get(uid))
+            amt, _cur = billable_amount_from_entry(e, h, e.work_date, rates_map.get(uid))
             total_bill += amt
             user_bill[uid] += amt
             ws = _week_start_monday(e.work_date)

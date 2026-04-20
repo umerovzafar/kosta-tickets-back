@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.billable_fx import FxBillableComputationError
 from application.time_entry_task import resolve_time_entry_task_for_project
 from infrastructure.database import get_session
 from infrastructure.repositories import (
@@ -106,9 +107,12 @@ async def create_time_entry(
             project_id=project_id,
             task_id=tid,
             description=body.description,
+            billable_fx_as_of=body.billable_fx_as_of,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except FxBillableComputationError as e:
+        raise HTTPException(status_code=503, detail=e.detail) from e
     await session.commit()
     await session.refresh(row)
     return TimeEntryOut.model_validate(row)
@@ -152,6 +156,8 @@ async def patch_time_entry(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except FxBillableComputationError as e:
+        raise HTTPException(status_code=503, detail=e.detail) from e
     await session.commit()
     await session.refresh(row)
     return TimeEntryOut.model_validate(row)

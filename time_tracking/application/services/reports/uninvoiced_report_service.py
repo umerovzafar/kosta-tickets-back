@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
     _base_entry_conditions,
-    _billable_amount_for_entry,
+    billable_amount_from_entry,
     _load_clients_map,
     _load_projects_map,
     _load_user_rates,
@@ -61,14 +61,8 @@ async def get_uninvoiced_report(
     )
     uninv_cond.append(TimeEntryModel.is_billable.is_(True))
 
-    uninv_entries_q = select(
-        TimeEntryModel.id,
-        TimeEntryModel.auth_user_id,
-        TimeEntryModel.project_id,
-        TimeEntryModel.work_date,
-        TimeEntryModel.hours.label("hours"),
-    ).where(and_(*uninv_cond))
-    uninv_entries = (await session.execute(uninv_entries_q)).all()
+    uninv_entries_q = select(TimeEntryModel).where(and_(*uninv_cond))
+    uninv_entries = list((await session.execute(uninv_entries_q)).scalars().all())
 
     all_uid_set = {e.auth_user_id for e in all_entries} | {e.auth_user_id for e in uninv_entries}
     rates_map = await _load_user_rates(session, list(all_uid_set) or None)
@@ -99,7 +93,7 @@ async def get_uninvoiced_report(
         pid = e.project_id
         h = _d(e.hours)
         uninv_hours_by_project[pid] = uninv_hours_by_project.get(pid, _ZERO) + h
-        amt, cur = _billable_amount_for_entry(h, True, e.work_date, rates_map.get(e.auth_user_id))
+        amt, cur = billable_amount_from_entry(e, h, e.work_date, rates_map.get(e.auth_user_id))
         uninv_amount_by_project[pid] = uninv_amount_by_project.get(pid, _ZERO) + amt
         if cur != "USD":
             uninv_currency_by_project[pid] = cur
