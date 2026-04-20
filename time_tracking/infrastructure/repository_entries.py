@@ -9,13 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import DateTime
 
 from application.time_rounding import (
-    RoundingSettings,
-    compute_rounded_hours,
     hours_from_seconds,
+    quantize_seconds_to_minute,
     seconds_from_hours,
 )
 from infrastructure.models import TimeEntryModel, TimeManagerClientTaskModel
-from infrastructure.repository_settings import TimeTrackingSettingsRepository
 from infrastructure.repository_shared import _now_utc, _to_decimal
 
 
@@ -24,17 +22,17 @@ class TimeEntryRepository:
         self._session = session
 
     def _aggregate_triplet(self):
-        # Сводные используют округлённые часы (для единообразия со счетами/бюджетом).
+        # Фактические часы (duration_seconds уже кратно минуте — никакого доп. округления).
         return (
             func.coalesce(
-                func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.rounded_hours), else_=0)),
+                func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0)),
                 0,
             ).label("billable"),
             func.coalesce(
-                func.sum(case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.rounded_hours), else_=0)),
+                func.sum(case((TimeEntryModel.is_billable.is_(False), TimeEntryModel.hours), else_=0)),
                 0,
             ).label("non_bill"),
-            func.coalesce(func.sum(TimeEntryModel.rounded_hours), 0).label("total"),
+            func.coalesce(func.sum(TimeEntryModel.hours), 0).label("total"),
         )
 
     def _project_entry_conditions(
@@ -191,23 +189,21 @@ class TimeEntryRepository:
         )
         return r.scalars().one_or_none()
 
-    async def _load_settings(self) -> RoundingSettings:
-        return await TimeTrackingSettingsRepository(self._session).get()
-
     @staticmethod
     def _resolve_duration_seconds(
         duration_seconds: int | None,
         hours: Decimal | None,
     ) -> int:
-        """Источник истины — duration_seconds. Если пришёл только hours, пересчитываем в секунды HALF_UP."""
+        """Вернуть длительность в секундах, **квантованную до целых минут** (HALF_UP: 30с → +1мин)."""
         if duration_seconds is not None:
             sec = int(duration_seconds)
         elif hours is not None:
             sec = seconds_from_hours(hours)
         else:
             raise ValueError("Не указана длительность (durationSeconds или hours)")
+        sec = quantize_seconds_to_minute(sec)
         if sec <= 0:
-            raise ValueError("Длительность должна быть больше нуля")
+            raise ValueError("Длительность должна быть не меньше 1 минуты")
         return sec
 
     async def create(
@@ -224,14 +220,15 @@ class TimeEntryRepository:
         description: str | None,
     ) -> TimeEntryModel:
         sec = self._resolve_duration_seconds(duration_seconds, hours)
-        settings = await self._load_settings()
+        h = hours_from_seconds(sec)
         row = TimeEntryModel(
             id=entry_id,
             auth_user_id=auth_user_id,
             work_date=work_date,
             duration_seconds=sec,
-            hours=hours_from_seconds(sec),
-            rounded_hours=compute_rounded_hours(sec, settings),
+            hours=h,
+            # rounded_hours сохраняется для обратной совместимости схемы: всегда = hours.
+            rounded_hours=h,
             is_billable=is_billable,
             project_id=project_id,
             task_id=task_id,
@@ -258,10 +255,10 @@ class TimeEntryRepository:
                 patch.get("duration_seconds"),
                 _to_decimal(patch["hours"]) if "hours" in patch and patch["hours"] is not None else None,
             )
-            settings = await self._load_settings()
+            h = hours_from_seconds(sec)
             row.duration_seconds = sec
-            row.hours = hours_from_seconds(sec)
-            row.rounded_hours = compute_rounded_hours(sec, settings)
+            row.hours = h
+            row.rounded_hours = h
         if "work_date" in patch:
             row.work_date = patch["work_date"]
         if "is_billable" in patch:
@@ -291,7 +288,7 @@ class TimeEntryRepository:
                 TimeManagerClientTaskModel.id,
                 TimeManagerClientTaskModel.name,
                 TimeManagerClientTaskModel.billable_by_default,
-                func.coalesce(func.sum(TimeEntryModel.rounded_hours), 0).label("hrs"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("hrs"),
             )
             .select_from(TimeEntryModel)
             .join(TimeManagerClientTaskModel, TimeManagerClientTaskModel.id == TimeEntryModel.task_id)
@@ -325,7 +322,7 @@ class TimeEntryRepository:
         q = (
             select(
                 TimeEntryModel.is_billable,
-                func.coalesce(func.sum(TimeEntryModel.rounded_hours), 0).label("hrs"),
+                func.coalesce(func.sum(TimeEntryModel.hours), 0).label("hrs"),
             )
             .where(and_(*cond))
             .group_by(TimeEntryModel.is_billable)

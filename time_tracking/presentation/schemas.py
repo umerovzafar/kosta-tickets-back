@@ -501,31 +501,6 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     is_archived: Optional[bool] = Field(None, alias="isArchived")
 
 
-class RoundingMode(str, Enum):
-    up = "up"
-    nearest = "nearest"
-
-
-class RoundingSettingsOut(BaseModel):
-    """Глобальные настройки округления учёта времени."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    rounding_enabled: bool = Field(..., alias="roundingEnabled")
-    rounding_mode: RoundingMode = Field(..., alias="roundingMode")
-    rounding_step_minutes: int = Field(..., alias="roundingStepMinutes", ge=1, le=60)
-
-
-class RoundingSettingsPutBody(BaseModel):
-    """Тело PUT; все поля обязательны."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    rounding_enabled: bool = Field(..., alias="roundingEnabled")
-    rounding_mode: RoundingMode = Field(..., alias="roundingMode")
-    rounding_step_minutes: int = Field(..., alias="roundingStepMinutes", ge=1, le=60)
-
-
 class TimeManagerClientProjectCodeHintOut(BaseModel):
     """Подсказка для поля кода проекта (последний код и простой следующий)."""
 

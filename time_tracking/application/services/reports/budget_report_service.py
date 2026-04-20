@@ -70,7 +70,7 @@ async def get_budget_report(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours.label("hours"),
+        TimeEntryModel.hours.label("hours"),
         TimeEntryModel.is_billable,
     ).where(and_(*cond))
     entries = (await session.execute(entries_q)).all()

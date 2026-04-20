@@ -900,37 +900,6 @@ async def delete_user(
 
 
 # ---------------------------------------------------------------------------
-# Settings (rounding)
-# ---------------------------------------------------------------------------
-
-
-class RoundingSettingsPutBody(BaseModel):
-    """Тело PUT /settings/rounding — настройки округления учёта времени."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    rounding_enabled: bool = Field(..., alias="roundingEnabled")
-    rounding_mode: Literal["up", "nearest"] = Field(..., alias="roundingMode")
-    rounding_step_minutes: int = Field(..., alias="roundingStepMinutes", ge=1, le=60)
-
-
-@router.get("/settings/rounding")
-async def get_rounding_settings_gateway(_: dict = Depends(get_current_user)):
-    """Доступно любому авторизованному пользователю (фронт использует для форматирования)."""
-    return await _tt_json("GET", "/settings/rounding")
-
-
-@router.put("/settings/rounding")
-async def put_rounding_settings_gateway(
-    body: RoundingSettingsPutBody,
-    _: dict = Depends(require_manage_role),
-):
-    """Настройки меняют только главный администратор / администратор / партнёр."""
-    payload = _alias_free_payload(body, "rounding settings")
-    return await _tt_json("PUT", "/settings/rounding", json=payload, timeout=60.0)
-
-
-# ---------------------------------------------------------------------------
 # Reports proxy
 # ---------------------------------------------------------------------------
 

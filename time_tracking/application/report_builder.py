@@ -351,11 +351,11 @@ async def build_report_summary(
         exclude_invoiced_time=(report_type == "uninvoiced"),
     )
 
-    # Сводные KPI и деньги — по округлённым часам (как в счетах и бюджете).
+    # Сводные KPI и деньги — по фактическим часам (duration уже кратен минуте).
     entries_q = select(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours,
+        TimeEntryModel.hours,
         TimeEntryModel.is_billable,
     ).where(and_(*cond))
     entries = (await session.execute(entries_q)).all()
@@ -370,7 +370,7 @@ async def build_report_summary(
     line_count = 0
 
     for e in entries:
-        h = _d(e.rounded_hours)
+        h = _d(e.hours)
         total += h
         line_count += 1
         if e.is_billable:
@@ -668,13 +668,13 @@ async def _table_aggregated(
     if report_type == "uninvoiced":
         cond.append(TimeEntryModel.is_billable.is_(True))
 
-    # Агрегаты сводных отчётов — по округлённым часам.
+    # Агрегаты сводных отчётов — по фактическим часам (minute-квант).
     entries_q = select(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.task_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours,
+        TimeEntryModel.hours,
         TimeEntryModel.is_billable,
     ).where(and_(*cond))
     entries = (await session.execute(entries_q)).all()
@@ -702,7 +702,7 @@ async def _table_aggregated(
             bkt = {"total": _ZERO, "billable": _ZERO, "amount": _ZERO, "currency": "USD"}
             buckets[gid] = bkt
 
-        h = _d(e.rounded_hours)
+        h = _d(e.hours)
         bkt["total"] += h
         if e.is_billable:
             bkt["billable"] += h

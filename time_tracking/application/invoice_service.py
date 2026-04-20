@@ -249,8 +249,8 @@ async def _append_time_line(
         await session.flush()
     rates = await _load_user_rates(session, None)
     user_rates = rates.get(entry.auth_user_id)
-    # В счёте количество часов и сумма считаются по округлённым часам (rounded_hours).
-    qty = dec(entry.rounded_hours)
+    # В счёте количество часов и сумма считаются по фактическим часам (duration уже кратен минуте).
+    qty = dec(entry.hours)
     amt, _cur = _billable_amount_for_entry(qty, True, entry.work_date, user_rates)
     line_total = _money4(amt)
     unit = _money4(line_total / qty) if qty > 0 else Decimal(0)
@@ -618,16 +618,16 @@ async def list_unbilled_time_entries(
     for e in entries:
         if e.id in invoiced:
             continue
-        # Для предпросмотра и счёта — округлённые часы; фактические отдаём как справку.
-        rh = dec(e.rounded_hours)
-        amt, cur = _billable_amount_for_entry(rh, True, e.work_date, rates.get(e.auth_user_id))
+        h = dec(e.hours)
+        amt, cur = _billable_amount_for_entry(h, True, e.work_date, rates.get(e.auth_user_id))
         out.append(
             {
                 "id": e.id,
                 "authUserId": e.auth_user_id,
                 "workDate": e.work_date.isoformat(),
-                "hours": float(e.hours),
-                "roundedHours": float(rh),
+                "hours": float(h),
+                # roundedHours сохранён для совместимости с фронтом и всегда = hours.
+                "roundedHours": float(h),
                 "durationSeconds": int(e.duration_seconds),
                 "description": e.description,
                 "billableAmount": float(_money4(amt)),

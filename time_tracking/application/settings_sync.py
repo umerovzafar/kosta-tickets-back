@@ -1,6 +1,11 @@
-"""Массовый пересчёт `rounded_hours` для всех записей при смене настроек округления.
+"""Одноразовая ренормализация записей времени: квантование duration_seconds до целых минут.
 
-Выполняется одним SQL-UPDATE на стороне Postgres: исключает Python-цикл по миллионам строк.
+Выполняется на старте сервиса одним SQL-UPDATE. После миграции на minute-квант:
+  * duration_seconds ВСЕГДА кратно 60 (HALF_UP: 30 секунд → +1 минута),
+  * hours = duration_seconds / 3600 (NUMERIC(16,6)),
+  * rounded_hours = hours (устаревшее поле сохранено ради совместимости схемы).
+
+UPDATE идемпотентен: фильтр WHERE отсекает уже нормализованные строки.
 """
 
 from __future__ import annotations
@@ -8,48 +13,36 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.time_rounding import RoundingSettings
-from infrastructure.repository_settings import TimeTrackingSettingsRepository
 
+async def renormalize_time_entries_to_minute(session: AsyncSession) -> int:
+    """Квантует duration_seconds до целых минут и приводит hours / rounded_hours в согласованное состояние.
 
-def _build_rounded_hours_expression(settings: RoundingSettings) -> str:
-    """Собирает SQL-выражение для `rounded_hours` исходя из duration_seconds и настроек округления."""
-    if not settings.rounding_enabled:
-        return "ROUND((duration_seconds::numeric) / 3600.0, 6)"
-    step_sec = int(settings.rounding_step_minutes) * 60
-    if settings.rounding_mode == "up":
-        # Округление вверх: CEIL(duration_seconds / step_sec) * step_sec / 3600.
-        return (
-            f"ROUND(("
-            f"CEIL((duration_seconds::numeric) / {step_sec}.0) * {step_sec}"
-            f") / 3600.0, 6)"
-        )
-    # nearest
-    return (
-        f"ROUND(("
-        f"ROUND((duration_seconds::numeric) / {step_sec}.0) * {step_sec}"
-        f") / 3600.0, 6)"
-    )
-
-
-async def recalc_rounded_hours_for_all_entries(
-    session: AsyncSession, settings: RoundingSettings
-) -> int:
-    """Пересчитать `rounded_hours` у ВСЕХ записей одним UPDATE. Возвращает количество затронутых строк."""
-    expr = _build_rounded_hours_expression(settings)
+    Возвращает количество затронутых строк. Выставленные счета не трогаются (поля в invoice_line_items
+    хранятся независимо). Записи, которые уже кратны 60 и имеют согласованные hours/rounded_hours, —
+    пропускаются благодаря фильтру в WHERE.
+    """
     sql = text(
-        f"""
-        UPDATE time_tracking_entries
-        SET rounded_hours = {expr},
+        """
+        WITH src AS (
+            SELECT
+                id,
+                ROUND(duration_seconds::numeric / 60.0)::int * 60 AS q_sec
+            FROM time_tracking_entries
+        )
+        UPDATE time_tracking_entries AS te
+        SET
+            duration_seconds = src.q_sec,
+            hours = ROUND(src.q_sec::numeric / 3600.0, 6),
+            rounded_hours = ROUND(src.q_sec::numeric / 3600.0, 6),
             updated_at = now()
-        WHERE rounded_hours IS DISTINCT FROM ({expr})
+        FROM src
+        WHERE te.id = src.id
+          AND (
+              te.duration_seconds IS DISTINCT FROM src.q_sec
+              OR te.hours IS DISTINCT FROM ROUND(src.q_sec::numeric / 3600.0, 6)
+              OR te.rounded_hours IS DISTINCT FROM ROUND(src.q_sec::numeric / 3600.0, 6)
+          )
         """
     )
     result = await session.execute(sql)
     return int(result.rowcount or 0)
-
-
-async def resync_rounded_hours_for_all_entries(session: AsyncSession) -> int:
-    """Одноразовая синхронизация на старте сервиса: читает текущие настройки и пересчитывает отличающиеся строки."""
-    settings = await TimeTrackingSettingsRepository(session).get()
-    return await recalc_rounded_hours_for_all_entries(session, settings)

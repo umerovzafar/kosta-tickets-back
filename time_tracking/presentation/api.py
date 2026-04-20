@@ -20,12 +20,11 @@ from infrastructure.schema_patches import (
     apply_time_entries_task_id_schema_patch,
     apply_time_entries_hours_precision_patch,
     apply_time_entries_seconds_and_rounded_patch,
-    apply_time_tracking_settings_patch,
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
     apply_project_currency_patch,
 )
-from application.settings_sync import resync_rounded_hours_for_all_entries
+from application.settings_sync import renormalize_time_entries_to_minute
 from presentation.routes import (
     invoices,
     client_contacts,
@@ -37,7 +36,6 @@ from presentation.routes import (
     hourly_rates,
     project_access,
     reports,
-    settings as settings_routes,
     team_workload,
     time_entries,
     users,
@@ -61,12 +59,11 @@ async def lifespan(app: FastAPI):
         await apply_invoices_schema_patch(conn)
         await apply_project_currency_patch(conn)
         await apply_time_entries_seconds_and_rounded_patch(conn)
-        await apply_time_tracking_settings_patch(conn)
     async with async_session_factory() as session:
         await seed_default_common_tasks_for_all_clients(session)
         await seed_default_expense_categories_for_all_clients(session)
-        # После апгрейда: синхронизация rounded_hours по актуальным настройкам (идемпотентно).
-        await resync_rounded_hours_for_all_entries(session)
+        # Одноразовый идемпотентный бэкфилл: квантуем duration_seconds до минут, выравниваем hours/rounded_hours.
+        await renormalize_time_entries_to_minute(session)
         await session.commit()
     yield
 
@@ -92,5 +89,4 @@ app.include_router(project_access.router)
 app.include_router(users.router)
 app.include_router(reports.router)
 app.include_router(invoices.router)
-app.include_router(settings_routes.router)
 app.include_router(client_projects._global_projects_router)

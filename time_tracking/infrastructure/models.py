@@ -71,11 +71,12 @@ class TimeEntryModel(Base):
         nullable=False,
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # Источник истины — целое число секунд (устраняет «1 секунду» на round-trip hours↔H:M:S).
+    # Источник истины — целое число секунд, ВСЕГДА кратное 60 (квантование до целых минут на входе).
+    # Устраняет «1 секунду» на round-trip hours↔H:M:S и даёт предсказуемый минутный учёт.
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Фактические часы для отчётов/денег: всегда = duration_seconds / 3600, quantize(0.000001, HALF_UP).
+    # Часы = duration_seconds / 3600, quantize(0.000001, HALF_UP). Используются везде: отчёты/счета/деньги.
     hours: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
-    # Округлённые часы по настройкам аккаунта (для сводных отчётов и счетов). Считаются на каждой записи.
+    # Устаревшее поле (осталось ради совместимости схемы). Всегда равно hours — никакого доп. округления нет.
     rounded_hours: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -85,27 +86,6 @@ class TimeEntryModel(Base):
         nullable=True,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class TimeTrackingSettingsModel(Base):
-    """Глобальные настройки учёта времени (одна строка id=1): округление в сводных отчётах/счетах."""
-
-    __tablename__ = "time_tracking_settings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    rounding_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=text("TRUE")
-    )
-    # up — округление вверх, nearest — до ближайшего шага.
-    rounding_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="up", server_default=text("'up'")
-    )
-    # Шаг округления в минутах: 1..60 (типично 6, 15, 30).
-    rounding_step_minutes: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=15, server_default=text("15")
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

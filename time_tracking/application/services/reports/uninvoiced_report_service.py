@@ -50,7 +50,7 @@ async def get_uninvoiced_report(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours.label("hours"),
+        TimeEntryModel.hours.label("hours"),
     ).where(and_(*all_cond))
     all_entries = (await session.execute(all_entries_q)).all()
 
@@ -66,7 +66,7 @@ async def get_uninvoiced_report(
         TimeEntryModel.auth_user_id,
         TimeEntryModel.project_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours.label("hours"),
+        TimeEntryModel.hours.label("hours"),
     ).where(and_(*uninv_cond))
     uninv_entries = (await session.execute(uninv_entries_q)).all()
 

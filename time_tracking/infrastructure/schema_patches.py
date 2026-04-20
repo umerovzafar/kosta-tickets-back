@@ -549,7 +549,11 @@ async def apply_project_currency_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) -> None:
-    """Добавить duration_seconds (источник истины) и rounded_hours (сводные/биллинг)."""
+    """Добавить duration_seconds (источник истины, всегда кратно 60 после ренормализации) и rounded_hours.
+
+    Поле rounded_hours оставлено в схеме ради обратной совместимости и хранит ту же величину, что и hours.
+    Никакого шагового округления на стороне Postgres больше не применяется.
+    """
     await conn.execute(
         text(
             """
@@ -602,31 +606,3 @@ async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) ->
         )
     )
 
-
-async def apply_time_tracking_settings_patch(conn: AsyncConnection) -> None:
-    """Глобальные настройки округления. Одна строка id=1 с дефолтом (up, 15 мин, enabled)."""
-    await conn.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS time_tracking_settings (
-                id INTEGER PRIMARY KEY,
-                rounding_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                rounding_mode VARCHAR(16) NOT NULL DEFAULT 'up',
-                rounding_step_minutes INTEGER NOT NULL DEFAULT 15,
-                created_at TIMESTAMPTZ NOT NULL,
-                updated_at TIMESTAMPTZ
-            )
-            """
-        )
-    )
-    await conn.execute(
-        text(
-            """
-            INSERT INTO time_tracking_settings (
-                id, rounding_enabled, rounding_mode, rounding_step_minutes, created_at
-            )
-            VALUES (1, TRUE, 'up', 15, now())
-            ON CONFLICT (id) DO NOTHING
-            """
-        )
-    )

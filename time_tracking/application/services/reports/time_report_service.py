@@ -65,7 +65,7 @@ async def get_time_report(
         TimeEntryModel.project_id,
         TimeEntryModel.task_id,
         TimeEntryModel.work_date,
-        TimeEntryModel.rounded_hours.label("hours"),
+        TimeEntryModel.hours.label("hours"),
         TimeEntryModel.is_billable,
         TimeEntryModel.created_at,
     ).where(and_(*cond))
