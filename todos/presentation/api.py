@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.models import (  # noqa: F401 — регистрация таблиц для create_all
     OutlookCalendarTokenModel,
     TodoBoardLabelModel,
@@ -40,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
 app.include_router(health.router)
 app.include_router(calendar_routes.router, prefix="/api/v1/todos")
 app.include_router(board_routes.router, prefix="/api/v1/todos")

@@ -85,6 +85,7 @@ class UserRepository(UserRepositoryPort):
             is_archived=m.is_archived,
             time_tracking_role=getattr(m, "time_tracking_role", None),
             desktop_background=getattr(m, "desktop_background", None),
+            active_session_jti=getattr(m, "active_session_jti", None),
             created_at=m.created_at,
             updated_at=m.updated_at,
         )
@@ -189,6 +190,13 @@ class UserRepository(UserRepositoryPort):
     async def set_desktop_background(self, user_id: int, path: Optional[str]) -> Optional[User]:
         await self._session.execute(
             update(UserModel).where(UserModel.id == user_id).values(desktop_background=path)
+        )
+        await self._session.flush()
+        return await self.get_by_id(user_id)
+
+    async def set_active_session_jti(self, user_id: int, jti: Optional[str]) -> Optional[User]:
+        await self._session.execute(
+            update(UserModel).where(UserModel.id == user_id).values(active_session_jti=jti)
         )
         await self._session.flush()
         return await self.get_by_id(user_id)

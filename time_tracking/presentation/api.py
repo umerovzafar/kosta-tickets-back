@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from application.client_expense_category_defaults import (
     seed_default_expense_categories_for_all_clients,
 )
@@ -23,10 +26,9 @@ from infrastructure.schema_patches import (
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
     apply_project_currency_patch,
-    apply_fx_cache_and_billable_columns_patch,
 )
-from application.billable_fx import backfill_billable_for_all_entries
 from application.settings_sync import renormalize_time_entries_to_minute
+from presentation.deps import require_bearer_user
 from presentation.routes import (
     invoices,
     client_contacts,
@@ -61,13 +63,11 @@ async def lifespan(app: FastAPI):
         await apply_invoices_schema_patch(conn)
         await apply_project_currency_patch(conn)
         await apply_time_entries_seconds_and_rounded_patch(conn)
-        await apply_fx_cache_and_billable_columns_patch(conn)
     async with async_session_factory() as session:
         await seed_default_common_tasks_for_all_clients(session)
         await seed_default_expense_categories_for_all_clients(session)
         # Одноразовый идемпотентный бэкфилл: квантуем duration_seconds до минут, выравниваем hours/rounded_hours.
         await renormalize_time_entries_to_minute(session)
-        await backfill_billable_for_all_entries(session)
         await session.commit()
     yield
 
@@ -80,17 +80,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
+
+_tt_auth = [Depends(require_bearer_user)]
+
 app.include_router(health.router)
-app.include_router(client_tasks.router)
-app.include_router(client_expense_categories.router)
-app.include_router(client_projects.router)
-app.include_router(client_contacts.router)
-app.include_router(clients.router)
-app.include_router(team_workload.router)
-app.include_router(hourly_rates.router)
-app.include_router(time_entries.router)
-app.include_router(project_access.router)
-app.include_router(users.router)
-app.include_router(reports.router)
-app.include_router(invoices.router)
-app.include_router(client_projects._global_projects_router)
+app.include_router(client_tasks.router, dependencies=_tt_auth)
+app.include_router(client_expense_categories.router, dependencies=_tt_auth)
+app.include_router(client_projects.router, dependencies=_tt_auth)
+app.include_router(client_contacts.router, dependencies=_tt_auth)
+app.include_router(clients.router, dependencies=_tt_auth)
+app.include_router(team_workload.router, dependencies=_tt_auth)
+app.include_router(hourly_rates.router, dependencies=_tt_auth)
+app.include_router(time_entries.router, dependencies=_tt_auth)
+app.include_router(project_access.router, dependencies=_tt_auth)
+app.include_router(users.router, dependencies=_tt_auth)
+app.include_router(reports.router, dependencies=_tt_auth)
+app.include_router(invoices.router, dependencies=_tt_auth)
+app.include_router(client_projects._global_projects_router, dependencies=_tt_auth)

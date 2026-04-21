@@ -149,14 +149,6 @@ class TimeEntryOut(BaseModel):
     project_id: Optional[str] = None
     task_id: Optional[str] = None
     description: Optional[str] = None
-    billable_amount: Optional[Decimal] = Field(None, alias="billableAmount")
-    billable_currency: Optional[str] = Field(None, alias="billableCurrency")
-    rate_source_amount: Optional[Decimal] = Field(None, alias="rateSourceAmount")
-    rate_source_currency: Optional[str] = Field(None, alias="rateSourceCurrency")
-    fx_cross_rate: Optional[Decimal] = Field(None, alias="fxCrossRate")
-    fx_rate_date: Optional[date] = Field(None, alias="fxRateDate")
-    fx_rate_source: Optional[str] = Field(None, alias="fxRateSource")
-    billable_fx_as_of: Optional[date] = Field(None, alias="billableFxAsOf")
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -185,11 +177,6 @@ class TimeEntryCreateBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
-    billable_fx_as_of: Optional[date] = Field(
-        None,
-        alias="billableFxAsOf",
-        description="Курс ЦБ брать на эту дату (не work_date), напр. дата закрытия недели.",
-    )
 
 
 class TimeEntryPatchBody(BaseModel):
@@ -202,11 +189,6 @@ class TimeEntryPatchBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
-    billable_fx_as_of: Optional[date] = Field(
-        None,
-        alias="billableFxAsOf",
-        description="Курс ЦБ на эту дату (пересчёт billable в валюте проекта).",
-    )
 
 
 class ProjectAccessOut(BaseModel):

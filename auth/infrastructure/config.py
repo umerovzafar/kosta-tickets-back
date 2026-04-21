@@ -19,6 +19,22 @@ class Settings(BaseSettings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
+    # HttpOnly-cookie с JWT (имя должно совпадать с gateway AUTH_SESSION_COOKIE_NAME). Один сайт с API — иначе cookie не уйдёт.
+    auth_session_cookie_name: str = Field(default="kl_access_token", validation_alias=AliasChoices("AUTH_SESSION_COOKIE_NAME"))
+    auth_set_session_cookie: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("AUTH_SET_SESSION_COOKIE", "auth_set_session_cookie"),
+        description="Выставлять Set-Cookie на OAuth callback и POST /auth/logout (нужен общий домен с фронтом или прокси).",
+    )
+    auth_session_cookie_secure: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("AUTH_SESSION_COOKIE_SECURE"),
+    )
+    auth_session_cookie_samesite: str = Field(
+        default="lax",
+        validation_alias=AliasChoices("AUTH_SESSION_COOKIE_SAMESITE"),
+        description="lax | strict | none (none требует secure=true)",
+    )
     frontend_url: str = ""
     admin_frontend_url: str = ""
     admin_username: str = "admin"

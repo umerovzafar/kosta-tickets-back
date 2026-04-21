@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
     _base_entry_conditions,
-    billable_amount_from_entry,
+    _billable_amount_for_entry,
     _billable_rate_for_entry,
     _cost_amount_for_entry,
     _invoice_info_for_time_entries,
@@ -87,8 +87,8 @@ async def get_detailed_time_rows(
         t = tasks_map.get(e.task_id) if e.task_id else None
 
         hrs = _d(e.hours)
-        bill_amt, bill_cur = billable_amount_from_entry(
-            e, hrs, e.work_date, rates_map.get(e.auth_user_id),
+        bill_amt, bill_cur = _billable_amount_for_entry(
+            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
         )
         bill_rate, bill_rate_cur = _billable_rate_for_entry(
             e.work_date, rates_map.get(e.auth_user_id),

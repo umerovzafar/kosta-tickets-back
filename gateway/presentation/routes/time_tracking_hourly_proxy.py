@@ -4,11 +4,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 from infrastructure.upstream_http import (
     raise_for_upstream_status,
     send_upstream_request,
@@ -20,8 +21,11 @@ ROLES_CAN_MANAGE = {"Главный администратор", "Админис
 ROLES_ADMIN_ONLY = {"Главный администратор", "Администратор"}
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    return await verify_bearer_and_get_user(authorization)
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    return await verify_bearer_and_get_user(request, authorization)
 
 
 def _role(user: dict) -> str:
@@ -68,6 +72,7 @@ async def _tt_get_hourly_rate(base: str, auth_user_id: int, rate_id: str) -> dic
     r = await send_upstream_request(
         "GET",
         f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
+        headers=merge_upstream_headers(),
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -109,6 +114,7 @@ async def hourly_rates_list_gateway(auth_user_id: int, kind: str, user: dict) ->
         "GET",
         f"{base}/users/{auth_user_id}/hourly-rates",
         params={"kind": kind},
+        headers=merge_upstream_headers(),
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -142,6 +148,7 @@ async def hourly_rates_create_gateway(auth_user_id: int, body: HourlyRateCreateB
         "POST",
         f"{base}/users/{auth_user_id}/hourly-rates",
         json=body.model_dump(mode="json", by_alias=False),
+        headers=merge_upstream_headers(),
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -171,6 +178,7 @@ async def hourly_rates_patch_gateway(
         "PATCH",
         f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
         json=payload,
+        headers=merge_upstream_headers(),
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -191,6 +199,7 @@ async def hourly_rates_delete_gateway(auth_user_id: int, rate_id: str, user: dic
     r = await send_upstream_request(
         "DELETE",
         f"{base}/users/{auth_user_id}/hourly-rates/{rate_id}",
+        headers=merge_upstream_headers(),
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",

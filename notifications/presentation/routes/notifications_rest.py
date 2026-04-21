@@ -11,6 +11,7 @@ from application.use_cases import (
     ArchiveNotificationUseCase,
     DeleteNotificationUseCase,
 )
+from presentation.deps import require_bearer_user, require_partner_it_office_write
 from presentation.schemas import (
     NotificationResponse,
     NotificationCreate,
@@ -43,6 +44,7 @@ async def list_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     include_archived: bool = False,
+    _: dict = Depends(require_bearer_user),
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):
@@ -55,6 +57,7 @@ async def list_notifications(
 @router.get("/{notification_uuid}", response_model=NotificationResponse)
 async def get_notification(
     notification_uuid: str,
+    _: dict = Depends(require_bearer_user),
     repo: NotificationRepository = Depends(get_repo),
 ):
     uc = GetNotificationUseCase(repo)
@@ -67,6 +70,7 @@ async def get_notification(
 @router.post("", response_model=NotificationResponse, status_code=201)
 async def create_notification(
     body: NotificationCreate,
+    _: dict = Depends(require_partner_it_office_write),
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):
@@ -84,6 +88,7 @@ async def create_notification(
 async def update_notification(
     notification_uuid: str,
     body: NotificationUpdate,
+    _: dict = Depends(require_partner_it_office_write),
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):
@@ -105,6 +110,7 @@ async def update_notification(
 async def archive_notification(
     notification_uuid: str,
     body: NotificationArchive,
+    _: dict = Depends(require_partner_it_office_write),
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):
@@ -122,6 +128,7 @@ async def archive_notification(
 @router.delete("/{notification_uuid}", status_code=204)
 async def delete_notification(
     notification_uuid: str,
+    _: dict = Depends(require_partner_it_office_write),
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):

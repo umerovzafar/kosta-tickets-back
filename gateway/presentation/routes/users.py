@@ -3,9 +3,13 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 
-from infrastructure.auth_upstream import auth_service_request, verify_bearer_and_get_user
+from infrastructure.auth_upstream import (
+    access_token_from_request,
+    auth_service_request,
+    verify_bearer_and_get_user,
+)
 from infrastructure.config import get_settings
 from presentation.schemas.user_schemas import (
     UserResponse,
@@ -39,18 +43,32 @@ ROLES_CAN_VIEW_USERS = {
 ROLES_CAN_MANAGE_USERS = {MAIN_ADMIN_ROLE, ADMIN_ROLE, PARTNER_ROLE}
 
 
-async def _get_current_user_optional(authorization: Optional[str]) -> dict:
-    return await verify_bearer_and_get_user(authorization)
+def bearer_for_upstream(request: Request, authorization: Optional[str]) -> Optional[str]:
+    tok = access_token_from_request(request, authorization)
+    return f"Bearer {tok}" if tok else None
 
 
-async def require_auth(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def _get_current_user_optional(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> dict:
+    return await verify_bearer_and_get_user(request, authorization)
+
+
+async def require_auth(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Любой авторизованный пользователь (только проверка токена)."""
-    return await _get_current_user_optional(authorization)
+    return await _get_current_user_optional(request, authorization)
 
 
-async def require_admin(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def require_admin(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Главный администратор, Администратор или Партнер — управление пользователями (блок, архив, роль в учёте времени)."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_MANAGE_USERS:
         raise HTTPException(
@@ -60,9 +78,12 @@ async def require_admin(authorization: Optional[str] = Header(None, alias="Autho
     return user
 
 
-async def require_main_admin(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def require_main_admin(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Только Главный администратор — назначение ролей пользователям."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role != MAIN_ADMIN_ROLE:
         raise HTTPException(
@@ -72,9 +93,12 @@ async def require_main_admin(authorization: Optional[str] = Header(None, alias="
     return user
 
 
-async def require_main_admin_or_administrator(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def require_main_admin_or_administrator(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Главный администратор или Администратор — назначение ролей (см. auth: роль «Главный администратор» только у Главного)."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in (MAIN_ADMIN_ROLE, ADMIN_ROLE):
         raise HTTPException(
@@ -84,9 +108,12 @@ async def require_main_admin_or_administrator(authorization: Optional[str] = Hea
     return user
 
 
-async def require_admin_or_it(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def require_admin_or_it(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Администратор, Партнёр, IT или офис-менеджер — просмотр списка и деталей пользователей."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_VIEW_USERS:
         raise HTTPException(
@@ -98,10 +125,11 @@ async def require_admin_or_it(authorization: Optional[str] = Header(None, alias=
 
 async def verify_user_detail_access(
     user_id: int,
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     """Свой профиль или роли из ROLES_CAN_VIEW_USERS."""
-    user = await verify_bearer_and_get_user(authorization)
+    user = await verify_bearer_and_get_user(request, authorization)
     role = (user.get("role") or "").strip()
     rid = user.get("id")
     if rid is not None and int(rid) == int(user_id):
@@ -135,19 +163,23 @@ DESKTOP_BG_SUBDIR = "desktop_backgrounds"
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(authorization: Optional[str] = Header(None, alias="Authorization")):
-    user = await verify_bearer_and_get_user(authorization)
-    return await merge_weekly_capacity_into_user(user)
+async def get_me(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    user = await verify_bearer_and_get_user(request, authorization)
+    return await merge_weekly_capacity_into_user(user, bearer_for_upstream(request, authorization))
 
 
 @router.post("/me/desktop-background", response_model=UserResponse)
 async def upload_desktop_background(
+    request: Request,
     file: UploadFile = File(...),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
     """Загрузить или заменить фон рабочего стола. Изображение: jpg, png, gif, webp, макс. 5 МБ."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     user_id = user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="User not found")
@@ -188,23 +220,24 @@ async def upload_desktop_background(
     r = await auth_service_request(
         "PATCH",
         "/users/me/desktop-background",
-        authorization,
+        bearer_for_upstream(request, authorization),
         timeout=10.0,
         json={"path": rel_path},
     )
     if r.status_code != 200:
         file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to save settings")
-    return await merge_weekly_capacity_into_user(r.json())
+    return await merge_weekly_capacity_into_user(r.json(), bearer_for_upstream(request, authorization))
 
 
 @router.delete("/me/desktop-background", response_model=UserResponse)
 async def delete_desktop_background(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
     """Удалить фон рабочего стола."""
-    user = await _get_current_user_optional(authorization)
+    user = await _get_current_user_optional(request, authorization)
     user_id = user.get("id")
     old_path = user.get("desktop_background")
     if not user_id:
@@ -220,16 +253,17 @@ async def delete_desktop_background(
     r = await auth_service_request(
         "DELETE",
         "/users/me/desktop-background",
-        authorization,
+        bearer_for_upstream(request, authorization),
         timeout=10.0,
     )
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Failed to delete")
-    return await merge_weekly_capacity_into_user(r.json())
+    return await merge_weekly_capacity_into_user(r.json(), bearer_for_upstream(request, authorization))
 
 
 @router.get("", response_model=list[UserResponse])
 async def list_users(
+    request: Request,
     include_archived: bool = Query(False, description="Include archived users"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin_or_it),
@@ -237,7 +271,7 @@ async def list_users(
     r = await auth_service_request(
         "GET",
         "/users",
-        authorization,
+        bearer_for_upstream(request, authorization),
         params={"include_archived": include_archived},
     )
     if r.status_code == 401:
@@ -255,12 +289,13 @@ async def list_users(
 
 @router.patch("/me/weekly-capacity-hours", response_model=UserResponse)
 async def patch_me_weekly_capacity(
+    request: Request,
     body: WeeklyCapacityPatchBody,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
     """Норма часов в неделю (блок «Нагрузка»). Создаёт запись в time_tracking при первом сохранении."""
-    user = await verify_bearer_and_get_user(authorization)
+    user = await verify_bearer_and_get_user(request, authorization)
     uid = user.get("id")
     if not uid:
         raise HTTPException(status_code=401, detail="User not found")
@@ -269,13 +304,16 @@ async def patch_me_weekly_capacity(
     if not base:
         raise HTTPException(status_code=503, detail="Time tracking service not configured")
     hours = float(body.weekly_capacity_hours)
+    au = bearer_for_upstream(request, authorization)
+    auth_headers = {"Authorization": au} if au else {}
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.get(f"{base}/users/{uid}")
+            r = await client.get(f"{base}/users/{uid}", headers=auth_headers)
             if r.status_code == 200:
                 r2 = await client.patch(
                     f"{base}/users/{uid}/weekly-capacity-hours",
                     json={"weekly_capacity_hours": hours},
+                    headers=auth_headers,
                 )
             elif r.status_code == 404:
                 r2 = await client.post(
@@ -290,6 +328,7 @@ async def patch_me_weekly_capacity(
                         "is_archived": user.get("is_archived", False),
                         "weekly_capacity_hours": hours,
                     },
+                    headers=auth_headers,
                 )
             else:
                 raise HTTPException(status_code=503, detail="Time tracking service error")
@@ -304,11 +343,12 @@ async def patch_me_weekly_capacity(
 
 @router.get("/{user_id}", response_model=UserDetailResponse)
 async def get_user_detail(
+    request: Request,
     user_id: int,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(verify_user_detail_access),
 ):
-    r = await auth_service_request("GET", f"/users/{user_id}", authorization)
+    r = await auth_service_request("GET", f"/users/{user_id}", bearer_for_upstream(request, authorization))
     if r.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if r.status_code == 403:
@@ -322,13 +362,14 @@ async def get_user_detail(
     if r.status_code >= 400:
         raise HTTPException(status_code=503, detail="Auth service error")
     detail = r.json()
-    cap = await fetch_weekly_capacity_hours(user_id)
+    cap = await fetch_weekly_capacity_hours(user_id, bearer_for_upstream(request, authorization))
     detail["weekly_capacity_hours"] = cap
     return detail
 
 
 @router.patch("/{user_id}/role", response_model=UserDetailResponse)
 async def set_user_role(
+    request: Request,
     user_id: int,
     body: SetRoleRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -337,7 +378,7 @@ async def set_user_role(
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/role",
-        authorization,
+        bearer_for_upstream(request, authorization),
         json=body.model_dump(),
     )
     if r.status_code == 401:
@@ -357,6 +398,7 @@ async def set_user_role(
 
 @router.patch("/{user_id}/block", response_model=UserDetailResponse)
 async def block_user(
+    request: Request,
     user_id: int,
     body: BlockUserRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -365,7 +407,7 @@ async def block_user(
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/block",
-        authorization,
+        bearer_for_upstream(request, authorization),
         json=body.model_dump(),
     )
     if r.status_code == 401:
@@ -379,6 +421,7 @@ async def block_user(
 
 @router.patch("/{user_id}/archive", response_model=UserDetailResponse)
 async def archive_user(
+    request: Request,
     user_id: int,
     body: ArchiveUserRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -387,7 +430,7 @@ async def archive_user(
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/archive",
-        authorization,
+        bearer_for_upstream(request, authorization),
         json=body.model_dump(),
     )
     if r.status_code == 401:
@@ -401,6 +444,7 @@ async def archive_user(
 
 @router.patch("/{user_id}/time-tracking-role", response_model=UserDetailResponse)
 async def set_time_tracking_role(
+    request: Request,
     user_id: int,
     body: TimeTrackingRoleRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -410,7 +454,7 @@ async def set_time_tracking_role(
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/time-tracking-role",
-        authorization,
+        bearer_for_upstream(request, authorization),
         json=body.model_dump(),
     )
     if r.status_code == 401:
@@ -424,6 +468,7 @@ async def set_time_tracking_role(
 
 @router.patch("/{user_id}/position", response_model=UserDetailResponse)
 async def set_position(
+    request: Request,
     user_id: int,
     body: SetPositionRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -433,7 +478,7 @@ async def set_position(
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/position",
-        authorization,
+        bearer_for_upstream(request, authorization),
         json=body.model_dump(),
     )
     if r.status_code == 401:

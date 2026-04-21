@@ -8,6 +8,7 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Request,
     UploadFile,
     Query,
     WebSocket,
@@ -15,7 +16,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 import httpx
-from infrastructure.auth_upstream import verify_bearer_and_get_user
+from infrastructure.auth_upstream import verify_access_token_plain, verify_bearer_and_get_user
 from infrastructure.config import get_settings
 from presentation.schemas.ticket_schemas import (
     TicketResponse,
@@ -39,9 +40,12 @@ ROLES_FULL_ACCESS = {
 }
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
     """Текущий пользователь из auth. 401 если нет токена или токен невалиден."""
-    user = await verify_bearer_and_get_user(authorization)
+    user = await verify_bearer_and_get_user(request, authorization)
     return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
 
 
@@ -324,18 +328,25 @@ async def update_comment(
 
 
 async def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
-    """Получить пользователя по токену из query (?token=...) для WebSocket. Возвращает None, если токена нет или невалиден."""
+    """Пользователь: ?token= / ?access_token= или HttpOnly-cookie сессии (тот же хост, что gateway)."""
     import urllib.parse
+
     query = (websocket.scope.get("query_string") or b"").decode()
     params = urllib.parse.parse_qs(query)
     tokens = params.get("token") or params.get("access_token")
-    if not tokens or not tokens[0].strip():
+    token = ""
+    if tokens and tokens[0].strip():
+        token = tokens[0].strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+    if not token:
+        name = (get_settings().auth_session_cookie_name or "").strip()
+        if name:
+            token = (websocket.cookies.get(name) or "").strip()
+    if not token:
         return None
-    token = tokens[0].strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
     try:
-        user = await verify_bearer_and_get_user(f"Bearer {token}")
+        user = await verify_access_token_plain(token)
         return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
     except HTTPException:
         return None

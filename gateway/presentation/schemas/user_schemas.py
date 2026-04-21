@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -20,6 +20,10 @@ class UserResponse(BaseModel):
     weekly_capacity_hours: Optional[float] = Field(
         None,
         description="Норма часов в неделю (учёт времени); null если пользователь не в БД time_tracking",
+    )
+    permissions: Optional[dict[str, Any]] = Field(
+        None,
+        description="Флаги разделов с auth (backend_common.rbac_ui_permissions); подсказка для UI, не замена проверкам API",
     )
 
 

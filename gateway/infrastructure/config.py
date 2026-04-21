@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
 # Дефолты как в docker-compose — пустые значения из Portainer не должны ломать прокси.
@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     # Тот же секрет, что у auth — для проверки OAuth state на /api/v1/auth/azure/callback
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
+    # Как у auth — Max-Age HttpOnly-cookie после OAuth (секунды).
+    jwt_expire_minutes: int = Field(default=1440, validation_alias="JWT_EXPIRE_MINUTES")
+    # Совпадает с auth AUTH_SESSION_COOKIE_NAME — для прокси и verify_bearer с cookie.
+    auth_session_cookie_name: str = "kl_access_token"
+    auth_set_session_cookie: bool = Field(default=False, validation_alias="AUTH_SET_SESSION_COOKIE")
+    auth_session_cookie_secure: bool = Field(default=True, validation_alias="AUTH_SESSION_COOKIE_SECURE")
+    auth_session_cookie_samesite: str = Field(default="lax", validation_alias="AUTH_SESSION_COOKIE_SAMESITE")
 
     @field_validator(*tuple(_DEFAULT_SERVICE_URLS.keys()), mode="before")
     @classmethod

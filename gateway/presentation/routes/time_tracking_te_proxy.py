@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 from infrastructure.upstream_http import (
     raise_for_upstream_status,
     send_upstream_request,
@@ -31,11 +32,6 @@ class TimeEntryCreateBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
-    billable_fx_as_of: Optional[date] = Field(
-        None,
-        alias="billableFxAsOf",
-        description="Дата курса ЦБ (например закрытие недели), иначе курс на work_date.",
-    )
 
 
 class TimeEntryPatchBody(BaseModel):
@@ -48,7 +44,6 @@ class TimeEntryPatchBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
-    billable_fx_as_of: Optional[date] = Field(None, alias="billableFxAsOf")
 
 
 async def time_entries_list_gateway(auth_user_id: int, request: Request) -> Any:
@@ -57,6 +52,7 @@ async def time_entries_list_gateway(auth_user_id: int, request: Request) -> Any:
         "GET",
         f"{base}/users/{auth_user_id}/time-entries",
         params=request.query_params,
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -71,6 +67,7 @@ async def time_entries_create_gateway(auth_user_id: int, body: TimeEntryCreateBo
         "POST",
         f"{base}/users/{auth_user_id}/time-entries",
         json=body.model_dump(mode="json", by_alias=False),
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -88,6 +85,7 @@ async def time_entries_patch_gateway(auth_user_id: int, entry_id: str, body: Tim
         "PATCH",
         f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
         json=payload,
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -101,6 +99,7 @@ async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> Any:
     r = await send_upstream_request(
         "DELETE",
         f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -122,6 +121,7 @@ async def project_access_get_gateway(auth_user_id: int) -> Any:
     r = await send_upstream_request(
         "GET",
         f"{base}/users/{auth_user_id}/project-access",
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
@@ -145,6 +145,7 @@ async def project_access_put_gateway(
         "PUT",
         f"{base}/users/{auth_user_id}/project-access",
         json=payload,
+        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",

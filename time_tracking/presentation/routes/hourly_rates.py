@@ -5,8 +5,10 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.access_control import ensure_time_entry_subject_allowed
 from infrastructure.database import get_session
 from infrastructure.repositories import HourlyRateRepository, TimeTrackingUserRepository
+from presentation.deps import require_bearer_user
 from presentation.schemas import HourlyRateCreateBody, HourlyRateOut, HourlyRatePatchBody
 
 router = APIRouter(prefix="/users", tags=["hourly_rates"])
@@ -28,7 +30,9 @@ async def get_hourly_rate(
     auth_user_id: int,
     rate_id: str,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> HourlyRateOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=False)
     await _ensure_user(session, auth_user_id)
     repo = HourlyRateRepository(session)
     row = await repo.get_by_id(auth_user_id, rate_id)
@@ -42,7 +46,9 @@ async def list_hourly_rates(
     auth_user_id: int,
     kind: RateKindQuery = Query(..., alias="kind"),
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> list[HourlyRateOut]:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=False)
     ur = TimeTrackingUserRepository(session)
     if not await ur.get_by_auth_user_id(auth_user_id):
         return []
@@ -56,7 +62,9 @@ async def create_hourly_rate(
     auth_user_id: int,
     body: HourlyRateCreateBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> HourlyRateOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = HourlyRateRepository(session)
     try:
@@ -81,7 +89,9 @@ async def patch_hourly_rate(
     rate_id: str,
     body: HourlyRatePatchBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> HourlyRateOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     patch = body.model_dump(exclude_unset=True, by_alias=False)
     if not patch:
@@ -105,7 +115,9 @@ async def delete_hourly_rate(
     auth_user_id: int,
     rate_id: str,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> dict:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = HourlyRateRepository(session)
     ok = await repo.delete(auth_user_id, rate_id)

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import engine, Base
 from infrastructure.models import WorkdaySettingsModel
 from presentation.routes import health, hikvision, settings
@@ -37,6 +38,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
 app.include_router(health.router)
 app.include_router(hikvision.router)
 app.include_router(settings.router)

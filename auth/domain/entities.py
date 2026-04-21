@@ -16,5 +16,7 @@ class User:
     is_archived: bool
     time_tracking_role: Optional[str]  # "user" | "manager" | None — отдельная роль в учёте времени
     desktop_background: Optional[str]  # путь к фону рабочего стола (media/desktop_backgrounds/...)
+    # Идентификатор текущей сессии (jti в JWT). Новый вход заменяет — старые токены недействительны.
+    active_session_jti: Optional[str]
     created_at: datetime
     updated_at: datetime

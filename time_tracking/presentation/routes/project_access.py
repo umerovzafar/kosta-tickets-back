@@ -3,12 +3,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.access_control import ensure_time_entry_subject_allowed
 from infrastructure.database import get_session
 from infrastructure.repositories import (
     ClientProjectRepository,
     TimeTrackingUserRepository,
     UserProjectAccessRepository,
 )
+from presentation.deps import require_bearer_user
 from presentation.schemas import ProjectAccessOut, ProjectAccessPutBody
 
 router = APIRouter(prefix="/users", tags=["project_access"])
@@ -24,7 +26,9 @@ async def _ensure_user(session: AsyncSession, auth_user_id: int) -> None:
 async def get_project_access(
     auth_user_id: int,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> ProjectAccessOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=False)
     await _ensure_user(session, auth_user_id)
     repo = UserProjectAccessRepository(session)
     ids = await repo.list_project_ids(auth_user_id)
@@ -36,7 +40,9 @@ async def put_project_access(
     auth_user_id: int,
     body: ProjectAccessPutBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> ProjectAccessOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = UserProjectAccessRepository(session)
     projects = ClientProjectRepository(session)

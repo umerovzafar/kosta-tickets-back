@@ -3,22 +3,26 @@ import json
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import websockets
-from infrastructure.auth_upstream import verify_bearer_and_get_user
+from backend_common.rbac_ui_permissions import NOTIFICATIONS_WRITE, role_in_set
+from infrastructure.auth_upstream import verify_access_token_plain
 from infrastructure.config import get_settings
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
 WRITE_ACTIONS = {"create_notification", "update_notification", "delete_notification", "archive_notification"}
-ROLES_CAN_WRITE = {"Партнер", "IT отдел", "Офис менеджер"}
 
 
-async def get_user_from_token(token: str) -> dict | None:
-    """Валидация токена через auth, возврат {id, role} или None."""
-    if not token or not token.strip():
+async def get_user_from_token(token: str | None, websocket: WebSocket) -> dict | None:
+    """Bearer из сообщения или HttpOnly-cookie сессии на том же хосте, что gateway."""
+    raw = (token or "").replace("Bearer ", "").strip()
+    if not raw:
+        name = (get_settings().auth_session_cookie_name or "").strip()
+        if name:
+            raw = (websocket.cookies.get(name) or "").strip()
+    if not raw:
         return None
-    token = token.replace("Bearer ", "").strip()
     try:
-        user = await verify_bearer_and_get_user(f"Bearer {token}")
+        user = await verify_access_token_plain(raw)
         return {"id": user["id"], "role": user.get("role") or "Сотрудник"}
     except HTTPException:
         return None
@@ -58,7 +62,7 @@ async def ws_notifications(websocket: WebSocket):
             continue
 
         token = msg.get("token") or (msg.get("payload") or {}).get("token")
-        user = await get_user_from_token(token) if token else None
+        user = await get_user_from_token(token, websocket)
         if not user:
             await websocket.send_json({
                 "request_id": msg.get("request_id"),
@@ -67,7 +71,7 @@ async def ws_notifications(websocket: WebSocket):
             continue
 
         action = msg.get("action")
-        if action in WRITE_ACTIONS and user["role"] not in ROLES_CAN_WRITE:
+        if action in WRITE_ACTIONS and not role_in_set(user["role"], NOTIFICATIONS_WRITE):
             await websocket.send_json({
                 "request_id": msg.get("request_id"),
                 "error": "Only Partner, IT department and Office manager can create, edit, archive or delete notifications.",

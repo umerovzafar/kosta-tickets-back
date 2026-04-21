@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
+from infrastructure.upstream_auth_context import IncomingAuthorizationMiddleware
 from infrastructure.config import get_settings
 from presentation.middleware.security_headers import SecurityHeadersMiddleware
 from presentation.middleware.time_tracking_clients_rewrite import TimeTrackingClientsPathRewriteMiddleware
@@ -80,6 +82,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Location"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
+app.add_middleware(IncomingAuthorizationMiddleware)
 app.include_router(spa_auth_callback.router)
 app.include_router(health.router)
 app.include_router(desktop_backgrounds_public.router)

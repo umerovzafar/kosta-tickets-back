@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from application.use_cases import (
     GetCurrentUserUseCase,
@@ -12,11 +12,13 @@ from application.use_cases import (
     SetDesktopBackgroundUseCase,
 )
 from application.ports import UserRepositoryPort, TokenServicePort, RoleRepositoryPort
+from backend_common.rbac_ui_permissions import build_ui_permissions
 from domain.entities import User
 from infrastructure.database import get_session
 from infrastructure.repositories import UserRepository, RoleRepository
 from infrastructure.jwt_service import JWTService
 from domain.roles import Role
+from presentation.http_auth import access_token_from_request
 from presentation.schemas import (
     UserResponse,
     UserDetailResponse,
@@ -44,11 +46,12 @@ def get_token_service() -> TokenServicePort:
 
 
 async def get_current_user(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
     token_service: TokenServicePort = Depends(get_token_service),
 ) -> User:
-    token = (authorization or "").replace("Bearer ", "").strip()
+    token = access_token_from_request(request, authorization)
     uc = GetCurrentUserUseCase(user_repo, token_service)
     user = await uc.execute(token)
     if not user:
@@ -56,7 +59,8 @@ async def get_current_user(
     return user
 
 
-def _user_to_response(user: User, permissions: Optional[dict] = None) -> UserResponse:
+def _user_to_response(user: User, *, omit_permissions: bool = False) -> UserResponse:
+    perms = None if omit_permissions else build_ui_permissions(user.role, user.time_tracking_role)
     return UserResponse(
         id=user.id,
         email=user.email,
@@ -68,7 +72,7 @@ def _user_to_response(user: User, permissions: Optional[dict] = None) -> UserRes
         is_archived=user.is_archived,
         created_at=user.created_at,
         updated_at=user.updated_at,
-        permissions=permissions,
+        permissions=perms,
         time_tracking_role=user.time_tracking_role,
         desktop_background=user.desktop_background,
     )
@@ -173,12 +177,12 @@ async def list_users(
 ):
     uc = ListUsersUseCase(user_repo)
     users = await uc.execute(include_archived=include_archived)
-    return [_user_to_response(u) for u in users]  # без permissions в списке
+    return [_user_to_response(u, omit_permissions=True) for u in users]  # без permissions в списке
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    return _user_to_response(current_user, permissions=None)
+    return _user_to_response(current_user)
 
 
 @router.get("/{user_id}", response_model=UserDetailResponse)

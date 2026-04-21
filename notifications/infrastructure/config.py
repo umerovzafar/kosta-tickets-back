@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = ""
+    auth_service_url: str = ""
     media_path: str = "./media"
     service_name: str = "notifications"
     max_photo_size_mb: int = 10

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import httpx
-from fastapi import HTTPException
+from fastapi import Header, HTTPException, Request
 
 from infrastructure.config import get_settings
 from infrastructure.upstream_http import (
@@ -19,14 +19,23 @@ def auth_service_base() -> str:
     return service_base_url(get_settings().auth_service_url, "Auth")
 
 
-async def verify_bearer_and_get_user(authorization: Optional[str]) -> dict:
-    """GET /users/me — валидный Bearer или 401/503."""
-    if not authorization or not authorization.strip():
+def access_token_from_request(request: Request, authorization: Optional[str]) -> str:
+    raw = (authorization or "").strip()
+    if raw:
+        return raw.replace("Bearer ", "", 1).strip()
+    name = (get_settings().auth_session_cookie_name or "").strip()
+    if not name:
+        return ""
+    return (request.cookies.get(name) or "").strip()
+
+
+async def _fetch_user_me_with_bearer_token(token: str) -> dict:
+    if not (token or "").strip():
         raise HTTPException(status_code=401, detail="Authorization required")
     r = await send_upstream_request(
         "GET",
         f"{auth_service_base()}/users/me",
-        headers={"Authorization": authorization},
+        headers={"Authorization": f"Bearer {token.strip()}"},
         timeout=10.0,
         unavailable_status=503,
         unavailable_detail="Auth service unavailable",
@@ -39,6 +48,20 @@ async def verify_bearer_and_get_user(authorization: Optional[str]) -> dict:
         },
     )
     return r.json()
+
+
+async def verify_bearer_and_get_user(
+    request: Request,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+) -> dict:
+    """GET /users/me — Bearer, HttpOnly-cookie (AUTH_SESSION_COOKIE_NAME) или 401/503."""
+    token = access_token_from_request(request, authorization)
+    return await _fetch_user_me_with_bearer_token(token)
+
+
+async def verify_access_token_plain(token: str) -> dict:
+    """Токен без префикса Bearer (например WebSocket ?token=...)."""
+    return await _fetch_user_me_with_bearer_token(token)
 
 
 async def auth_service_request(

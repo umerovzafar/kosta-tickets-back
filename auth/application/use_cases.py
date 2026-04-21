@@ -1,4 +1,5 @@
 import secrets
+import uuid
 from typing import Optional, Sequence
 
 import bcrypt
@@ -36,7 +37,9 @@ class AzureLoginUseCase:
                 updated = await self._user_repo.update_profile(user.id, dn, pic, None)
                 if updated is not None:
                     user = updated
-        token = self._token_service.create_access_token(user.id, user.azure_oid)
+        jti = str(uuid.uuid4())
+        await self._user_repo.set_active_session_jti(user.id, jti)
+        token = self._token_service.create_access_token(user.id, user.azure_oid, jti)
         return user, token
 
 
@@ -84,7 +87,9 @@ class AdminLoginUseCase:
                 picture=None,
                 role=Role.MAIN_ADMIN.value,
             )
-        return self._token_service.create_access_token(user.id, user.azure_oid)
+        jti = str(uuid.uuid4())
+        await self._user_repo.set_active_session_jti(user.id, jti)
+        return self._token_service.create_access_token(user.id, user.azure_oid, jti)
 
 
 class BootstrapAdminUseCase:
@@ -140,7 +145,32 @@ class GetCurrentUserUseCase:
         user_id = payload.get("sub")
         if not user_id:
             return None
-        return await self._user_repo.get_by_id(int(user_id))
+        user = await self._user_repo.get_by_id(int(user_id))
+        if not user:
+            return None
+        return self._session_matches(payload, user)
+
+    def _session_matches(self, payload: dict, user: User) -> Optional[User]:
+        token_jti = payload.get("jti")
+        stored = user.active_session_jti
+        if stored:
+            if not token_jti or token_jti != stored:
+                return None
+        else:
+            # Старые строки без jti в БД: принимаем только JWT без claim jti
+            if token_jti:
+                return None
+        return user
+
+
+class InvalidateSessionUseCase:
+    """Сброс серверной сессии (все выданные JWT для пользователя перестают действовать)."""
+
+    def __init__(self, user_repo: UserRepositoryPort):
+        self._user_repo = user_repo
+
+    async def execute(self, user_id: int) -> None:
+        await self._user_repo.set_active_session_jti(user_id, secrets.token_urlsafe(48))
 
 
 class UpdateProfileUseCase:

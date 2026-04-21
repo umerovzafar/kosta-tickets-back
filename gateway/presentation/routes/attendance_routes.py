@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from infrastructure.auth_upstream import verify_bearer_and_get_user
@@ -65,8 +65,11 @@ ROLES_CAN_MANAGE_HIKVISION_MAPPINGS = {
 }
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    user = await verify_bearer_and_get_user(authorization)
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    user = await verify_bearer_and_get_user(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_VIEW:
         raise HTTPException(

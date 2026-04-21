@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
     _base_entry_conditions,
-    billable_amount_from_entry,
+    _billable_amount_for_entry,
     _load_clients_map,
     _load_projects_map,
     _load_user_rates,
@@ -92,7 +92,7 @@ async def get_budget_report(
         ubkt["hours"] += h
 
         if e.is_billable:
-            amt, _ = billable_amount_from_entry(e, h, e.work_date, rates_map.get(uid))
+            amt, _ = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates_map.get(uid))
             amount_by_project[pid] = amount_by_project.get(pid, _ZERO) + amt
             ubkt["amount"] += amt
 

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
     _base_entry_conditions,
-    billable_amount_from_entry,
+    _billable_amount_for_entry,
     _load_clients_map,
     _load_projects_map,
     _load_tasks_map,
@@ -58,7 +58,6 @@ async def get_time_report(
     if task_ids:
         cond.append(TimeEntryModel.task_id.in_(task_ids))
 
-    # Полные сущности записей: billable_amount_from_entry читает billable_*, fx_* с модели.
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
@@ -112,8 +111,8 @@ async def get_time_report(
 
         if e.is_billable:
             bkt["billable"] += h
-            amt, cur = billable_amount_from_entry(
-                e, h, e.work_date, rates_map.get(uid),
+            amt, cur = _billable_amount_for_entry(
+                h, e.is_billable, e.work_date, rates_map.get(uid),
             )
             effective_cur = project_currency
             bkt["amount"] += amt

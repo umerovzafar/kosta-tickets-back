@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, async_session_factory, engine
 from infrastructure import models  # noqa: F401
 from infrastructure.repositories import seed_reference_data
@@ -105,6 +106,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
 app.include_router(health.router)
 app.include_router(admin_db.router)
 app.include_router(expenses.router)

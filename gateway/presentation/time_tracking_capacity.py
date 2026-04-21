@@ -12,14 +12,18 @@ def _time_tracking_base() -> str | None:
     return b.rstrip("/") if b else None
 
 
-async def fetch_weekly_capacity_hours(auth_user_id: int) -> Optional[float]:
+async def fetch_weekly_capacity_hours(
+    auth_user_id: int,
+    authorization: Optional[str] = None,
+) -> Optional[float]:
     """Возвращает weekly_capacity_hours или None, если пользователя нет в TT или сервис недоступен."""
     base = _time_tracking_base()
     if not base:
         return None
+    headers = {"Authorization": authorization} if authorization else None
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{base}/users/{auth_user_id}")
+            r = await client.get(f"{base}/users/{auth_user_id}", headers=headers)
     except httpx.RequestError:
         return None
     if r.status_code != 200:
@@ -39,10 +43,13 @@ async def fetch_weekly_capacity_hours(auth_user_id: int) -> Optional[float]:
         return None
 
 
-async def merge_weekly_capacity_into_user(user: dict[str, Any]) -> dict[str, Any]:
+async def merge_weekly_capacity_into_user(
+    user: dict[str, Any],
+    authorization: Optional[str] = None,
+) -> dict[str, Any]:
     uid = user.get("id")
     if uid is not None:
-        user["weekly_capacity_hours"] = await fetch_weekly_capacity_hours(int(uid))
+        user["weekly_capacity_hours"] = await fetch_weekly_capacity_hours(int(uid), authorization)
     else:
         user["weekly_capacity_hours"] = None
     return user

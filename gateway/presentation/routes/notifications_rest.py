@@ -1,20 +1,24 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 import httpx
+from backend_common.rbac_ui_permissions import NOTIFICATIONS_WRITE, role_in_set
 from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
-ROLES_CAN_WRITE = {"Партнер", "IT отдел", "Офис менеджер"}
 
-
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    return await verify_bearer_and_get_user(authorization)
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    return await verify_bearer_and_get_user(request, authorization)
 
 
 def require_write_role(user: dict = Depends(get_current_user)):
-    if (user.get("role") or "").strip() not in ROLES_CAN_WRITE:
+    role = (user.get("role") or "").strip()
+    if not role_in_set(role, NOTIFICATIONS_WRITE):
         raise HTTPException(
             status_code=403,
             detail="Only Partner, IT department and Office manager can create, edit, archive or delete notifications.",
@@ -38,7 +42,7 @@ async def list_notifications(
     url = _notifications_url("")
     params = {"skip": skip, "limit": limit, "include_archived": include_archived}
     async with httpx.AsyncClient(timeout=15.0) as client:
-        r = await client.get(url, params=params)
+        r = await client.get(url, params=params, headers=merge_upstream_headers())
     if r.status_code != 200:
         raise HTTPException(status_code=r.status_code, detail=r.text or "Notifications service error")
     return r.json()
@@ -52,7 +56,7 @@ async def get_notification(
     """Получить уведомление по uuid."""
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(url)
+        r = await client.get(url, headers=merge_upstream_headers())
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Notification not found")
     if r.status_code != 200:
@@ -68,7 +72,7 @@ async def create_notification(
     """Создать уведомление (Партнер, IT, Офис менеджер)."""
     url = _notifications_url("")
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(url, json=body)
+        r = await client.post(url, json=body, headers=merge_upstream_headers())
     if r.status_code not in (200, 201):
         raise HTTPException(status_code=r.status_code, detail=r.text or "Notifications service error")
     return r.json()
@@ -83,7 +87,7 @@ async def update_notification(
     """Обновить уведомление."""
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.patch(url, json=body)
+        r = await client.patch(url, json=body, headers=merge_upstream_headers())
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Notification not found")
     if r.status_code != 200:
@@ -100,7 +104,7 @@ async def archive_notification(
     """Архивировать или радархивировать уведомление."""
     url = _notifications_url(f"/{notification_uuid}/archive")
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.post(url, json=body)
+        r = await client.post(url, json=body, headers=merge_upstream_headers())
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Notification not found")
     if r.status_code != 200:
@@ -116,7 +120,7 @@ async def delete_notification(
     """Удалить уведомление."""
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.delete(url)
+        r = await client.delete(url, headers=merge_upstream_headers())
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="Notification not found")
     if r.status_code != 204:

@@ -106,6 +106,11 @@ class UserRepositoryPort(ABC):
         pass
 
     @abstractmethod
+    async def set_active_session_jti(self, user_id: int, jti: Optional[str]) -> Optional[User]:
+        """Текущая сессия (jti в JWT). None — только для миграции; выход задаёт случайное значение без выдачи токена."""
+        pass
+
+    @abstractmethod
     async def get_local_admin_credentials(self) -> Optional[Tuple[str, str]]:
         """После bootstrap: (username, bcrypt_hash)."""
         pass
@@ -117,7 +122,7 @@ class UserRepositoryPort(ABC):
 
 class TokenServicePort(ABC):
     @abstractmethod
-    def create_access_token(self, user_id: int, azure_oid: str) -> str:
+    def create_access_token(self, user_id: int, azure_oid: str, jti: str) -> str:
         pass
 
     @abstractmethod

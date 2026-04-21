@@ -42,6 +42,11 @@ services:
       # Как у auth — проверка OAuth state на /api/v1/auth/azure/callback (вход в основной фронт и админку).
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
+      - AUTH_SET_SESSION_COOKIE=${AUTH_SET_SESSION_COOKIE:-true}
+      - AUTH_SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME:-kl_access_token}
+      - AUTH_SESSION_COOKIE_SECURE=${AUTH_SESSION_COOKIE_SECURE:-true}
+      - AUTH_SESSION_COOKIE_SAMESITE=${AUTH_SESSION_COOKIE_SAMESITE:-lax}
     volumes:
       - media_storage:/app/media
     healthcheck:
@@ -149,6 +154,10 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
+      - AUTH_SET_SESSION_COOKIE=${AUTH_SET_SESSION_COOKIE:-true}
+      - AUTH_SESSION_COOKIE_NAME=${AUTH_SESSION_COOKIE_NAME:-kl_access_token}
+      - AUTH_SESSION_COOKIE_SECURE=${AUTH_SESSION_COOKIE_SECURE:-true}
+      - AUTH_SESSION_COOKIE_SAMESITE=${AUTH_SESSION_COOKIE_SAMESITE:-lax}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
@@ -182,6 +191,7 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=${NOTIFICATIONS_DATABASE_URL:-postgresql://notifications:notifications@notifications_db:5432/kosta_notifications}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
       - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
     volumes:
@@ -355,6 +365,7 @@ services:
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
     healthcheck:
       test:
         [

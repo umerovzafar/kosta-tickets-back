@@ -67,18 +67,6 @@ class UserHourlyRateModel(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-class FxRateCacheModel(Base):
-    """Кеш курсов ЦБ РУз: сколько UZS за 1 единицу валюты (с учётом Nominal)."""
-
-    __tablename__ = "time_tracking_fx_rate_cache"
-
-    currency_code: Mapped[str] = mapped_column(String(10), primary_key=True)
-    rate_date: Mapped[date] = mapped_column(Date, primary_key=True)
-    source: Mapped[str] = mapped_column(String(32), primary_key=True, default="CBU_RU_UZ")
-    uzs_per_unit: Mapped[Decimal] = mapped_column(Numeric(24, 10), nullable=False)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class TimeEntryModel(Base):
     """Факт списания времени (загрузка команды: billable / non-billable)."""
 
@@ -110,17 +98,6 @@ class TimeEntryModel(Base):
         nullable=True,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Деньги в валюте проекта (после конвертации ставки по курсу ЦБ на дату FX).
-    billable_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
-    billable_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    rate_source_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
-    rate_source_currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    # Эффективный множитель: почасовка в валюте проекта = rate_source_amount * fx_cross_rate
-    fx_cross_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 12), nullable=True)
-    fx_rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    fx_rate_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # Если задано — курс ЦБ берётся на эту дату (не на work_date), например «закрытие недели».
-    billable_fx_as_of: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

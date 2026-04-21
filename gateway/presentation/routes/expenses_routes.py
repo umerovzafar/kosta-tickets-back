@@ -6,7 +6,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
-from infrastructure.auth_upstream import verify_bearer_and_get_user
+from infrastructure.auth_upstream import access_token_from_request, verify_bearer_and_get_user
 from infrastructure.config import get_settings
 from presentation.routes.users import require_main_admin
 
@@ -15,12 +15,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["expenses"])
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    return await verify_bearer_and_get_user(authorization)
-
-
-def _auth_headers(authorization: Optional[str]) -> dict[str, str]:
-    return {"Authorization": authorization} if authorization else {}
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    return await verify_bearer_and_get_user(request, authorization)
 
 
 def _base() -> str:
@@ -54,8 +53,9 @@ async def _forward(
     body = await request.body()
     headers = _strip_hop(dict(request.headers))
     headers.pop("host", None)
-    if authorization:
-        headers["Authorization"] = authorization
+    tok = access_token_from_request(request, authorization)
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.request(

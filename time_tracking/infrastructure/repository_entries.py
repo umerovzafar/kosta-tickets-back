@@ -8,7 +8,6 @@ from sqlalchemy import and_, case, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import DateTime
 
-from application.billable_fx import apply_billable_to_entry
 from application.time_rounding import (
     hours_from_seconds,
     quantize_seconds_to_minute,
@@ -219,7 +218,6 @@ class TimeEntryRepository:
         project_id: str | None,
         task_id: str | None = None,
         description: str | None,
-        billable_fx_as_of: date | None = None,
     ) -> TimeEntryModel:
         sec = self._resolve_duration_seconds(duration_seconds, hours)
         h = hours_from_seconds(sec)
@@ -235,12 +233,10 @@ class TimeEntryRepository:
             project_id=project_id,
             task_id=task_id,
             description=description,
-            billable_fx_as_of=billable_fx_as_of,
             created_at=_now_utc(),
             updated_at=None,
         )
         self._session.add(row)
-        await apply_billable_to_entry(self._session, row)
         return row
 
     async def update(
@@ -273,11 +269,8 @@ class TimeEntryRepository:
             row.task_id = patch["task_id"]
         if "description" in patch:
             row.description = patch["description"]
-        if "billable_fx_as_of" in patch:
-            row.billable_fx_as_of = patch["billable_fx_as_of"]
         row.updated_at = _now_utc()
         self._session.add(row)
-        await apply_billable_to_entry(self._session, row)
         return row
 
     async def aggregate_task_hours_for_project(

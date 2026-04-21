@@ -4,8 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.access_control import (
+    ensure_can_list_all_tt_users,
+    ensure_can_read_tt_user_row,
+    ensure_delete_tt_user_allowed,
+    ensure_managed_scope_allowed,
+    ensure_upsert_user_allowed,
+    ensure_weekly_capacity_patch_allowed,
+)
 from infrastructure.database import get_session
 from infrastructure.repositories import TimeTrackingUserRepository, UserProjectAccessRepository
+from presentation.deps import require_bearer_user
 from presentation.schemas import UserResponse, UserUpsertBody, WeeklyCapacityPatchBody
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -14,8 +23,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("", response_model=list[UserResponse], summary="Список пользователей")
 async def list_users(
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> list[UserResponse]:
     """Возвращает пользователей из БД time_tracking."""
+    await ensure_can_list_all_tt_users(viewer)
     repo = TimeTrackingUserRepository(session)
     rows = await repo.list_users()
     return [
@@ -43,8 +54,10 @@ async def list_users(
 async def list_users_in_manager_scope(
     manager_auth_user_id: int,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> list[UserResponse]:
     """Список auth_user_id: менеджер + все, у кого есть доступ хотя бы к одному из проектов менеджера."""
+    await ensure_managed_scope_allowed(viewer, manager_auth_user_id)
     par = UserProjectAccessRepository(session)
     ur = TimeTrackingUserRepository(session)
     scope_ids = set(await par.list_peer_auth_user_ids_for_manager(manager_auth_user_id))
@@ -74,7 +87,9 @@ async def list_users_in_manager_scope(
 async def get_user(
     auth_user_id: int,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> UserResponse:
+    await ensure_can_read_tt_user_row(session, viewer, auth_user_id)
     repo = TimeTrackingUserRepository(session)
     row = await repo.get_by_auth_user_id(auth_user_id)
     if not row:
@@ -102,7 +117,9 @@ async def patch_weekly_capacity(
     auth_user_id: int,
     body: WeeklyCapacityPatchBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> UserResponse:
+    await ensure_weekly_capacity_patch_allowed(viewer, auth_user_id)
     repo = TimeTrackingUserRepository(session)
     row = await repo.patch_weekly_capacity_hours(auth_user_id, body.weekly_capacity_hours)
     if not row:
@@ -126,8 +143,10 @@ async def patch_weekly_capacity(
 async def upsert_user(
     body: UserUpsertBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> dict:
     """Добавляет или обновляет пользователя в БД time_tracking. Вызывать из auth или скрипта синхронизации."""
+    ensure_upsert_user_allowed(viewer, body.auth_user_id)
     repo = TimeTrackingUserRepository(session)
     try:
         await repo.upsert_user(
@@ -165,8 +184,10 @@ async def upsert_user(
 async def delete_user(
     auth_user_id: int,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> dict:
     """Удаляет пользователя из БД time_tracking по auth_user_id."""
+    ensure_delete_tt_user_allowed(viewer)
     repo = TimeTrackingUserRepository(session)
     deleted = await repo.delete_by_auth_user_id(auth_user_id)
     await session.commit()

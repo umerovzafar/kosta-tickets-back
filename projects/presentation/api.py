@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
 from presentation.routes.health import router as health_router
@@ -34,4 +35,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
 app.include_router(health_router)

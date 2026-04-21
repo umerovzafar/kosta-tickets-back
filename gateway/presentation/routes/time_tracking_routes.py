@@ -10,6 +10,7 @@ from starlette.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 from infrastructure.upstream_http import (
     raise_for_upstream_status,
     send_upstream_request,
@@ -75,12 +76,14 @@ async def _tt_request(
     base = _time_tracking_base_url()
     if not path.startswith("/"):
         path = "/" + path
+    headers = merge_upstream_headers(dict(kwargs.pop("headers", None) or {}))
     return await send_upstream_request(
         method,
         f"{base}{path}",
         timeout=timeout,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
+        headers=headers,
         **kwargs,
     )
 

@@ -6,44 +6,27 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
-from infrastructure.auth_upstream import verify_bearer_and_get_user
+from backend_common.rbac_ui_permissions import VACATION_MANAGE_SCHEDULE, VACATION_VIEW, role_in_set
+from infrastructure.auth_upstream import access_token_from_request, verify_bearer_and_get_user
 from infrastructure.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/vacations", tags=["vacations"])
 
-ROLES_CAN_VIEW = {
-    "Главный администратор",
-    "Администратор",
-    "Партнер",
-    "IT отдел",
-    "Офис менеджер",
-    "Сотрудник",
-}
-
-# Импорт Excel, ручное создание/правка/удаление строк графика и дней отсутствия.
-ROLES_CAN_MANAGE_SCHEDULE = {
-    "Главный администратор",
-    "Администратор",
-    "Партнер",
-    "Офис менеджер",
-}
-
-
 async def vacation_access(request: Request, authorization: Optional[str] = Header(None, alias="Authorization")):
     """GET — просмотр (широкий список ролей); POST/PATCH/DELETE — только управление графиком."""
-    user = await verify_bearer_and_get_user(authorization)
+    user = await verify_bearer_and_get_user(request, authorization)
     role = (user.get("role") or "").strip()
     method = request.method.upper()
     if method == "GET":
-        if role not in ROLES_CAN_VIEW:
+        if not role_in_set(role, VACATION_VIEW):
             raise HTTPException(
                 status_code=403,
                 detail="Only authenticated staff roles can view the absence schedule",
             )
     elif method in ("POST", "PATCH", "DELETE"):
-        if role not in ROLES_CAN_MANAGE_SCHEDULE:
+        if not role_in_set(role, VACATION_MANAGE_SCHEDULE):
             raise HTTPException(
                 status_code=403,
                 detail="Only administrators, partners and office managers can modify the absence schedule",
@@ -84,8 +67,9 @@ async def _forward(
     body = await request.body()
     headers = _strip_hop(dict(request.headers))
     headers.pop("host", None)
-    if authorization:
-        headers["Authorization"] = authorization
+    tok = access_token_from_request(request, authorization)
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.request(

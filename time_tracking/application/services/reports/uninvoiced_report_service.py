@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.report_builder import (
     _base_entry_conditions,
-    billable_amount_from_entry,
+    _billable_amount_for_entry,
     _load_clients_map,
     _load_projects_map,
     _load_user_rates,
@@ -93,7 +93,7 @@ async def get_uninvoiced_report(
         pid = e.project_id
         h = _d(e.hours)
         uninv_hours_by_project[pid] = uninv_hours_by_project.get(pid, _ZERO) + h
-        amt, cur = billable_amount_from_entry(e, h, e.work_date, rates_map.get(e.auth_user_id))
+        amt, cur = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates_map.get(e.auth_user_id))
         uninv_amount_by_project[pid] = uninv_amount_by_project.get(pid, _ZERO) + amt
         if cur != "USD":
             uninv_currency_by_project[pid] = cur

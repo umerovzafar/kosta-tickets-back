@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
-from sqlalchemy import text
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
+from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import engine, Base
 from infrastructure.models import TicketModel, CommentModel
 from presentation.routes import health, tickets_routes, ws_tickets
@@ -26,6 +29,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SqlInjectionGuardMiddleware)
 app.include_router(health.router)
 app.include_router(tickets_routes.router)
 app.include_router(ws_tickets.router)

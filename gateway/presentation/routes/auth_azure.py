@@ -2,7 +2,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from infrastructure.config import get_settings
 from infrastructure.oauth_state_jwt import parse_oauth_state_token
@@ -48,6 +48,37 @@ async def azure_login(
         status_code=502,
         detail="Auth service unavailable. Check: docker compose ps auth; docker compose logs auth",
     )
+
+
+@router.post("/session/logout", status_code=204, summary="Сброс серверной сессии (инвалидация JWT)")
+async def session_logout(request: Request):
+    """Прокси к POST /auth/logout в auth-сервисе (Bearer или HttpOnly-cookie)."""
+    settings = get_settings()
+    url = f"{settings.auth_service_url.rstrip('/')}/auth/logout"
+    headers: dict[str, str] = {}
+    auth = request.headers.get("Authorization")
+    if auth:
+        headers["Authorization"] = auth
+    cookie_header = request.headers.get("Cookie")
+    if cookie_header:
+        headers["Cookie"] = cookie_header
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(url, headers=headers)
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail="Auth service unavailable",
+        ) from e
+    out = Response(status_code=r.status_code)
+    for key, value in r.headers.raw:
+        if key.lower() == b"set-cookie":
+            out.headers.append("set-cookie", value.decode("latin-1"))
+    if r.status_code == 401:
+        return out
+    if r.status_code != 204:
+        raise HTTPException(status_code=r.status_code, detail=r.text or "Logout failed")
+    return out
 
 
 @router.get(
@@ -116,9 +147,27 @@ async def azure_callback(
     else:
         base = settings.frontend_url.rstrip("/")
         callback_path = "/auth/callback"
+    s = settings
+    if s.auth_set_session_cookie and access_token:
+        redirect_url = f"{base}{callback_path}"
+    else:
+        redirect_url = f"{base}{callback_path}#access_token={access_token}"
     resp = RedirectResponse(
-        url=f"{base}{callback_path}#access_token={access_token}",
+        url=redirect_url,
         status_code=302,
     )
+    if s.auth_set_session_cookie and access_token:
+        ss = (s.auth_session_cookie_samesite or "lax").strip().lower()
+        if ss not in ("lax", "strict", "none"):
+            ss = "lax"
+        resp.set_cookie(
+            key=s.auth_session_cookie_name,
+            value=access_token,
+            max_age=int(s.jwt_expire_minutes * 60),
+            httponly=True,
+            secure=s.auth_session_cookie_secure,
+            samesite=ss,
+            path="/",
+        )
     _clear_oauth_cookies(resp)
     return resp

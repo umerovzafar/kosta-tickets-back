@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, Query
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, Query
 import httpx
 from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
@@ -9,8 +9,11 @@ router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 ROLES_CAN_WRITE = {"IT отдел", "Администратор", "Офис менеджер", "Партнер"}
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")):
-    return await verify_bearer_and_get_user(authorization)
+async def get_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+):
+    return await verify_bearer_and_get_user(request, authorization)
 
 
 def require_write_role(user: dict = Depends(get_current_user)):

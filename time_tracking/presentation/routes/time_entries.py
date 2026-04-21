@@ -6,7 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.billable_fx import FxBillableComputationError
+from application.access_control import ensure_time_entry_subject_allowed
 from application.time_entry_task import resolve_time_entry_task_for_project
 from infrastructure.database import get_session
 from infrastructure.repositories import (
@@ -15,6 +15,7 @@ from infrastructure.repositories import (
     TimeTrackingUserRepository,
     UserProjectAccessRepository,
 )
+from presentation.deps import require_bearer_user
 from presentation.schemas import TimeEntryCreateBody, TimeEntryOut, TimeEntryPatchBody
 
 router = APIRouter(prefix="/users", tags=["time_entries"])
@@ -74,8 +75,10 @@ async def list_time_entries(
     date_from: date = Query(..., alias="from"),
     date_to: date = Query(..., alias="to"),
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> list[TimeEntryOut]:
     """Список записей за период: всегда в хронологическом порядке (work_date ↑, created_at ↑, id ↑)."""
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=False)
     await _ensure_user(session, auth_user_id)
     if date_to < date_from:
         raise HTTPException(status_code=400, detail="Параметр to не может быть раньше from")
@@ -89,7 +92,9 @@ async def create_time_entry(
     auth_user_id: int,
     body: TimeEntryCreateBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> TimeEntryOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     project_id = await _validate_project_if_set(session, body.project_id)
     await _require_project_access_if_set(session, auth_user_id, project_id)
@@ -107,12 +112,9 @@ async def create_time_entry(
             project_id=project_id,
             task_id=tid,
             description=body.description,
-            billable_fx_as_of=body.billable_fx_as_of,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except FxBillableComputationError as e:
-        raise HTTPException(status_code=503, detail=e.detail) from e
     await session.commit()
     await session.refresh(row)
     return TimeEntryOut.model_validate(row)
@@ -124,7 +126,9 @@ async def patch_time_entry(
     entry_id: str,
     body: TimeEntryPatchBody,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> TimeEntryOut:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     patch = body.model_dump(exclude_unset=True)
     if not patch:
@@ -156,8 +160,6 @@ async def patch_time_entry(
         raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except FxBillableComputationError as e:
-        raise HTTPException(status_code=503, detail=e.detail) from e
     await session.commit()
     await session.refresh(row)
     return TimeEntryOut.model_validate(row)
@@ -168,7 +170,9 @@ async def delete_time_entry(
     auth_user_id: int,
     entry_id: str,
     session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
 ) -> dict:
+    await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = TimeEntryRepository(session)
     ok = await repo.delete(auth_user_id, entry_id)
