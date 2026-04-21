@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, engine
 from infrastructure import models  # noqa: F401 — регистрация таблиц в metadata
+from infrastructure.schema_readiness import mark_schema_ready
+from presentation.middleware.schema_readiness import SchemaReadinessMiddleware
 from presentation.routes.health import router as health_router
 from presentation.routes.schedule import router as schedule_router
 
@@ -25,6 +27,7 @@ async def _ensure_schema_with_retries() -> None:
                 return
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+            mark_schema_ready()
             _log.info("Схема БД vacation готова")
             return
         except Exception as e:
@@ -83,5 +86,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SqlInjectionGuardMiddleware)
+# Пока схема не создана, /schedule/* не должны бить в пустую БД (иначе 500). /health без изменений.
+app.add_middleware(SchemaReadinessMiddleware)
 app.include_router(health_router)
 app.include_router(schedule_router)
