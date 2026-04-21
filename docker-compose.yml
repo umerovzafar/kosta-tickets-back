@@ -513,16 +513,17 @@ services:
       - VACATION_DB_NAME=${VACATION_DB_NAME:-kosta_vacation}
       - VACATION_DB_HOST=${VACATION_DB_HOST:-vacation_db}
       - VACATION_DB_PORT=${VACATION_DB_PORT:-5432}
+    # Пока lifespan ждёт БД (до ~60 с), uvicorn не принимает TCP — иначе healthcheck ловит Connection refused.
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1244/health\", timeout=3)"',
+          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1244/health\", timeout=5)"',
         ]
-      interval: 10s
-      timeout: 5s
+      interval: 15s
+      timeout: 8s
       retries: 5
-      start_period: 25s
+      start_period: 120s
     depends_on:
       vacation_db:
         condition: service_healthy

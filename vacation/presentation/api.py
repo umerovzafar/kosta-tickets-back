@@ -16,17 +16,17 @@ _STARTUP_RETRIES = 30
 _STARTUP_DELAY_SEC = 2.0
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if engine is None:
-        yield
-        return
+async def _ensure_schema_with_retries() -> None:
+    """Создание таблиц; ретраи не блокируют bind uvicorn (иначе healthcheck и балансировщик видят Connection refused)."""
     last_exc: Exception | None = None
     for attempt in range(1, _STARTUP_RETRIES + 1):
         try:
+            if engine is None:
+                return
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            break
+            _log.info("Схема БД vacation готова")
+            return
         except Exception as e:
             last_exc = e
             _log.warning(
@@ -36,11 +36,37 @@ async def lifespan(app: FastAPI):
                 e,
             )
             await asyncio.sleep(_STARTUP_DELAY_SEC)
-    else:
-        assert last_exc is not None
-        _log.error("Не удалось подключиться к БД vacation после %s попыток", _STARTUP_RETRIES)
-        raise last_exc
-    yield
+    assert last_exc is not None
+    _log.error("Не удалось подключиться к БД vacation после %s попыток", _STARTUP_RETRIES)
+    raise last_exc
+
+
+def _schema_task_done(task: asyncio.Task[None]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        _log.error("Инициализация схемы vacation не удалась", exc_info=e)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if engine is None:
+        yield
+        return
+    # Фоновая инициализация: uvicorn сразу слушает порт — /health отвечает (503 пока БД недоступна), без Connection refused в healthcheck.
+    task = asyncio.create_task(_ensure_schema_with_retries())
+    task.add_done_callback(_schema_task_done)
+    try:
+        yield
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

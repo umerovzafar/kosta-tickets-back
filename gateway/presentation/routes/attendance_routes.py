@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from infrastructure.auth_upstream import verify_bearer_and_get_user
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 
 
 class WorkdaySettingsUpdateBody(BaseModel):
@@ -405,7 +406,6 @@ async def get_workday_settings(_: dict = Depends(get_current_user)):
 @router.get("/report/daily")
 async def get_daily_attendance_report(
     day: Optional[str] = Query(None, description="Дата отчёта в формате YYYY-MM-DD. По умолчанию сегодня."),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(get_current_user),
 ):
     """
@@ -454,12 +454,14 @@ async def get_daily_attendance_report(
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
 
+    # Bearer из HttpOnly-cookie подставляет IncomingAuthorizationMiddleware (см. merge_upstream_headers).
+    auth_headers = merge_upstream_headers({}) or {}
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             users_r = await client.get(
                 f"{settings.auth_service_url}/users",
                 params={"include_archived": False},
-                headers={"Authorization": authorization} if authorization else {},
+                headers=auth_headers,
             )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Auth service unavailable")
