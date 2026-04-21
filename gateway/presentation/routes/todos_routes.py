@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
 
 from infrastructure.config import get_settings
+from infrastructure.upstream_auth_context import merge_upstream_headers
 
 router = APIRouter(prefix="/api/v1/todos", tags=["todos"])
 
@@ -109,8 +110,8 @@ async def todos_calendar_connect(request: Request):
     url = f"{base}/api/v1/todos/calendar/connect"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    auth = request.headers.get("Authorization")
-    headers = {"Authorization": auth} if auth else {}
+    # Bearer из HttpOnly-cookie подставляет IncomingAuthorizationMiddleware (get_incoming_authorization).
+    headers = merge_upstream_headers({}) or {}
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             r = await client.get(url, headers=headers)
@@ -175,8 +176,7 @@ async def todos_calendar_status(request: Request):
     url = f"{base}/api/v1/todos/calendar/status"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    auth = request.headers.get("Authorization")
-    headers = {"Authorization": auth} if auth else {}
+    headers = merge_upstream_headers({}) or {}
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             r = await client.get(url, headers=headers)
@@ -251,7 +251,9 @@ async def proxy_todos(request: Request, path: str):
     url = f"{base}/api/v1/todos/{path}" if path else f"{base}/api/v1/todos"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    headers = _request_headers_for_todos_upstream(request)
+    raw_headers = _request_headers_for_todos_upstream(request)
+    # Подставить Bearer из cookie (IncomingAuthorizationMiddleware), иначе todos не увидит сессию.
+    headers = merge_upstream_headers(raw_headers) or raw_headers
     try:
         body = await request.body()
     except Exception:

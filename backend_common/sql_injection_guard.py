@@ -103,6 +103,9 @@ class SqlInjectionGuardMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         raw_path = request.url.path or ""
+        # OAuth: длинные непрозрачные code/state в query ложно матчат эвристики; SQL здесь не строится из query.
+        if raw_path == "/api/v1/auth/azure/callback":
+            return await call_next(request)
         try:
             path_decoded = unquote(raw_path)
         except Exception:

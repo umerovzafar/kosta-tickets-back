@@ -10,10 +10,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Если задано — используется как есть (обратная совместимость). Иначе URL собирается из VACATION_DB_*.
+    # Полный URL (редко). По умолчанию URL собирается из VACATION_DB_* — тот же пароль, что у контейнера vacation_db.
     database_url: str = Field(
         default="",
         validation_alias=AliasChoices("DATABASE_URL", "VACATION_DATABASE_URL"),
+    )
+    # true — использовать database_url как есть (нестандартный хост и т.д.). Иначе пароль всегда из VACATION_DB_*.
+    vacation_use_explicit_database_url: bool = Field(
+        default=False,
+        validation_alias="VACATION_USE_EXPLICIT_DATABASE_URL",
     )
     vacation_db_user: str = Field(default="vacation", validation_alias="VACATION_DB_USER")
     vacation_db_password: str = Field(default="vacation", validation_alias="VACATION_DB_PASSWORD")
@@ -35,7 +40,8 @@ def build_database_url_from_parts(settings: Settings) -> str:
 
 def resolve_database_url(settings: Settings) -> str:
     raw = (settings.database_url or "").strip()
-    if raw:
+    # Portainer часто держит старый VACATION_DATABASE_URL с другим паролем, чем VACATION_DB_PASSWORD / volume Postgres.
+    if raw and settings.vacation_use_explicit_database_url:
         return raw
     return build_database_url_from_parts(settings)
 
