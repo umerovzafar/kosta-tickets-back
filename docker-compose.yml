@@ -505,14 +505,14 @@ services:
       dockerfile: vacation/Dockerfile
     restart: unless-stopped
     environment:
-      # Пароль и имя БД — только VACATION_DB_* (= POSTGRES_* у vacation_db). Не передаём DATABASE_URL, чтобы в контейнер
-      # не протекал чужой URL из окружения хоста; явный URL — VACATION_DATABASE_URL + VACATION_USE_EXPLICIT_DATABASE_URL=true.
+      # Все VACATION_DB_* из .env / Portainer (= POSTGRES_* у vacation_db). HOST/PORT не зашивать: внешняя БД — свой хост.
+      # Явный URL: VACATION_USE_EXPLICIT_DATABASE_URL=true и VACATION_DATABASE_URL=...
       - VACATION_USE_EXPLICIT_DATABASE_URL=${VACATION_USE_EXPLICIT_DATABASE_URL:-false}
       - VACATION_DB_USER=${VACATION_DB_USER:-vacation}
       - VACATION_DB_PASSWORD=${VACATION_DB_PASSWORD:-vacation}
       - VACATION_DB_NAME=${VACATION_DB_NAME:-kosta_vacation}
-      - VACATION_DB_HOST=vacation_db
-      - VACATION_DB_PORT=5432
+      - VACATION_DB_HOST=${VACATION_DB_HOST:-vacation_db}
+      - VACATION_DB_PORT=${VACATION_DB_PORT:-5432}
     healthcheck:
       test:
         [
