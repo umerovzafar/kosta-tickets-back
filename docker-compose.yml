@@ -40,7 +40,8 @@ services:
       # Одинаковый секрет на gateway, tickets, notifications — защита внутренних WS от обхода gateway.
       - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
       # Как у auth — проверка OAuth state на /api/v1/auth/azure/callback (вход в основной фронт и админку).
-      - JWT_SECRET=${JWT_SECRET}
+      # Пустой JWT_SECRET в Portainer ломает auth и весь стек; min 32 символа — см. auth validate_production_secrets
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env or stack env (openssl rand -hex 32; same on gateway and auth)}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
       - AUTH_SET_SESSION_COOKIE=${AUTH_SET_SESSION_COOKIE:-true}
@@ -151,7 +152,8 @@ services:
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
       - AUTH_REDIRECT_URI=${AZURE_REDIRECT_URI}
-      - JWT_SECRET=${JWT_SECRET}
+      # Пустой JWT_SECRET в Portainer ломает auth и весь стек; min 32 символа — см. auth validate_production_secrets
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env or stack env (openssl rand -hex 32; same on gateway and auth)}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
       - AUTH_SET_SESSION_COOKIE=${AUTH_SET_SESSION_COOKIE:-true}
