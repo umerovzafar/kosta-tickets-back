@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from application.excel_schedule_import import import_schedule_from_workbook
 from application.kind_legend import KIND_LEGEND_ENTRIES, KindLegendEntry
-from infrastructure.config import get_settings
+from infrastructure.config import get_settings, resolve_database_url
 from infrastructure.database import get_session
 from infrastructure.db_sync import sync_engine_url
 from infrastructure.models import AbsenceDay, ScheduleEmployee
@@ -129,7 +129,7 @@ async def import_excel_upload(
     Даты в колонках файла должны быть того же календарного года, что и `year`.
     """
     settings = get_settings()
-    db_url = (settings.database_url or "").strip()
+    db_url = resolve_database_url(settings).strip()
     if not db_url:
         raise HTTPException(status_code=503, detail="DATABASE_URL is not configured")
 

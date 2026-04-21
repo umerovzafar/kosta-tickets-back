@@ -505,9 +505,8 @@ services:
       dockerfile: vacation/Dockerfile
     restart: unless-stopped
     environment:
-      # Подключение из VACATION_DB_* (совпадает с vacation_db). Старый VACATION_DATABASE_URL в Portainer игнорируется,
-      # пока VACATION_USE_EXPLICIT_DATABASE_URL не true.
-      - DATABASE_URL=${VACATION_DATABASE_URL:-}
+      # Пароль и имя БД — только VACATION_DB_* (= POSTGRES_* у vacation_db). Не передаём DATABASE_URL, чтобы в контейнер
+      # не протекал чужой URL из окружения хоста; явный URL — VACATION_DATABASE_URL + VACATION_USE_EXPLICIT_DATABASE_URL=true.
       - VACATION_USE_EXPLICIT_DATABASE_URL=${VACATION_USE_EXPLICIT_DATABASE_URL:-false}
       - VACATION_DB_USER=${VACATION_DB_USER:-vacation}
       - VACATION_DB_PASSWORD=${VACATION_DB_PASSWORD:-vacation}

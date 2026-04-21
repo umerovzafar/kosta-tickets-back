@@ -1,8 +1,12 @@
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from infrastructure.config import get_settings, resolve_database_url
 from infrastructure.orm_base import Base
 from infrastructure import models  # noqa: F401 — таблицы в Base.metadata
+
+_log = logging.getLogger("vacation.db")
 
 
 def make_async_url(url: str) -> str:
@@ -15,7 +19,18 @@ def _engine():
     settings = get_settings()
     url = resolve_database_url(settings).strip()
     if not url:
+        _log.warning("URL БД пуст: задайте VACATION_DB_* (или явный DATABASE_URL при VACATION_USE_EXPLICIT_DATABASE_URL=true).")
         return None
+    if settings.vacation_use_explicit_database_url and (settings.database_url or "").strip():
+        _log.info("Подключение к БД: явный DATABASE_URL/VACATION_DATABASE_URL (host в URL).")
+    else:
+        _log.info(
+            "Подключение к БД из частей: %s@%s:%s/%s",
+            settings.vacation_db_user,
+            settings.vacation_db_host,
+            settings.vacation_db_port,
+            settings.vacation_db_name,
+        )
     return create_async_engine(make_async_url(url), echo=False)
 
 

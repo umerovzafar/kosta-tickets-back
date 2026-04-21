@@ -1,10 +1,13 @@
 """Конфигурация vacation: пароль БД должен совпадать с vacation_db в compose (VACATION_DB_*)."""
 
+import logging
 from functools import lru_cache
 from urllib.parse import quote
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger("vacation.config")
 
 
 class Settings(BaseSettings):
@@ -27,6 +30,13 @@ class Settings(BaseSettings):
     vacation_db_name: str = Field(default="kosta_vacation", validation_alias="VACATION_DB_NAME")
     service_name: str = "vacation"
 
+    @field_validator("vacation_db_password", "vacation_db_user", "vacation_db_name", mode="before")
+    @classmethod
+    def strip_bom_and_edges(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip().replace("\ufeff", "")
+        return v
+
 
 def build_database_url_from_parts(settings: Settings) -> str:
     """postgresql://… с корректным экранированием пароля (символы @ : и т.д.)."""
@@ -43,6 +53,11 @@ def resolve_database_url(settings: Settings) -> str:
     # Portainer часто держит старый VACATION_DATABASE_URL с другим паролем, чем VACATION_DB_PASSWORD / volume Postgres.
     if raw and settings.vacation_use_explicit_database_url:
         return raw
+    if raw and not settings.vacation_use_explicit_database_url:
+        _log.warning(
+            "Задан DATABASE_URL или VACATION_DATABASE_URL, но VACATION_USE_EXPLICIT_DATABASE_URL не true — "
+            "подключение идёт из VACATION_DB_* (пароль из VACATION_DB_PASSWORD). Удалите лишний URL из env, чтобы не путаться."
+        )
     return build_database_url_from_parts(settings)
 
 
