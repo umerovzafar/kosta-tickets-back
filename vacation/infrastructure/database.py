@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from infrastructure.config import get_settings
+from infrastructure.config import get_settings, resolve_database_url
 from infrastructure.orm_base import Base
 from infrastructure import models  # noqa: F401 — таблицы в Base.metadata
 
@@ -13,7 +13,7 @@ def make_async_url(url: str) -> str:
 
 def _engine():
     settings = get_settings()
-    url = (settings.database_url or "").strip()
+    url = resolve_database_url(settings).strip()
     if not url:
         return None
     return create_async_engine(make_async_url(url), echo=False)

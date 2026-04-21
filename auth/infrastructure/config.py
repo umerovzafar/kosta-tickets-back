@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(
         default="",
         validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
-        description="Общий с gateway; в Portainer обязательно задайте JWT_SECRET (≥32 символов).",
+        description="Общий с gateway; в Portainer задайте JWT_SECRET (мин. 16 символов; для прода рекомендуется ≥32).",
     )
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
@@ -52,6 +53,13 @@ class Settings(BaseSettings):
     service_name: str = "auth"
 
 
+_log = logging.getLogger("auth.config")
+
+# Минимум длины строки (не энтропия). Раньше было 32 — старые стеки с change-me-in-production (23) не стартовали.
+_MIN_JWT_SECRET_LEN = 16
+_RECOMMENDED_JWT_SECRET_LEN = 32
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
@@ -65,11 +73,17 @@ def validate_production_secrets(settings: Settings) -> None:
             "JWT_SECRET is empty. Set JWT_SECRET in the stack environment (Portainer → stack → Environment). "
             "Same value as gateway; generate: openssl rand -hex 32"
         )
-    if len(jwt_secret) < 32:
+    n = len(jwt_secret)
+    if n < _MIN_JWT_SECRET_LEN:
         raise RuntimeError(
-            f"JWT_SECRET must be at least 32 characters long (current length: {len(jwt_secret)}). "
-            "In Portainer, open Environment and set JWT_SECRET to a longer secret (e.g. openssl rand -hex 32). "
-            "Do not use short placeholders like change-me-in-production."
+            f"JWT_SECRET must be at least {_MIN_JWT_SECRET_LEN} characters long (current length: {n}). "
+            "Set a longer secret in Portainer (e.g. openssl rand -hex 32), same value on gateway."
+        )
+    if n < _RECOMMENDED_JWT_SECRET_LEN:
+        _log.warning(
+            "JWT_SECRET length is %s; for production use at least %s random characters (e.g. openssl rand -hex 32).",
+            n,
+            _RECOMMENDED_JWT_SECRET_LEN,
         )
     if (settings.jwt_algorithm or "").strip() not in {"HS256", "HS384", "HS512"}:
         raise RuntimeError("JWT_ALGORITHM must be one of HS256, HS384 or HS512.")

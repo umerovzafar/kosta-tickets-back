@@ -505,7 +505,14 @@ services:
       dockerfile: vacation/Dockerfile
     restart: unless-stopped
     environment:
-      - DATABASE_URL=${VACATION_DATABASE_URL:-postgresql://vacation:vacation@vacation_db:5432/kosta_vacation}
+      # URL собирается в приложении из тех же VACATION_DB_* что и vacation_db — без рассинхрона URL vs пароль.
+      # Явный VACATION_DATABASE_URL в .env/Portainer переопределяет (DATABASE_URL), если нужен нестандартный хост.
+      - DATABASE_URL=${VACATION_DATABASE_URL:-}
+      - VACATION_DB_USER=${VACATION_DB_USER:-vacation}
+      - VACATION_DB_PASSWORD=${VACATION_DB_PASSWORD:-vacation}
+      - VACATION_DB_NAME=${VACATION_DB_NAME:-kosta_vacation}
+      - VACATION_DB_HOST=vacation_db
+      - VACATION_DB_PORT=5432
     healthcheck:
       test:
         [
