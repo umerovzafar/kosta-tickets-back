@@ -1,4 +1,7 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,14 +11,37 @@ from infrastructure.config import get_settings, validate_production_secrets
 from presentation.routes import auth_routes, user_routes, role_routes, health
 from presentation.startup import ensure_auth_schema, seed_default_roles
 
+_log = logging.getLogger("auth.startup")
+
+# В Docker Swarm / Portainer depends_on не гарантирует порядок — ждём БД (как в expenses).
+_STARTUP_RETRIES = 30
+_STARTUP_DELAY_SEC = 2.0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_secrets(get_settings())
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await ensure_auth_schema(conn)
-        await conn.run_sync(seed_default_roles)
+    last_exc: Exception | None = None
+    for attempt in range(1, _STARTUP_RETRIES + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                await ensure_auth_schema(conn)
+                await conn.run_sync(seed_default_roles)
+            break
+        except Exception as e:
+            last_exc = e
+            _log.warning(
+                "БД недоступна для инициализации auth (попытка %s/%s): %s",
+                attempt,
+                _STARTUP_RETRIES,
+                e,
+            )
+            await asyncio.sleep(_STARTUP_DELAY_SEC)
+    else:
+        assert last_exc is not None
+        _log.error("Не удалось инициализировать auth после %s попыток", _STARTUP_RETRIES)
+        raise last_exc
     yield
 
 

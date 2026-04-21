@@ -16,7 +16,11 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("AUTH_REDIRECT_URI", "AZURE_REDIRECT_URI"),
     )
-    jwt_secret: str = ""
+    jwt_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("JWT_SECRET", "jwt_secret"),
+        description="Общий с gateway; в Portainer обязательно задайте JWT_SECRET (≥32 символов).",
+    )
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
     # HttpOnly-cookie с JWT (имя должно совпадать с gateway AUTH_SESSION_COOKIE_NAME). Один сайт с API — иначе cookie не уйдёт.
@@ -58,9 +62,14 @@ def validate_production_secrets(settings: Settings) -> None:
     jwt_secret = (settings.jwt_secret or "").strip()
     if not jwt_secret:
         raise RuntimeError(
-            "JWT_SECRET is required. Set JWT_SECRET in environment (e.g. in .env or docker-compose)."
+            "JWT_SECRET is empty. Set JWT_SECRET in the stack environment (Portainer → stack → Environment). "
+            "Same value as gateway; generate: openssl rand -hex 32"
         )
     if len(jwt_secret) < 32:
-        raise RuntimeError("JWT_SECRET must be at least 32 characters long.")
+        raise RuntimeError(
+            f"JWT_SECRET must be at least 32 characters long (current length: {len(jwt_secret)}). "
+            "In Portainer, open Environment and set JWT_SECRET to a longer secret (e.g. openssl rand -hex 32). "
+            "Do not use short placeholders like change-me-in-production."
+        )
     if (settings.jwt_algorithm or "").strip() not in {"HS256", "HS384", "HS512"}:
         raise RuntimeError("JWT_ALGORITHM must be one of HS256, HS384 or HS512.")

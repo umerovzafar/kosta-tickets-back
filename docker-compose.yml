@@ -171,8 +171,9 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:1236/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 25s
+      retries: 8
+      # Swarm/Portainer: auth ждёт БД в lifespan до ~60 с; медленный диск — запас по health.
+      start_period: 90s
     depends_on:
       users_db:
         condition: service_healthy
@@ -401,8 +402,8 @@ services:
   # В Docker Swarm / Portainer stacks depends_on не соблюдается — приложение само ждёт БД при старте.
   expenses:
     build:
-      context: ./expenses
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: expenses/Dockerfile
     restart: unless-stopped
     environment:
       # Без env_file: в Portainer нет файла /data/compose/.../.env — переменные задаются в UI стека или через .env при локальном compose.
@@ -479,8 +480,8 @@ services:
 
   projects:
     build:
-      context: ./projects
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: projects/Dockerfile
     restart: unless-stopped
     environment:
       - DATABASE_URL=${PROJECTS_DATABASE_URL:-postgresql://projects:projects@projects_db:5432/kosta_projects}

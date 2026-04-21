@@ -8,10 +8,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Контекст сборки — корень репозитория (см. docker-compose): нужен общий пакет backend_common.
+COPY expenses/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend_common ./backend_common
+COPY expenses/ ./
 
 # Windows CRLF в скрипте ломает shebang в Linux-контейнере
 RUN sed -i 's/\r$//' docker-entrypoint.sh && chmod +x docker-entrypoint.sh

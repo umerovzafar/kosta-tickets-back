@@ -2,10 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Контекст сборки — корень репозитория (см. docker-compose): нужен backend_common.
+COPY projects/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend_common ./backend_common
+COPY projects/ ./
 
 EXPOSE 1243
 
