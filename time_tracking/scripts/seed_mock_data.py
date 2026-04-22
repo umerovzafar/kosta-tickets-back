@@ -10,7 +10,11 @@
   set PYTHONPATH=.
   python scripts/seed_mock_data.py
 
-Переменные: TIME_TRACKING_DATABASE_URL в .env (как в docker-compose для сервиса time_tracking).
+Переменные: TIME_TRACKING_DATABASE_URL (или DATABASE_URL) — БД time tracking; опционально
+EXPENSES_DATABASE_URL — отдельная БД модуля расходов (см. docker-compose). Если задана,
+в неё добавляются мок-заявки с project_id = UUID проекта из TT; сумма в нативной валюте
+проекта пересчитывается в amount_uzs + equivalent_amount (USD) с фикс. курсом UZS/USD
+и кросс-курсами EUR/GBP/RUB→USD, как в expense_service.calc_equivalent. Отключить: --skip-expenses.
 Повторный запуск добавит ещё одну партию данных (не идемпотентно).
 """
 
@@ -24,8 +28,8 @@ import sys
 import uuid
 from collections import defaultdict
 from collections.abc import Iterator
-from datetime import date, timedelta
-from decimal import Decimal
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 # .env из корня репозитория (до импорта database — там читается DATABASE_URL)
@@ -43,7 +47,11 @@ _TT = Path(__file__).resolve().parent.parent
 if str(_TT) not in sys.path:
     sys.path.insert(0, str(_TT))
 
-from sqlalchemy import delete  # noqa: E402
+from sqlalchemy import delete, text  # noqa: E402
+from sqlalchemy.ext.asyncio import (  # noqa: E402
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from infrastructure.database import async_session_factory  # noqa: E402
 from infrastructure.models import TimeTrackingUserProjectAccessModel  # noqa: E402
@@ -58,6 +66,143 @@ MOCK_PREFIX = "[mock] "
 
 # Синхронно с time_tracking.presentation.schemas.ProjectCurrency
 MOCK_CURRENCIES: tuple[str, ...] = ("USD", "UZS", "EUR", "RUB", "GBP")
+
+# Как в expenses: exchange_rate = UZS за 1 USD; equivalent_amount = amount_uzs / exchange_rate (USD)
+_UZS_PER_USD = Decimal("12850")
+_EUR_USD = Decimal("1.08")
+_GBP_USD = Decimal("1.27")
+# приблизительно: 1 USD = 100 RUB
+_RUB_PER_USD = Decimal("100")
+
+
+def _make_async_pg_url(url: str) -> str:
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+def _expense_stored_amounts(currency: str, rng: random.Random) -> tuple[Decimal, Decimal, Decimal]:
+    """(amount_uzs, exchange_rate UZS/USD, equivalent_amount в USD) — в духе expenses.application.expense_service.calc_equivalent."""
+    c = (currency or "USD").upper()
+    r = _UZS_PER_USD
+    if c == "UZS":
+        u = Decimal(rng.randint(150_000, 12_000_000))
+        eq = (u / r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return u, r, eq
+    if c == "USD":
+        usd = Decimal(rng.randint(30, 6_000))
+        u = (usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return u, r, usd
+    if c == "EUR":
+        eur = Decimal(rng.randint(25, 5_000))
+        eq = (eur * _EUR_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return u, r, eq
+    if c == "GBP":
+        gbp = Decimal(rng.randint(20, 4_000))
+        eq = (gbp * _GBP_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return u, r, eq
+    if c == "RUB":
+        rub = Decimal(rng.randint(5_000, 500_000))
+        eq = (rub / _RUB_PER_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return u, r, eq
+    usd = Decimal(rng.randint(30, 6_000))
+    u = (usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return u, r, usd
+
+
+async def _alloc_kl_id_expenses(session) -> str:
+    await session.execute(
+        text(
+            "INSERT INTO expense_kl_sequence (singleton, last_seq) VALUES (1, 0) "
+            "ON CONFLICT (singleton) DO NOTHING"
+        )
+    )
+    res = await session.execute(
+        text("UPDATE expense_kl_sequence SET last_seq = last_seq + 1 WHERE singleton = 1 RETURNING last_seq")
+    )
+    n = int(res.scalar_one())
+    return f"KL{n:06d}"
+
+
+async def _seed_expenses_mocks(
+    expenses_database_url: str,
+    project_currency: list[tuple[str, str]],
+    auth_user_ids: list[int],
+    rng: random.Random,
+    d_from: date,
+    d_to: date,
+) -> int:
+    if not project_currency or not auth_user_ids:
+        return 0
+    week_days = list(_iter_weekdays_in_range(d_from, d_to))
+    if not week_days:
+        return 0
+    engine = create_async_engine(_make_async_pg_url(expenses_database_url), echo=False, pool_pre_ping=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    n_ins = 0
+    now = datetime.now(timezone.utc)
+    try:
+        async with factory() as session:
+            for pid, cur in project_currency:
+                k = rng.randint(1, 3)
+                for _ in range(k):
+                    amount_u, rate, eq = _expense_stored_amounts(cur, rng)
+                    eid = await _alloc_kl_id_expenses(session)
+                    ed = rng.choice(week_days)
+                    uid = rng.choice(auth_user_ids)
+                    desc = f"[mock] seed_mock_data, проект {cur}"
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO expense_requests (
+                                id, description, expense_date, payment_deadline,
+                                amount_uzs, exchange_rate, equivalent_amount,
+                                expense_type, expense_subtype, is_reimbursable, payment_method,
+                                department_id, project_id, expense_category_id,
+                                vendor, business_purpose, comment, status, current_approver_id,
+                                created_by_user_id, updated_by_user_id,
+                                created_at, updated_at, submitted_at, approved_at,
+                                rejected_at, paid_at, paid_by_user_id, closed_at, withdrawn_at
+                            ) VALUES (
+                                :id, :description, :expense_date, NULL,
+                                :amount_uzs, :exchange_rate, :equivalent_amount,
+                                :expense_type, NULL, :is_reimbursable, 'card',
+                                NULL, :project_id, NULL,
+                                :vendor, NULL, 'seed_mock_data.py', :status, NULL,
+                                :created_by, :updated_by,
+                                :created_at, :updated_at, :submitted_at, :approved_at,
+                                NULL, NULL, NULL, NULL, NULL
+                            )
+                            """
+                        ),
+                        {
+                            "id": eid,
+                            "description": desc,
+                            "expense_date": ed,
+                            "amount_uzs": float(amount_u),
+                            "exchange_rate": float(rate),
+                            "equivalent_amount": float(eq),
+                            "expense_type": "client_expense",
+                            "is_reimbursable": False,
+                            "project_id": pid,
+                            "vendor": "Mock vendor (seed)",
+                            "status": "approved",
+                            "created_by": uid,
+                            "updated_by": uid,
+                            "created_at": now,
+                            "updated_at": now,
+                            "submitted_at": now,
+                            "approved_at": now,
+                        },
+                    )
+                    n_ins += 1
+            await session.commit()
+    finally:
+        await engine.dispose()
+    return n_ins
 
 
 def _fixed_fee_amount(currency: str, rng: random.Random) -> Decimal:
@@ -101,9 +246,16 @@ async def _seed(
     clients_min: int,
     clients_max: int,
     weeks_back: int,
+    skip_expenses: bool = False,
 ) -> None:
     rng = random.Random(seed)
     n_clients = rng.randint(clients_min, clients_max)
+    n_exp_mocks = 0
+    users: list = []
+    project_ids: list[str] = []
+    projects_meta: list[tuple[str, str]] = []
+    today = date.today()
+    d_from = today
 
     async with async_session_factory() as session:
         ur = TimeTrackingUserRepository(session)
@@ -120,7 +272,8 @@ async def _seed(
         cpr = ClientProjectRepository(session)
         ter = TimeEntryRepository(session)
 
-        project_ids: list[str] = []
+        project_ids = []
+        projects_meta = []
 
         for i in range(n_clients):
             client_currency = MOCK_CURRENCIES[i % len(MOCK_CURRENCIES)]
@@ -152,6 +305,7 @@ async def _seed(
                         currency=proj_cur,
                         fixed_fee_amount=_fixed_fee_amount(proj_cur, rng),
                     )
+                    projects_meta.append((p.id, proj_cur))
                 else:
                     p = await cpr.create(
                         client_id=c.id,
@@ -164,6 +318,7 @@ async def _seed(
                         project_type="time_and_materials",
                         currency=proj_cur,
                     )
+                    projects_meta.append((p.id, proj_cur))
                 project_ids.append(p.id)
 
         if not project_ids:
@@ -198,53 +353,75 @@ async def _seed(
         d_from = today - timedelta(weeks=weeks_back)
         weekdays = list(_iter_weekdays_in_range(d_from, today))
         if not weekdays:
-            print("Нет рабочих дней в диапазоне.", file=sys.stderr)
-            await session.commit()
-            return
+            print("Нет рабочих дней в диапазоне — пропуск записей времени.", file=sys.stderr)
 
         # Записи времени: по каждой календарной неделе суммарно не больше weekly_capacity
-        for u in users:
-            cap = float(u.weekly_capacity_hours or Decimal("35"))
-            by_week: dict[date, float] = defaultdict(float)
-            entries_n = rng.randint(25, min(90, len(weekdays) * 2))
-            attempts = 0
-            while entries_n > 0 and attempts < entries_n * 5:
-                attempts += 1
-                wd = rng.choice(weekdays)
-                wk = _week_start(wd)
-                if by_week[wk] >= cap * 0.98:
-                    continue
-                pid = rng.choice(project_ids)
-                sec = _random_duration_seconds(rng)
-                h = sec / 3600.0
-                if by_week[wk] + h > cap * 0.98:
-                    if cap * 0.98 - by_week[wk] < 0.5:
+        if weekdays:
+            for u in users:
+                cap = float(u.weekly_capacity_hours or Decimal("35"))
+                by_week: dict[date, float] = defaultdict(float)
+                entries_n = rng.randint(25, min(90, len(weekdays) * 2))
+                attempts = 0
+                while entries_n > 0 and attempts < entries_n * 5:
+                    attempts += 1
+                    wd = rng.choice(weekdays)
+                    wk = _week_start(wd)
+                    if by_week[wk] >= cap * 0.98:
                         continue
-                    max_h = cap * 0.98 - by_week[wk]
-                    max_units = int(max_h * 2)  # полу hours
-                    if max_units < 1:
-                        continue
-                    half_hours = rng.randint(1, min(16, max_units))
-                    sec = half_hours * 1800
-                by_week[wk] += sec / 3600.0
-                await ter.create(
-                    entry_id=str(uuid.uuid4()),
-                    auth_user_id=u.auth_user_id,
-                    work_date=wd,
-                    duration_seconds=sec,
-                    is_billable=rng.random() < 0.88,
-                    project_id=pid,
-                    task_id=None,
-                    description="Мок-запись (seed_mock_data.py)",
-                )
-                entries_n -= 1
+                    pid = rng.choice(project_ids)
+                    sec = _random_duration_seconds(rng)
+                    h = sec / 3600.0
+                    if by_week[wk] + h > cap * 0.98:
+                        if cap * 0.98 - by_week[wk] < 0.5:
+                            continue
+                        max_h = cap * 0.98 - by_week[wk]
+                        max_units = int(max_h * 2)  # полу hours
+                        if max_units < 1:
+                            continue
+                        half_hours = rng.randint(1, min(16, max_units))
+                        sec = half_hours * 1800
+                    by_week[wk] += sec / 3600.0
+                    await ter.create(
+                        entry_id=str(uuid.uuid4()),
+                        auth_user_id=u.auth_user_id,
+                        work_date=wd,
+                        duration_seconds=sec,
+                        is_billable=rng.random() < 0.88,
+                        project_id=pid,
+                        task_id=None,
+                        description="Мок-запись (seed_mock_data.py)",
+                    )
+                    entries_n -= 1
 
         await session.commit()
 
-    print(
+    ex_url = (os.environ.get("EXPENSES_DATABASE_URL") or "").strip()
+    if not skip_expenses and ex_url and projects_meta and users:
+        try:
+            n_exp_mocks = await _seed_expenses_mocks(
+                ex_url,
+                projects_meta,
+                [u.auth_user_id for u in users],
+                rng,
+                d_from,
+                today,
+            )
+        except Exception as e:
+            print(f"Мок-расходы (expenses) не записаны: {e}", file=sys.stderr)
+    elif not skip_expenses and projects_meta and users and not ex_url:
+        print(
+            "Мок-расходы пропущены: задайте EXPENSES_DATABASE_URL в .env.",
+            file=sys.stderr,
+        )
+
+    msg = (
         f"Готово: клиентов {n_clients}, проектов {len(project_ids)}, "
-        f"пользователей TT с полным доступом: {len(users)} (записи за ~{weeks_back} нед.)."
+        f"пользователей TT с полным доступом: {len(users)} (время за ~{weeks_back} нед."
     )
+    if n_exp_mocks:
+        msg += f", мок-расходов в БД expenses: {n_exp_mocks}"
+    msg += ")."
+    print(msg)
 
 
 def main() -> None:
@@ -253,6 +430,11 @@ def main() -> None:
     p.add_argument("--clients-min", type=int, default=20, metavar="N")
     p.add_argument("--clients-max", type=int, default=30, metavar="N")
     p.add_argument("--weeks", type=int, default=8, help="Сколько недель назад распределять время")
+    p.add_argument(
+        "--skip-expenses",
+        action="store_true",
+        help="Не писать мок-заявки в БД expenses (даже если задана EXPENSES_DATABASE_URL)",
+    )
     args = p.parse_args()
     if args.clients_min < 1 or args.clients_max < args.clients_min:
         p.error("clients-min/max некорректны")
@@ -262,6 +444,7 @@ def main() -> None:
             clients_min=args.clients_min,
             clients_max=args.clients_max,
             weeks_back=max(1, args.weeks),
+            skip_expenses=bool(args.skip_expenses),
         )
     )
 
