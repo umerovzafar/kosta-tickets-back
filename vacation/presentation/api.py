@@ -18,6 +18,13 @@ _STARTUP_RETRIES = 30
 _STARTUP_DELAY_SEC = 2.0
 
 
+def _is_database_missing_error(exc: BaseException) -> bool:
+    if type(exc).__name__ == "InvalidCatalogNameError":
+        return True
+    s = str(exc).lower()
+    return "does not exist" in s and "database" in s
+
+
 async def _ensure_schema_with_retries() -> None:
     """Создание таблиц; ретраи не блокируют bind uvicorn (иначе healthcheck и балансировщик видят Connection refused)."""
     last_exc: Exception | None = None
@@ -32,6 +39,13 @@ async def _ensure_schema_with_retries() -> None:
             return
         except Exception as e:
             last_exc = e
+            if attempt == 1 and _is_database_missing_error(e):
+                _log.error(
+                    "База с именем из VACATION_DB_NAME в Postgres не найдена. Создайте её "
+                    '(CREATE DATABASE "имя"; под суперпользователем) или задайте VACATION_DB_NAME '
+                    "и у контейнера vacation_db тот же POSTGRES_DB, что и у реально существующей БД. "
+                    "Частая ошибка: в томе уже создана kosta_vacation, а в .env указано kosta-vacation.",
+                )
             _log.warning(
                 "БД недоступна для vacation (попытка %s/%s): %s",
                 attempt,
