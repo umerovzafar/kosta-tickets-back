@@ -5,8 +5,8 @@
 Для группировок clients / projects / tasks каждая строка содержит поле `users` —
 список пользователей, вносивших время в этот бакет, с детализацией их часов;
 у строки и у каждого пользователя — `last_recorded_at` (ISO), плюс у пользователя
-`entries` (до 50 последних записей: work_date, recorded_at, hours), `entries_total`,
-`entries_truncated`;
+`entries` (до 50 последних записей: дата, время, часы, проект/клиент/задача/комментарий),
+`entries_total`, `entries_truncated`;
 для tasks в строке также `client_id` / `client_name` (клиент справочника задачи).
 Для группировки team каждая строка сама является пользователем.
 
@@ -105,11 +105,14 @@ async def get_time_report(
         })
         if ubkt["last_recorded_at"] is None or e.created_at > ubkt["last_recorded_at"]:
             ubkt["last_recorded_at"] = e.created_at
-        ubkt["entry_events"].append({
-            "work_date": e.work_date.isoformat(),
-            "recorded_at": e.created_at.isoformat(),
-            "hours": _hours(h),
-        })
+        ubkt["entry_events"].append(
+            _entry_event_dict(
+                e,
+                projects_map=projects_map,
+                clients_map=clients_map,
+                tasks_map=tasks_map,
+            )
+        )
         ubkt["total"] += h
 
         if e.is_billable:
@@ -178,6 +181,43 @@ def _get_group_id(e: Any, group_by: str, projects_map: dict) -> Any:
 
 
 MAX_ENTRY_LOG_ROWS = 50
+
+
+def _entry_event_dict(
+    e: TimeEntryModel,
+    *,
+    projects_map: dict,
+    clients_map: dict,
+    tasks_map: dict,
+) -> dict[str, Any]:
+    """Одна запись времени для вложенного списка `entries` (команда и разрезы с `users`)."""
+    p = projects_map.get(e.project_id) if e.project_id else None
+    cid = p.client_id if p else None
+    c = clients_map.get(cid) if cid else None
+    t = tasks_map.get(e.task_id) if e.task_id else None
+    desc = (e.description or "").strip()
+    base = {
+        "id": e.id,
+        "time_entry_id": e.id,
+        "work_date": e.work_date.isoformat(),
+        "recorded_at": e.created_at.isoformat(),
+        "hours": _hours(_d(e.hours)),
+        "is_billable": e.is_billable,
+        "project_id": e.project_id,
+        "project_name": p.name if p else None,
+        "client_id": cid,
+        "client_name": c.name if c else None,
+        "task_id": e.task_id,
+        "task_name": t.name if t else None,
+        "description": desc or None,
+        "projectId": e.project_id,
+        "projectName": p.name if p else None,
+        "clientId": cid,
+        "clientName": c.name if c else None,
+        "taskId": e.task_id,
+        "taskName": t.name if t else None,
+    }
+    return base
 
 
 def _entry_log_payload(ubkt: dict, *, max_n: int = MAX_ENTRY_LOG_ROWS) -> dict[str, Any]:
