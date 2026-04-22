@@ -43,14 +43,17 @@ _TT = Path(__file__).resolve().parent.parent
 if str(_TT) not in sys.path:
     sys.path.insert(0, str(_TT))
 
+from sqlalchemy import delete  # noqa: E402
+
 from infrastructure.database import async_session_factory  # noqa: E402
+from infrastructure.models import TimeTrackingUserProjectAccessModel  # noqa: E402
 from infrastructure.repositories import (  # noqa: E402
     ClientProjectRepository,
     ClientRepository,
     TimeEntryRepository,
     TimeTrackingUserRepository,
-    UserProjectAccessRepository,
 )
+from infrastructure.repository_shared import _now_utc  # noqa: E402
 MOCK_PREFIX = "[mock] "
 
 
@@ -95,7 +98,6 @@ async def _seed(
 
         cr = ClientRepository(session)
         cpr = ClientProjectRepository(session)
-        par = UserProjectAccessRepository(session)
         ter = TimeEntryRepository(session)
 
         project_ids: list[str] = []
@@ -128,13 +130,29 @@ async def _seed(
             print("Проекты не созданы.", file=sys.stderr)
             return
 
+        # Не вызываем UserProjectAccessRepository.replace_all: там лишний SELECT (get_by_id_global),
+        # в части окружений после flush проекты «не видны» — вставляем доступ напрямую, FK к проектам остаётся проверкой.
+        await session.flush()
+        unique_pids = list(dict.fromkeys(project_ids))
+        now_access = _now_utc()
         for u in users:
-            await par.replace_all(
-                u.auth_user_id,
-                project_ids,
-                granted_by_auth_user_id=None,
-                projects=cpr,
+            await session.execute(
+                delete(TimeTrackingUserProjectAccessModel).where(
+                    TimeTrackingUserProjectAccessModel.auth_user_id == u.auth_user_id
+                )
             )
+        for u in users:
+            for pid in unique_pids:
+                session.add(
+                    TimeTrackingUserProjectAccessModel(
+                        id=str(uuid.uuid4()),
+                        auth_user_id=u.auth_user_id,
+                        project_id=pid,
+                        granted_by_auth_user_id=None,
+                        created_at=now_access,
+                    )
+                )
+        await session.flush()
 
         today = date.today()
         d_from = today - timedelta(weeks=weeks_back)
