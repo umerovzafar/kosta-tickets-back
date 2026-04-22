@@ -12,11 +12,14 @@
   python scripts/tt_mock_data.py delete
   python scripts/tt_mock_data.py delete --apply
   python scripts/tt_mock_data.py seed --skip-expenses
+  python scripts/tt_mock_data.py reset
+  python scripts/tt_mock_data.py reset -- --weeks 10
 """
 
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,8 +36,8 @@ def main() -> None:
     )
     p.add_argument(
         "action",
-        choices=("seed", "delete"),
-        help="seed — добавить мок-данные; delete — удалить (см. --apply у delete)",
+        choices=("seed", "delete", "reset"),
+        help="seed | delete | reset (delete --apply + seed)",
     )
     p.add_argument(
         "rest",
@@ -47,6 +50,12 @@ def main() -> None:
     if rest and rest[0] == "--":
         rest = rest[1:]
 
+    if args.action == "reset":
+        r = subprocess.run(
+            [sys.executable, str(_SCRIPTS / "reset_mock_data.py"), *rest],
+            cwd=_APP,
+        )
+        raise SystemExit(r.returncode)
     if args.action == "seed":
         sys.argv = ["seed_mock_data.py", *rest]
         from seed_mock_data import main as run
