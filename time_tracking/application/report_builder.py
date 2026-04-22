@@ -1,6 +1,6 @@
 """Вычисление данных отчётов: summary (KPI) и table (детализация / агрегат).
 
-Поддерживаемые report_type: time, detailed-time, detailed-expense, contractor, uninvoiced.
+Поддерживаемые report_type: time, detailed-expense, contractor, uninvoiced.
 Группировки (group): tasks, clients, projects, team.
 """
 
@@ -30,7 +30,7 @@ from infrastructure.models_invoices import InvoiceLineItemModel, InvoiceModel
 _log = logging.getLogger(__name__)
 
 REPORT_TYPES = frozenset({
-    "time", "detailed-time", "detailed-expense", "contractor", "uninvoiced",
+    "time", "detailed-expense", "contractor", "uninvoiced",
 })
 GROUP_OPTIONS = frozenset({"tasks", "clients", "projects", "team"})
 
@@ -141,21 +141,6 @@ async def _load_user_cost_rates(
     return out
 
 
-def _split_employee_name(display_name: str | None, email: str | None) -> tuple[str, str]:
-    """Имя и фамилия для отчёта: из display_name (первый токен — имя, остаток — фамилия)."""
-    raw = (display_name or "").strip()
-    if not raw:
-        raw = (email or "").strip()
-        if "@" in raw:
-            raw = raw.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
-    if not raw:
-        return "", ""
-    parts = raw.split(None, 1)
-    if len(parts) == 1:
-        return parts[0], ""
-    return parts[0], parts[1].strip()
-
-
 def _scoped_rates(
     user_rates: list[UserHourlyRateModel] | None,
     project_currency: str | None,
@@ -234,34 +219,6 @@ async def _invoice_info_for_time_entries(
         if k not in out:
             out[k] = (str(iid), str(num))
     return out
-
-
-# Колонки детального отчёта по времени (клиентский экспорт / сверка с Harvest-подобными полями).
-DETAILED_TIME_REPORT_COLUMNS: tuple[str, ...] = (
-    "Date",
-    "Recorded At",
-    "Client",
-    "Project",
-    "Project Code",
-    "Task",
-    "Notes",
-    "Hours",
-    "Billable?",
-    "Invoiced?",
-    "Approved?",
-    "First Name",
-    "Last Name",
-    "Employee Id",
-    "Roles",
-    "Employee?",
-    "Billable Rate",
-    "Billable Amount",
-    "Cost Rate",
-    "Cost Amount",
-    "Currency",
-    "External Reference URL",
-    "Invoice ID",
-)
 
 
 def _billable_amount_for_entry(
@@ -389,12 +346,10 @@ async def build_report_summary(
     non_billable = _ZERO
     billable_amount = _ZERO
     currency = "USD"
-    line_count = 0
 
     for e in entries:
         h = _d(e.hours)
         total += h
-        line_count += 1
         p = projects_map.get(e.project_id) if e.project_id else None
         pc = (getattr(p, "currency", None) or "USD") if p else "USD"
         if e.is_billable:
@@ -419,8 +374,6 @@ async def build_report_summary(
 
     if report_type == "time":
         base["unbilledAmount"] = {"value": _money(billable_amount), "currency": currency}
-    elif report_type == "detailed-time":
-        base["lineCount"] = line_count
     elif report_type == "contractor":
         base["contractorHours"] = _hours(total)
         base["contractorCost"] = {"value": 0, "currency": currency}
@@ -499,165 +452,7 @@ async def build_report_table(
             page_size=page_size,
         )
 
-    # detailed-time — порядок строк всегда хронологический (sort не применяется).
-    return await _table_detailed_time(
-        session,
-        date_from=date_from,
-        date_to=date_to,
-        user_ids=user_ids,
-        project_ids=project_ids,
-        client_ids=client_ids,
-        include_fixed_fee=include_fixed_fee,
-        page=page,
-        page_size=page_size,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Detailed time table
-# ---------------------------------------------------------------------------
-
-
-async def _table_detailed_time(
-    session: AsyncSession,
-    *,
-    date_from: date,
-    date_to: date,
-    user_ids: list[int] | None,
-    project_ids: list[str] | None,
-    client_ids: list[str] | None,
-    include_fixed_fee: bool,
-    page: int,
-    page_size: int,
-) -> dict:
-    """
-    Детальные строки времени для отчёта (в т.ч. по выбранному клиенту через clientIds / projectIds).
-
-    Логика колонок (модель как в Harvest-подобных выгрузках):
-    - Client / Project / Project Code / Task — из справочников проекта и клиента.
-    - Billable? / Billable Rate / Billable Amount / Currency — по флагу billable и ставкам rate_kind=billable.
-    - Cost Rate / Cost Amount — по ставкам rate_kind=cost (на все часы строки).
-    - Invoiced? / Invoice ID — связь со строкой счёта (счёт не в статусе canceled).
-    - Approved? — отдельного согласования времени в ТТ нет; в колонке выводится «N/A» (зарезервировано под будущий статус).
-    - Roles — роль пользователя в модуле time_tracking (user/manager/…), не корпоративные роли auth.
-    - Employee? — «Yes», если пользователь не в архиве в справочнике TT.
-    - External Reference URL — пока не хранится; пусто.
-    - Recorded At — момент создания записи времени (ISO 8601).
-    - First Name / Last Name — разбор display_name (первое слово / остаток), иначе локальная часть email.
-
-    Порядок строк всегда хронологический: work_date по возрастанию, затем created_at, затем id.
-    """
-    cond = _base_entry_conditions(
-        date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
-    )
-    count_q = select(func.count()).select_from(TimeEntryModel).where(and_(*cond))
-    total_count = int((await session.execute(count_q)).scalar_one() or 0)
-
-    q = (
-        select(TimeEntryModel)
-        .where(and_(*cond))
-        .order_by(
-            TimeEntryModel.work_date.asc(),
-            TimeEntryModel.created_at.asc(),
-            TimeEntryModel.id.asc(),
-        )
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-
-    entries = list((await session.execute(q)).scalars().all())
-
-    users = await _load_users_map(session)
-    projects = await _load_projects_map(session)
-    clients = await _load_clients_map(session)
-    tasks = await _load_tasks_map(session)
-    page_uids = sorted({e.auth_user_id for e in entries})
-    rates_map = await _load_user_rates(session, page_uids or None)
-    cost_rates_map = await _load_user_cost_rates(session, page_uids or None)
-    inv_map = await _invoice_info_for_time_entries(session, [e.id for e in entries])
-
-    rows: list[dict] = []
-    for e in entries:
-        u = users.get(e.auth_user_id)
-        p = projects.get(e.project_id) if e.project_id else None
-        c = clients.get(p.client_id) if p else None
-        t = tasks.get(e.task_id) if e.task_id else None
-        pc = (getattr(p, "currency", None) or "USD") if p else "USD"
-        hrs = _d(e.hours)
-        bill_amt, bill_cur = _billable_amount_for_entry(
-            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
-        )
-        bill_rate, bill_rate_cur = _billable_rate_for_entry(
-            e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
-        )
-        cost_amt, cost_rate, cost_cur = _cost_amount_for_entry(
-            hrs, e.work_date, cost_rates_map.get(e.auth_user_id), project_currency=pc,
-        )
-        inv_t = inv_map.get(e.id)
-        invoiced = inv_t is not None
-        inv_display = inv_t[1] if inv_t else ""
-
-        fn, ln = _split_employee_name(
-            u.display_name if u else None,
-            u.email if u else None,
-        )
-        cur_out = bill_cur if e.is_billable else (cost_cur or bill_cur or "USD")
-
-        row: dict[str, Any] = {
-            "Date": e.work_date.isoformat(),
-            "Recorded At": e.created_at.isoformat(),
-            "Client": c.name if c else "",
-            "Project": p.name if p else "",
-            "Project Code": (p.code or "") if p else "",
-            "Task": (e.description or "").strip(),
-            "Notes": t.name if t else "",
-            "Hours": _hours(hrs),
-            "Billable?": "Yes" if e.is_billable else "No",
-            "Invoiced?": "Yes" if invoiced else "No",
-            "Approved?": "N/A",
-            "First Name": fn,
-            "Last Name": ln,
-            "Employee Id": str(e.auth_user_id),
-            "Roles": (u.role or "").strip() if u else "",
-            "Employee?": "Yes" if (u and not u.is_archived) else "No",
-            "Billable Rate": _money(bill_rate) if bill_rate is not None else "",
-            "Billable Amount": _money(bill_amt) if e.is_billable else 0.0,
-            "Cost Rate": _money(cost_rate) if cost_rate is not None else "",
-            "Cost Amount": _money(cost_amt),
-            "Currency": cur_out,
-            "External Reference URL": "",
-            "Invoice ID": inv_display,
-            # Технические поля для снимков и старых интеграций
-            "rowId": e.id,
-            "sourceType": "time_entry",
-            "sourceId": e.id,
-            # Дубли в camelCase для API, ожидающего прежние имена
-            "date": e.work_date.isoformat(),
-            "recordedAt": e.created_at.isoformat(),
-            "userId": e.auth_user_id,
-            "userName": (u.display_name or u.email) if u else str(e.auth_user_id),
-            "projectId": e.project_id,
-            "projectName": p.name if p else None,
-            "taskId": e.task_id,
-            "taskName": t.name if t else None,
-            "description": e.description or "",
-            "isBillable": e.is_billable,
-            "billableAmount": _money(bill_amt),
-            "currency": cur_out,
-            "clientName": c.name if c else None,
-            "invoiced": invoiced,
-            "invoiceNumber": inv_display or None,
-            "invoiceUuid": inv_t[0] if inv_t else None,
-        }
-        rows.append(row)
-
-    return {
-        "rows": rows,
-        "totalCount": total_count,
-        "page": page,
-        "pageSize": page_size,
-        "hasMore": (page * page_size) < total_count,
-    }
+    raise ValueError(f"Unsupported report_type for table: {report_type!r}")
 
 
 # ---------------------------------------------------------------------------

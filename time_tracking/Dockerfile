@@ -13,8 +13,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend_common ./backend_common
 COPY time_tracking/ ./
 
-RUN chmod +x run_mock_data.sh
-
 EXPOSE 1241
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "1241", "--no-access-log", "--log-level", "info"]

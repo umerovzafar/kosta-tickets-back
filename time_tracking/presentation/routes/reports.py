@@ -7,8 +7,6 @@
 
 Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
 
-GET /reports/time/detailed              — детальный отчёт по времени
-GET /reports/time/detailed/export
 GET /reports/time/{group_by}            — time report (clients/projects/tasks/team)
 GET /reports/time/{group_by}/export
 GET /reports/expenses/{group_by}        — expense report
@@ -36,10 +34,6 @@ _log = logging.getLogger(__name__)
 from application.services.reports.time_report_service import (
     get_time_report,
     get_time_report_all_rows,
-)
-from application.services.reports.detailed_time_export_service import (
-    get_detailed_time_report,
-    get_detailed_time_rows,
 )
 from application.services.reports.expense_report_service import (
     get_expense_report,
@@ -186,86 +180,6 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
         for u in users
         if not u.is_archived
     ]
-
-
-# ---------------------------------------------------------------------------
-# Detailed Time Report  GET /reports/time/detailed  (per-entry flat export)
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/time/detailed",
-    response_model=ReportResponseOut,
-    summary="Detailed time report — one row per time entry (23 columns)",
-)
-async def get_detailed_time_report_endpoint(
-    period: ReportPeriod,
-    client_id: Optional[str] = Query(None, description="Comma-separated client IDs"),
-    project_id: Optional[str] = Query(None, description="Comma-separated project IDs"),
-    user_id: Optional[str] = Query(None, description="Comma-separated user IDs (int)"),
-    task_id: Optional[str] = Query(None, description="Comma-separated task IDs"),
-    is_billable: Optional[str] = Query(None, description="true/false"),
-    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(100, ge=1, le=1000),
-    session: AsyncSession = Depends(get_session),
-):
-    df, dt = period
-    try:
-        return await get_detailed_time_report(
-            session,
-            date_from=df,
-            date_to=dt,
-            client_ids=_parse_ids_str(client_id),
-            project_ids=_parse_ids_str(project_id),
-            user_ids=_parse_ids_int(user_id),
-            task_ids=_parse_ids_str(task_id),
-            is_billable=_parse_bool(is_billable),
-            include_fixed_fee=include_fixed_fee,
-            page=page,
-            per_page=per_page,
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        _log.error("reports/time/detailed error: %s\n%s", exc, traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Detailed time report error: {exc}")
-
-
-@router.get(
-    "/time/detailed/export",
-    summary="Export detailed time report as CSV or XLSX (23 columns, one row per entry)",
-)
-async def export_detailed_time_report_endpoint(
-    period: ReportPeriod,
-    client_id: Optional[str] = Query(None),
-    project_id: Optional[str] = Query(None),
-    user_id: Optional[str] = Query(None),
-    task_id: Optional[str] = Query(None),
-    is_billable: Optional[str] = Query(None),
-    include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
-    format: ExportFormat = Query(ExportFormat.csv),
-    session: AsyncSession = Depends(get_session),
-):
-    df, dt = period
-    try:
-        rows = await get_detailed_time_rows(
-            session,
-            date_from=df,
-            date_to=dt,
-            client_ids=_parse_ids_str(client_id),
-            project_ids=_parse_ids_str(project_id),
-            user_ids=_parse_ids_int(user_id),
-            task_ids=_parse_ids_str(task_id),
-            is_billable=_parse_bool(is_billable),
-            include_fixed_fee=include_fixed_fee,
-        )
-        return export_report(rows, format.value, "detailed-time", None, df, dt)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        _log.error("reports/time/detailed/export error: %s\n%s", exc, traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Detailed time report export error: {exc}")
 
 
 # ---------------------------------------------------------------------------

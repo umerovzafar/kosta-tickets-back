@@ -367,7 +367,7 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
-      # Для seed_mock_data.py: мок-заявки в БД expenses (тот же DSN, что у сервиса expenses)
+      # Тот же DSN, что у сервиса expenses (интеграции / отчёты по расходам)
       - EXPENSES_DATABASE_URL=${EXPENSES_DATABASE_URL:-postgresql://expenses:expenses@expenses_db:5432/kosta_expenses}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
