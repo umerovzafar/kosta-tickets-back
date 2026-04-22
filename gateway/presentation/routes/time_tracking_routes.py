@@ -520,13 +520,17 @@ async def upsert_user(
 @router.get("/clients")
 async def list_time_manager_clients(
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     _: dict = Depends(require_view_role),
 ):
-    return await _tt_json(
-        "GET",
-        "/clients",
-        params={"includeArchived": "true" if include_archived else "false"},
-    )
+    params: dict[str, str] = {
+        "includeArchived": "true" if include_archived else "false",
+    }
+    if limit is not None:
+        params["limit"] = str(limit)
+        params["offset"] = str(offset)
+    return await _tt_json("GET", "/clients", params=params)
 
 
 @router.get("/clients/{client_id}/tasks")
@@ -723,14 +727,18 @@ async def export_client_project(
 @router.get("/projects-for-expenses")
 async def list_projects_for_expenses(
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     _: dict = Depends(get_current_user),
 ):
     """Плоский список проектов всех клиентов для выбора в форме расхода."""
-    return await _tt_json(
-        "GET",
-        "/projects-for-expenses",
-        params={"includeArchived": "true" if include_archived else "false"},
-    )
+    params: dict[str, str] = {
+        "includeArchived": "true" if include_archived else "false",
+    }
+    if limit is not None:
+        params["limit"] = str(limit)
+        params["offset"] = str(offset)
+    return await _tt_json("GET", "/projects-for-expenses", params=params)
 
 
 @router.get("/projects/{project_id}/expense-categories")
@@ -751,13 +759,17 @@ async def list_expense_categories_for_project(
 async def list_client_projects(
     client_id: str,
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     _: dict = Depends(require_view_role),
 ):
-    return await _tt_json(
-        "GET",
-        f"/clients/{client_id}/projects",
-        params={"includeArchived": "true" if include_archived else "false"},
-    )
+    params: dict[str, str] = {
+        "includeArchived": "true" if include_archived else "false",
+    }
+    if limit is not None:
+        params["limit"] = str(limit)
+        params["offset"] = str(offset)
+    return await _tt_json("GET", f"/clients/{client_id}/projects", params=params)
 
 
 @router.get("/clients/{client_id}/projects/{project_id}")

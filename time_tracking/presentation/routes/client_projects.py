@@ -34,6 +34,8 @@ _global_projects_router = APIRouter(tags=["projects_global"])
 @_global_projects_router.get("/projects-for-expenses")
 async def list_all_projects_for_expenses(
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: int | None = Query(None, ge=1, le=500, description="Если задано — пагинированный ответ"),
+    offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
     """Плоский список проектов всех клиентов для справочника расходов (id + name + clientName)."""
@@ -41,9 +43,16 @@ async def list_all_projects_for_expenses(
     from infrastructure.repositories import ClientRepository
 
     cr = ClientRepository(session)
-    clients = {c.id: c for c in await cr.list_all(include_archived=True)}
-    rows = await repo.list_all_global(include_archived=include_archived)
-    return [
+    if limit is None:
+        clients = {c.id: c for c in await cr.list_all(include_archived=True)}
+        rows = await repo.list_all_global(include_archived=include_archived)
+    else:
+        rows, total = await repo.list_all_global_paginated(
+            include_archived=include_archived, limit=limit, offset=offset
+        )
+        cids = {r.client_id for r in rows}
+        clients = await cr.get_by_ids(cids)
+    items = [
         {
             "id": r.id,
             "name": r.name,
@@ -54,6 +63,9 @@ async def list_all_projects_for_expenses(
         }
         for r in rows
     ]
+    if limit is None:
+        return items
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @_global_projects_router.get("/projects/{project_id}/expense-categories")
@@ -134,6 +146,15 @@ def _project_out(row, usage: int) -> TimeManagerClientProjectOut:
         usage_count=usage,
         deletable=usage == 0,
     )
+
+
+async def _client_projects_to_out(
+    repo: ClientProjectRepository,
+    rows: list,
+) -> list[TimeManagerClientProjectOut]:
+    pids = [r.id for r in rows]
+    usage_map = await repo.time_entries_counts_by_project_ids(pids)
+    return [_project_out(r, usage_map.get(r.id, 0)) for r in rows]
 
 
 def _validate_date_range(start: date | None, end: date | None) -> None:
@@ -241,20 +262,26 @@ async def export_client_project(
     )
 
 
-@router.get("/{client_id}/projects", response_model=list[TimeManagerClientProjectOut])
+@router.get("/{client_id}/projects")
 async def list_client_projects(
     client_id: str,
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: int | None = Query(None, ge=1, le=500, description="Если задано — пагинированный ответ"),
+    offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
     await _require_client(session, client_id)
     repo = ClientProjectRepository(session)
-    rows = await repo.list_for_client(client_id, include_archived=include_archived)
-    out: list[TimeManagerClientProjectOut] = []
-    for r in rows:
-        usage = await repo.time_entries_count(r.id)
-        out.append(_project_out(r, usage))
-    return out
+    if limit is None:
+        rows = await repo.list_for_client(client_id, include_archived=include_archived)
+    else:
+        rows, total = await repo.list_for_client_paginated(
+            client_id, include_archived=include_archived, limit=limit, offset=offset
+        )
+    out = await _client_projects_to_out(repo, rows)
+    if limit is None:
+        return out
+    return {"items": out, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get(

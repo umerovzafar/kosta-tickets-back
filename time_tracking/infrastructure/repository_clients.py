@@ -40,6 +40,36 @@ class ClientRepository:
         r = await self._session.execute(q)
         return list(r.scalars().all())
 
+    async def count_all(self, *, include_archived: bool = False) -> int:
+        q = select(func.count()).select_from(TimeManagerClientModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientModel.is_archived.is_(False))
+        n = (await self._session.execute(q)).scalar_one()
+        return int(n or 0)
+
+    async def list_all_paginated(
+        self,
+        *,
+        include_archived: bool = False,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[TimeManagerClientModel], int]:
+        total = await self.count_all(include_archived=include_archived)
+        q = select(TimeManagerClientModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientModel.name.asc()).limit(limit).offset(offset)
+        r = await self._session.execute(q)
+        return list(r.scalars().all()), total
+
+    async def get_by_ids(self, client_ids: set[str]) -> dict[str, TimeManagerClientModel]:
+        if not client_ids:
+            return {}
+        r = await self._session.execute(
+            select(TimeManagerClientModel).where(TimeManagerClientModel.id.in_(client_ids))
+        )
+        return {row.id: row for row in r.scalars().all()}
+
     async def get_by_id(self, client_id: str) -> TimeManagerClientModel | None:
         r = await self._session.execute(
             select(TimeManagerClientModel).where(TimeManagerClientModel.id == client_id)
@@ -449,6 +479,38 @@ class ClientProjectRepository:
         r = await self._session.execute(q)
         return list(r.scalars().all())
 
+    async def count_for_client(
+        self,
+        client_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> int:
+        q = select(func.count()).select_from(TimeManagerClientProjectModel).where(
+            TimeManagerClientProjectModel.client_id == client_id,
+        )
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        n = (await self._session.execute(q)).scalar_one()
+        return int(n or 0)
+
+    async def list_for_client_paginated(
+        self,
+        client_id: str,
+        *,
+        include_archived: bool = False,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[TimeManagerClientProjectModel], int]:
+        total = await self.count_for_client(client_id, include_archived=include_archived)
+        q = select(TimeManagerClientProjectModel).where(
+            TimeManagerClientProjectModel.client_id == client_id,
+        )
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientProjectModel.name.asc()).limit(limit).offset(offset)
+        r = await self._session.execute(q)
+        return list(r.scalars().all()), total
+
     async def list_all_global(
         self,
         *,
@@ -460,6 +522,28 @@ class ClientProjectRepository:
         q = q.order_by(TimeManagerClientProjectModel.name.asc())
         r = await self._session.execute(q)
         return list(r.scalars().all())
+
+    async def count_all_global(self, *, include_archived: bool = False) -> int:
+        q = select(func.count()).select_from(TimeManagerClientProjectModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        n = (await self._session.execute(q)).scalar_one()
+        return int(n or 0)
+
+    async def list_all_global_paginated(
+        self,
+        *,
+        include_archived: bool = False,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[TimeManagerClientProjectModel], int]:
+        total = await self.count_all_global(include_archived=include_archived)
+        q = select(TimeManagerClientProjectModel)
+        if not include_archived:
+            q = q.where(TimeManagerClientProjectModel.is_archived.is_(False))
+        q = q.order_by(TimeManagerClientProjectModel.name.asc()).limit(limit).offset(offset)
+        r = await self._session.execute(q)
+        return list(r.scalars().all()), total
 
     async def get_by_id(
         self,
@@ -572,6 +656,21 @@ class ClientProjectRepository:
         q = select(func.count()).select_from(TimeEntryModel).where(TimeEntryModel.project_id == project_id)
         n = (await self._session.execute(q)).scalar_one()
         return int(n or 0)
+
+    async def time_entries_counts_by_project_ids(self, project_ids: list[str]) -> dict[str, int]:
+        unique = list(dict.fromkeys(project_ids))
+        if not unique:
+            return {}
+        q = (
+            select(TimeEntryModel.project_id, func.count())
+            .where(TimeEntryModel.project_id.in_(unique))
+            .group_by(TimeEntryModel.project_id)
+        )
+        r = await self._session.execute(q)
+        out: dict[str, int] = {pid: 0 for pid in unique}
+        for row in r.all():
+            out[str(row[0])] = int(row[1] or 0)
+        return out
 
     async def create(
         self,

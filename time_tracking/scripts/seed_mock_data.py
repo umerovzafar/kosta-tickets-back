@@ -56,6 +56,26 @@ from infrastructure.repositories import (  # noqa: E402
 from infrastructure.repository_shared import _now_utc  # noqa: E402
 MOCK_PREFIX = "[mock] "
 
+# Синхронно с time_tracking.presentation.schemas.ProjectCurrency
+MOCK_CURRENCIES: tuple[str, ...] = ("USD", "UZS", "EUR", "RUB", "GBP")
+
+
+def _fixed_fee_amount(currency: str, rng: random.Random) -> Decimal:
+    """Сумма «фикса» в масштабе, типичном для валюты (мок-данные)."""
+    c = (currency or "USD").upper()
+    if c == "UZS":
+        return Decimal(rng.randint(80_000_000, 350_000_000))
+    if c == "RUB":
+        return Decimal(rng.randint(800_000, 8_000_000))
+    return Decimal(rng.randint(5_000, 85_000))
+
+
+def _project_currency(i_client: int, j_proj: int, client_currency: str, rng: random.Random) -> str:
+    """Часть проектов в валюте клиента, часть — в другой из списка (см. отчёты/мультивалюта)."""
+    if rng.random() < 0.45:
+        return client_currency
+    return MOCK_CURRENCIES[(i_client * 3 + j_proj) % len(MOCK_CURRENCIES)]
+
 
 def _week_start(d: date) -> date:
     return d - timedelta(days=d.weekday())
@@ -103,10 +123,11 @@ async def _seed(
         project_ids: list[str] = []
 
         for i in range(n_clients):
+            client_currency = MOCK_CURRENCIES[i % len(MOCK_CURRENCIES)]
             c = await cr.create(
                 name=f"{MOCK_PREFIX}Клиент {i + 1}",
                 address=None,
-                currency="USD",
+                currency=client_currency,
                 invoice_due_mode="net30",
                 invoice_due_days_after_issue=30,
                 tax_percent=Decimal("0"),
@@ -115,15 +136,34 @@ async def _seed(
             )
             n_proj = rng.randint(1, 10)
             for j in range(n_proj):
-                p = await cpr.create(
-                    client_id=c.id,
-                    name=f"Проект {j + 1} ({c.name.replace(MOCK_PREFIX, '').strip()})",
-                    code=f"C{i+1:02d}-P{j+1:02d}",
-                    start_date=None,
-                    end_date=None,
-                    notes="Сгенерировано seed_mock_data",
-                    report_visibility="managers_only",
-                )
+                proj_cur = _project_currency(i, j, client_currency, rng)
+                # ~30% проектов — fixed_fee; у клиентов с несколькими проектами первый — фикс чаще
+                want_fixed = (n_proj > 1 and j == 0 and (i + j) % 2 == 0) or rng.random() < 0.22
+                if want_fixed:
+                    p = await cpr.create(
+                        client_id=c.id,
+                        name=f"Проект {j + 1} — фикс ({c.name.replace(MOCK_PREFIX, '').strip()})",
+                        code=f"C{i+1:02d}-P{j+1:02d}",
+                        start_date=None,
+                        end_date=None,
+                        notes="Сгенерировано seed_mock_data (фиксированная ставка)",
+                        report_visibility="managers_only",
+                        project_type="fixed_fee",
+                        currency=proj_cur,
+                        fixed_fee_amount=_fixed_fee_amount(proj_cur, rng),
+                    )
+                else:
+                    p = await cpr.create(
+                        client_id=c.id,
+                        name=f"Проект {j + 1} ({c.name.replace(MOCK_PREFIX, '').strip()})",
+                        code=f"C{i+1:02d}-P{j+1:02d}",
+                        start_date=None,
+                        end_date=None,
+                        notes="Сгенерировано seed_mock_data",
+                        report_visibility="managers_only",
+                        project_type="time_and_materials",
+                        currency=proj_cur,
+                    )
                 project_ids.append(p.id)
 
         if not project_ids:

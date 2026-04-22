@@ -46,14 +46,26 @@ def _to_out(row, extra_contacts: list | None = None) -> TimeManagerClientOut:
     )
 
 
-@router.get("", response_model=list[TimeManagerClientOut])
+@router.get("")
 async def list_clients(
     include_archived: bool = Query(False, alias="includeArchived"),
+    limit: int | None = Query(None, ge=1, le=500, description="Если задано — пагинированный ответ"),
+    offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
     repo = ClientRepository(session)
-    rows = await repo.list_all(include_archived=include_archived)
-    return [_to_out(r) for r in rows]
+    if limit is None:
+        rows = await repo.list_all(include_archived=include_archived)
+        return [_to_out(r) for r in rows]
+    rows, total = await repo.list_all_paginated(
+        include_archived=include_archived, limit=limit, offset=offset
+    )
+    return {
+        "items": [_to_out(r) for r in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.get("/{client_id}", response_model=TimeManagerClientOut)
