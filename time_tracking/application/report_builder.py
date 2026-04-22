@@ -1,7 +1,7 @@
 """Вычисление данных отчётов: summary (KPI) и table (детализация / агрегат).
 
 Поддерживаемые report_type: time, detailed-expense, contractor, uninvoiced.
-Группировки (group): tasks, clients, projects, team.
+Группировки (group) для агрегатной таблицы: clients, projects.
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
     TimeManagerClientProjectModel,
-    TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
 )
@@ -32,7 +31,7 @@ _log = logging.getLogger(__name__)
 REPORT_TYPES = frozenset({
     "time", "detailed-expense", "contractor", "uninvoiced",
 })
-GROUP_OPTIONS = frozenset({"tasks", "clients", "projects", "team"})
+GROUP_OPTIONS = frozenset({"clients", "projects"})
 
 _Q2 = Decimal("0.01")
 _Q6 = Decimal("0.000001")
@@ -298,11 +297,6 @@ async def _load_clients_map(session: AsyncSession) -> dict[str, TimeManagerClien
     return {c.id: c for c in rows}
 
 
-async def _load_tasks_map(session: AsyncSession) -> dict[str, TimeManagerClientTaskModel]:
-    rows = (await session.execute(select(TimeManagerClientTaskModel))).scalars().all()
-    return {t.id: t for t in rows}
-
-
 # ---------------------------------------------------------------------------
 # SUMMARY
 # ---------------------------------------------------------------------------
@@ -492,23 +486,19 @@ async def _table_aggregated(
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
-    users_map = await _load_users_map(session)
     projects_map = await _load_projects_map(session)
     clients_map = await _load_clients_map(session)
-    tasks_map = await _load_tasks_map(session)
     rates_map = await _load_user_rates(session, user_ids)
 
     buckets: dict[Any, dict] = {}
     for e in entries:
-        if group == "team":
-            gid = e.auth_user_id
-        elif group == "projects":
+        if group == "projects":
             gid = e.project_id
         elif group == "clients":
             p = projects_map.get(e.project_id) if e.project_id else None
             gid = p.client_id if p else None
         else:
-            gid = e.task_id
+            raise ValueError(f"Unsupported table group: {group!r}")
 
         bkt = buckets.get(gid)
         if bkt is None:
@@ -550,11 +540,7 @@ async def _table_aggregated(
             "currency": bkt["currency"],
             "invoicedAmount": 0,
         }
-        if group == "team":
-            u = users_map.get(gid) if gid else None
-            row["userId"] = gid
-            row["name"] = (u.display_name or u.email) if u else str(gid or "N/A")
-        elif group == "projects":
+        if group == "projects":
             p = projects_map.get(gid) if gid else None
             row["projectId"] = gid
             row["name"] = p.name if p else "Без проекта"
@@ -568,9 +554,7 @@ async def _table_aggregated(
             row["clientId"] = gid
             row["name"] = c.name if c else "Без клиента"
         else:
-            t = tasks_map.get(gid) if gid else None
-            row["taskId"] = gid
-            row["name"] = t.name if t else "Без задачи"
+            raise ValueError(f"Unsupported table group: {group!r}")
         rows.append(row)
 
     return {

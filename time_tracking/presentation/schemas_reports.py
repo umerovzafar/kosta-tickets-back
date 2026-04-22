@@ -11,22 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 # Enums / группировки
 # ---------------------------------------------------------------------------
 
-
-class TimeGroupBy(str):
-    clients = "clients"
-    projects = "projects"
-    tasks = "tasks"
-    team = "team"
-
-
 from enum import Enum
 
 
 class TimeGroupBy(str, Enum):
     clients = "clients"
     projects = "projects"
-    tasks = "tasks"
-    team = "team"
 
 
 class ExpenseGroupBy(str, Enum):

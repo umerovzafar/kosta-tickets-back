@@ -7,7 +7,7 @@
 
 Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
 
-GET /reports/time/{group_by}            — time report (clients/projects/tasks/team)
+GET /reports/time/{group_by}            — time report (clients/projects)
 GET /reports/time/{group_by}/export
 GET /reports/expenses/{group_by}        — expense report
 GET /reports/expenses/{group_by}/export
@@ -61,7 +61,7 @@ from presentation.schemas_reports import (
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-_TIME_GROUP_OPTIONS = frozenset({"clients", "projects", "tasks", "team"})
+_TIME_GROUP_OPTIONS = frozenset({"clients", "projects"})
 _EXPENSE_GROUP_OPTIONS = frozenset({"clients", "projects", "categories", "team"})
 
 
@@ -190,7 +190,7 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
 @router.get(
     "/time/{group_by}",
     response_model=ReportResponseOut,
-    summary="Time report grouped by clients/projects/tasks/team",
+    summary="Time report grouped by clients or projects",
 )
 async def get_time_report_endpoint(
     group_by: TimeGroupBy,

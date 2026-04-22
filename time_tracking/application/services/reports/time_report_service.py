@@ -1,20 +1,13 @@
 """Time Report Service — агрегированные отчёты по времени.
 
-Группировки: clients, projects, tasks, team.
+Группировки: **clients**, **projects** (разрезы «задачи» и «команда» сняты).
 
-Для группировок clients / projects / tasks каждая строка содержит поле `users` —
-список пользователей, вносивших время в этот бакет, с детализацией их часов;
-у строки и у каждого пользователя — `last_recorded_at` (ISO), плюс у пользователя
-`entries` (до 50 последних записей: дата, время, часы, проект/клиент/задача/комментарий),
-`entries_total`, `entries_truncated`;
-для tasks в строке также `client_id` / `client_name` (клиент справочника задачи).
-Для группировки team каждая строка сама является пользователем.
+Для clients / projects каждая строка содержит `users` — вложенных пользователей
+с часами и `entries` (до 50 записей: дата, часы, проект/клиент/задача/комментарий),
+`entries_total`, `entries_truncated`.
 
-Суммы billable (число + валюта) всегда в **валюте проекта** записи времени. Для clients /
-tasks / team бакет — это не только id сущности, а **(id, project_currency)**, чтобы
-не складывать разные валюты в одной строке; одна и та же задача/клиент/сотрудник
-может появиться **несколько раз** (по разным валютам). group_by=projects — по-прежнему
-один проект = одна валюта, ключ только project_id.
+Суммы billable в **валюте проекта** записи. Для **clients** бакет: **(client_id, project_currency)**,
+чтобы не смешивать валюты; **projects** — ключ `project_id` (одна валюта на проект).
 """
 
 from __future__ import annotations
@@ -38,7 +31,7 @@ from application.report_builder import (
 from infrastructure.models import TimeEntryModel
 from application.services.reports._base import _d, _hours, _money, _ZERO, build_response
 
-TIME_GROUP_OPTIONS = frozenset({"clients", "projects", "tasks", "team"})
+TIME_GROUP_OPTIONS = frozenset({"clients", "projects"})
 
 
 async def get_time_report(
@@ -130,7 +123,7 @@ async def get_time_report(
 
     all_rows: list[dict] = []
     for gid, bkt in buckets.items():
-        row = _build_row(gid, bkt, group_by, users_map, projects_map, clients_map, tasks_map)
+        row = _build_row(gid, bkt, group_by, users_map, projects_map, clients_map)
         all_rows.append(row)
 
     all_rows.sort(key=lambda r: r.get("total_hours", 0), reverse=True)
@@ -169,15 +162,12 @@ async def get_time_report_all_rows(
 def _get_group_id(e: Any, group_by: str, projects_map: dict) -> Any:
     p = projects_map.get(e.project_id) if e.project_id else None
     pc = (getattr(p, "currency", None) or "USD") if p else "USD"
-    if group_by == "team":
-        return (e.auth_user_id, pc)
     if group_by == "projects":
         return e.project_id
     if group_by == "clients":
         cid = p.client_id if p else None
         return (cid, pc) if cid is not None else (None, pc)
-    # tasks — одна сущность (task) может встречаться в проектах с разной валютой
-    return (e.task_id, pc)
+    raise ValueError(f"Unsupported time report group_by: {group_by!r}")
 
 
 MAX_ENTRY_LOG_ROWS = 50
@@ -190,7 +180,7 @@ def _entry_event_dict(
     clients_map: dict,
     tasks_map: dict,
 ) -> dict[str, Any]:
-    """Одна запись времени для вложенного списка `entries` (команда и разрезы с `users`)."""
+    """Одна запись времени для вложенного списка `entries` в `users` (clients / projects)."""
     p = projects_map.get(e.project_id) if e.project_id else None
     cid = p.client_id if p else None
     c = clients_map.get(cid) if cid else None
@@ -261,7 +251,6 @@ def _build_row(
     users_map: dict,
     projects_map: dict,
     clients_map: dict,
-    tasks_map: dict,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "total_hours": _hours(bkt["total"]),
@@ -293,38 +282,7 @@ def _build_row(
         row["project_name"] = p.name if p else None
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
-    elif group_by == "tasks":
-        tid: Any
-        if isinstance(gid, tuple) and len(gid) == 2:
-            tid, _pcur = gid
-        else:
-            tid = gid
-        t = tasks_map.get(tid) if tid else None
-        row["task_id"] = tid
-        row["task_name"] = t.name if t else None
-        row["client_id"] = t.client_id if t else None
-        c = clients_map.get(t.client_id) if (t and t.client_id) else None
-        row["client_name"] = c.name if c else None
-        row["users"] = _build_users_list(bkt["user_buckets"], users_map)
-
-    else:  # team — строка сама является пользователем
-        tuid: Any
-        if isinstance(gid, tuple) and len(gid) == 2:
-            tuid, _pcur = gid
-        else:
-            tuid = gid
-        u = users_map.get(tuid) if tuid is not None else None
-        row["user_id"] = tuid
-        row["user_name"] = (u.display_name or u.email) if u else str(tuid or "")
-        row["is_contractor"] = False
-        row["weekly_capacity"] = float(u.weekly_capacity_hours) if u else 0.0
-        row["avatar_url"] = u.picture if u else None
-        ub = bkt["user_buckets"].get(tuid) if tuid is not None else None
-        if ub:
-            row.update(_entry_log_payload(ub))
-        else:
-            row["entries"] = []
-            row["entries_total"] = 0
-            row["entries_truncated"] = False
+    else:
+        raise ValueError(f"Unsupported time report group_by: {group_by!r}")
 
     return row
