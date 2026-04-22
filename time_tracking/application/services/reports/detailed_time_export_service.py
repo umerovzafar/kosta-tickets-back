@@ -87,19 +87,19 @@ async def get_detailed_time_rows(
         t = tasks_map.get(e.task_id) if e.task_id else None
 
         hrs = _d(e.hours)
+        project_currency = (getattr(p, "currency", None) or "USD") if p else "USD"
         bill_amt, bill_cur = _billable_amount_for_entry(
-            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
+            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id), project_currency=project_currency,
         )
         bill_rate, bill_rate_cur = _billable_rate_for_entry(
-            e.work_date, rates_map.get(e.auth_user_id),
+            e.work_date, rates_map.get(e.auth_user_id), project_currency=project_currency,
         )
         cost_amt, cost_rate, cost_cur = _cost_amount_for_entry(
-            hrs, e.work_date, cost_rates_map.get(e.auth_user_id),
+            hrs, e.work_date, cost_rates_map.get(e.auth_user_id), project_currency=project_currency,
         )
         inv_t = inv_map.get(e.id)
 
-        # Приоритет валюты: проект → ставка биллинга → ставка себестоимости → USD
-        project_currency = (getattr(p, "currency", None) or "USD") if p else "USD"
+        # Приоритет отображения валюты: проект → ставка биллинга → себестоимость → USD
         if project_currency != "USD":
             cur_out = project_currency
         elif e.is_billable and bill_cur != "USD":

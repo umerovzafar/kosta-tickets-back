@@ -15,6 +15,10 @@ from infrastructure.repository_shared import _now_utc, _to_decimal
 _RATE_KINDS = frozenset({"billable", "cost"})
 
 
+def _rate_currency_key(row: UserHourlyRateModel) -> str:
+    return (row.currency or "USD").strip().upper()[:10] or "USD"
+
+
 class HourlyRateRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -70,16 +74,18 @@ class HourlyRateRepository:
         validate_range_order(valid_from, valid_to)
         if amount <= 0:
             raise ValueError("Сумма должна быть больше нуля")
+        cur_norm = (currency or "USD").strip().upper()[:10] or "USD"
         existing = await self.list_by_user_and_kind(auth_user_id, rate_kind)
-        if self._has_overlap(existing, valid_from, valid_to):
-            raise ValueError("Интервал пересекается с другой ставкой этого типа")
+        same_cur = [r for r in existing if _rate_currency_key(r) == cur_norm]
+        if self._has_overlap(same_cur, valid_from, valid_to):
+            raise ValueError("Интервал пересекается с другой ставкой этого типа и валюты")
         now = _now_utc()
         row = UserHourlyRateModel(
             id=str(uuid.uuid4()),
             auth_user_id=auth_user_id,
             rate_kind=rate_kind,
             amount=amount,
-            currency=(currency or "USD").strip().upper()[:10] or "USD",
+            currency=cur_norm,
             valid_from=valid_from,
             valid_to=valid_to,
             created_at=now,
@@ -114,8 +120,10 @@ class HourlyRateRepository:
 
         validate_range_order(new_from, new_to)
         existing = await self.list_by_user_and_kind(auth_user_id, row.rate_kind)
-        if self._has_overlap(existing, new_from, new_to, exclude_id=rate_id):
-            raise ValueError("Интервал пересекается с другой ставкой этого типа")
+        new_cur = (new_currency or "USD").strip().upper()[:10] or "USD"
+        others = [r for r in existing if r.id != rate_id and _rate_currency_key(r) == new_cur]
+        if self._has_overlap(others, new_from, new_to):
+            raise ValueError("Интервал пересекается с другой ставкой этого типа и валюты")
 
         row.amount = new_amount
         row.currency = new_currency

@@ -15,7 +15,7 @@ import httpx
 from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.hourly_rate_logic import pick_rate_for_date
+from application.hourly_rate_logic import filter_rates_by_currency, pick_rate_for_date
 from infrastructure.config import get_settings
 from infrastructure.models import (
     TimeEntryModel,
@@ -156,33 +156,53 @@ def _split_employee_name(display_name: str | None, email: str | None) -> tuple[s
     return parts[0], parts[1].strip()
 
 
+def _scoped_rates(
+    user_rates: list[UserHourlyRateModel] | None,
+    project_currency: str | None,
+) -> list[UserHourlyRateModel] | None:
+    if not user_rates:
+        return None
+    if not (project_currency and str(project_currency).strip()):
+        return user_rates
+    s = filter_rates_by_currency(user_rates, project_currency)
+    return s
+
+
 def _billable_rate_for_entry(
     work_date: date,
     user_rates: list[UserHourlyRateModel] | None,
+    *,
+    project_currency: str | None = None,
 ) -> tuple[Decimal | None, str]:
-    """Ставка за час (billable), действующая на дату; без ставки — (None, USD)."""
-    if not user_rates:
-        return None, "USD"
-    rate = pick_rate_for_date(user_rates, work_date)
+    """Ставка за час (billable) в валюте проекта, действующая на дату."""
+    base_cur = (project_currency or "USD").strip()[:10] or "USD"
+    scoped = _scoped_rates(user_rates, project_currency)
+    if not scoped:
+        return None, base_cur
+    rate = pick_rate_for_date(scoped, work_date)
     if not rate:
-        return None, "USD"
-    return _d(rate.amount), (rate.currency or "USD").strip()[:10] or "USD"
+        return None, base_cur
+    return _d(rate.amount), (rate.currency or base_cur).strip()[:10] or base_cur
 
 
 def _cost_amount_for_entry(
     hours: Decimal,
     work_date: date,
     user_cost_rates: list[UserHourlyRateModel] | None,
+    *,
+    project_currency: str | None = None,
 ) -> tuple[Decimal, Decimal | None, str]:
-    """(cost_amount, cost_rate_per_hour, currency)."""
-    if not user_cost_rates:
-        return Decimal(0), None, "USD"
-    rate = pick_rate_for_date(user_cost_rates, work_date)
+    """(cost_amount, cost_rate_per_hour, currency) — в валюте проекта."""
+    base_cur = (project_currency or "USD").strip()[:10] or "USD"
+    scoped = _scoped_rates(user_cost_rates, project_currency)
+    if not scoped:
+        return Decimal(0), None, base_cur
+    rate = pick_rate_for_date(scoped, work_date)
     if not rate:
-        return Decimal(0), None, "USD"
+        return Decimal(0), None, base_cur
     r_amt = _d(rate.amount)
     amt = (hours * r_amt).quantize(_Q2, rounding=ROUND_HALF_UP)
-    return amt, r_amt, (rate.currency or "USD").strip()[:10] or "USD"
+    return amt, r_amt, (rate.currency or base_cur).strip()[:10] or base_cur
 
 
 async def _invoice_info_for_time_entries(
@@ -249,14 +269,20 @@ def _billable_amount_for_entry(
     is_billable: bool,
     work_date: date,
     user_rates: list[UserHourlyRateModel] | None,
+    *,
+    project_currency: str | None = None,
 ) -> tuple[Decimal, str]:
-    """Возвращает (amount, currency). Если нет ставки — (0, 'USD')."""
+    """Возвращает (amount, currency) в валюте проекта. Если нет ставки в этой валюте — 0."""
+    out_cur = (project_currency or "USD").strip()[:10] or "USD"
     if not is_billable or not user_rates:
-        return Decimal(0), "USD"
-    rate = pick_rate_for_date(user_rates, work_date)
+        return Decimal(0), out_cur
+    scoped = _scoped_rates(user_rates, project_currency)
+    if not scoped:
+        return Decimal(0), out_cur
+    rate = pick_rate_for_date(scoped, work_date)
     if not rate:
-        return Decimal(0), "USD"
-    return (hours * _d(rate.amount)).quantize(_Q2, rounding=ROUND_HALF_UP), rate.currency or "USD"
+        return Decimal(0), out_cur
+    return (hours * _d(rate.amount)).quantize(_Q2, rounding=ROUND_HALF_UP), rate.currency or out_cur
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +382,7 @@ async def build_report_summary(
     entries = list((await session.execute(entries_q)).scalars().all())
 
     rates_map = await _load_user_rates(session, user_ids)
+    projects_map = await _load_projects_map(session)
 
     total = _ZERO
     billable = _ZERO
@@ -368,13 +395,15 @@ async def build_report_summary(
         h = _d(e.hours)
         total += h
         line_count += 1
+        p = projects_map.get(e.project_id) if e.project_id else None
+        pc = (getattr(p, "currency", None) or "USD") if p else "USD"
         if e.is_billable:
             billable += h
             amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id),
+                h, True, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
             )
             billable_amount += amt
-            if cur != "USD":
+            if cur != "USD" or (pc and pc != "USD"):
                 currency = cur
         else:
             non_billable += h
@@ -553,15 +582,16 @@ async def _table_detailed_time(
         p = projects.get(e.project_id) if e.project_id else None
         c = clients.get(p.client_id) if p else None
         t = tasks.get(e.task_id) if e.task_id else None
+        pc = (getattr(p, "currency", None) or "USD") if p else "USD"
         hrs = _d(e.hours)
         bill_amt, bill_cur = _billable_amount_for_entry(
-            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id),
+            hrs, e.is_billable, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
         )
         bill_rate, bill_rate_cur = _billable_rate_for_entry(
-            e.work_date, rates_map.get(e.auth_user_id),
+            e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
         )
         cost_amt, cost_rate, cost_cur = _cost_amount_for_entry(
-            hrs, e.work_date, cost_rates_map.get(e.auth_user_id),
+            hrs, e.work_date, cost_rates_map.get(e.auth_user_id), project_currency=pc,
         )
         inv_t = inv_map.get(e.id)
         invoiced = inv_t is not None
@@ -692,13 +722,15 @@ async def _table_aggregated(
 
         h = _d(e.hours)
         bkt["total"] += h
+        p_ent = projects_map.get(e.project_id) if e.project_id else None
+        pc = (getattr(p_ent, "currency", None) or "USD") if p_ent else "USD"
         if e.is_billable:
             bkt["billable"] += h
             amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id),
+                h, True, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
             )
             bkt["amount"] += amt
-            if cur != "USD":
+            if cur != "USD" or (pc and pc != "USD"):
                 bkt["currency"] = cur
 
     sorted_keys = sorted(

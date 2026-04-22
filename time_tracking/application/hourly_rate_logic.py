@@ -36,6 +36,16 @@ def validate_range_order(valid_from: date | None, valid_to: date | None) -> None
         raise ValueError("Дата начала не может быть позже даты окончания")
 
 
+def normalize_currency(currency: str | None) -> str:
+    return (currency or "USD").strip().upper()[:10] or "USD"
+
+
+def filter_rates_by_currency(rows: list[Any], currency: str) -> list[Any]:
+    """Оставить только ставки в указанной валюте (для расчёта сумм в валюте проекта)."""
+    cur = normalize_currency(currency)
+    return [r for r in rows if normalize_currency(getattr(r, "currency", None)) == cur]
+
+
 def pick_rate_for_date(
     rows: list[Any],
     on_date: date,

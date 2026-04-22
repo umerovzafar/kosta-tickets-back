@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import ensure_time_entry_subject_allowed
+from application.project_access_rates import validate_hourly_rates_for_project_access
 from infrastructure.database import get_session
 from infrastructure.repositories import (
     ClientProjectRepository,
@@ -44,6 +45,9 @@ async def put_project_access(
 ) -> ProjectAccessOut:
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
+    await validate_hourly_rates_for_project_access(
+        session, auth_user_id=auth_user_id, project_ids=list(body.project_ids)
+    )
     repo = UserProjectAccessRepository(session)
     projects = ClientProjectRepository(session)
     try:

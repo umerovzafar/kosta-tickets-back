@@ -112,7 +112,7 @@ async def get_time_report(
         if e.is_billable:
             bkt["billable"] += h
             amt, cur = _billable_amount_for_entry(
-                h, e.is_billable, e.work_date, rates_map.get(uid),
+                h, e.is_billable, e.work_date, rates_map.get(uid), project_currency=project_currency,
             )
             effective_cur = project_currency
             bkt["amount"] += amt

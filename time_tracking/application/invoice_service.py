@@ -30,6 +30,7 @@ from infrastructure.models_invoices import (
     InvoiceModel,
     InvoicePaymentModel,
 )
+from infrastructure.repositories import ClientProjectRepository
 from infrastructure.repository_invoices import InvoiceRepository
 from infrastructure.repository_shared import _now_utc
 
@@ -253,9 +254,14 @@ async def _append_time_line(
         await session.flush()
     rates = await _load_user_rates(session, None)
     user_rates = rates.get(entry.auth_user_id)
-    # В счёте количество часов и сумма — billable в валюте проекта (конвертация по ЦБ).
+    cpr = ClientProjectRepository(session)
+    proj = await cpr.get_by_id_global(entry.project_id) if entry.project_id else None
+    pc = (getattr(proj, "currency", None) or "USD") if proj else "USD"
+    # В счёте количество часов и сумма — billable в валюте проекта.
     qty = dec(entry.hours)
-    amt, _cur = _billable_amount_for_entry(qty, entry.is_billable, entry.work_date, user_rates)
+    amt, _cur = _billable_amount_for_entry(
+        qty, entry.is_billable, entry.work_date, user_rates, project_currency=pc,
+    )
     line_total = _money4(amt)
     unit = _money4(line_total / qty) if qty > 0 else Decimal(0)
     desc = (entry.description or "").strip() or f"Время {entry.work_date.isoformat()}"
@@ -618,12 +624,17 @@ async def list_unbilled_time_entries(
     ids = [e.id for e in entries]
     invoiced = await repo.invoiced_time_entry_ids(ids)
     rates = await _load_user_rates(session, None)
+    cpr = ClientProjectRepository(session)
+    proj = await cpr.get_by_id_global(project_id)
+    pc = (getattr(proj, "currency", None) or "USD") if proj else "USD"
     out: list[dict[str, Any]] = []
     for e in entries:
         if e.id in invoiced:
             continue
         h = dec(e.hours)
-        amt, cur = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates.get(e.auth_user_id))
+        amt, cur = _billable_amount_for_entry(
+            h, e.is_billable, e.work_date, rates.get(e.auth_user_id), project_currency=pc,
+        )
         out.append(
             {
                 "id": e.id,

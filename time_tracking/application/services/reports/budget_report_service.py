@@ -92,7 +92,11 @@ async def get_budget_report(
         ubkt["hours"] += h
 
         if e.is_billable:
-            amt, _ = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates_map.get(uid))
+            p_ent = projects_map.get(pid)
+            pc = (getattr(p_ent, "currency", None) or "USD") if p_ent else "USD"
+            amt, _ = _billable_amount_for_entry(
+                h, e.is_billable, e.work_date, rates_map.get(uid), project_currency=pc,
+            )
             amount_by_project[pid] = amount_by_project.get(pid, _ZERO) + amt
             ubkt["amount"] += amt
 

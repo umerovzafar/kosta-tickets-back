@@ -93,7 +93,11 @@ async def get_uninvoiced_report(
         pid = e.project_id
         h = _d(e.hours)
         uninv_hours_by_project[pid] = uninv_hours_by_project.get(pid, _ZERO) + h
-        amt, cur = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates_map.get(e.auth_user_id))
+        p_ent = projects_map.get(pid) if pid else None
+        pc = (getattr(p_ent, "currency", None) or "USD") if p_ent else "USD"
+        amt, cur = _billable_amount_for_entry(
+            h, e.is_billable, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
+        )
         uninv_amount_by_project[pid] = uninv_amount_by_project.get(pid, _ZERO) + amt
         if cur != "USD":
             uninv_currency_by_project[pid] = cur

@@ -45,17 +45,15 @@ async def build_client_project_dashboard(
     date_to: date | None,
 ) -> dict | None:
     cpr = ClientProjectRepository(session)
-    if not await cpr.get_by_id(client_id, project_id):
+    proj_row = await cpr.get_by_id(client_id, project_id)
+    if not proj_row:
         return None
+    project_currency = (getattr(proj_row, "currency", None) or "USD").strip()[:10] or "USD"
     if date_from is not None and date_to is not None and date_to < date_from:
         raise ValueError("Параметр date_to не может быть раньше date_from")
 
     cr = ClientRepository(session)
     client_row = await cr.get_by_id(client_id)
-    currency: str | None = None
-    if client_row and client_row.currency:
-        c = str(client_row.currency).strip()
-        currency = c if c else None
 
     entry_repo = TimeEntryRepository(session)
     tot, bill, nonb = await entry_repo.aggregate_totals_for_project(project_id, date_from, date_to)
@@ -92,7 +90,9 @@ async def build_client_project_dashboard(
         )
 
         if e.is_billable:
-            amt, _cur = _billable_amount_for_entry(h, e.is_billable, e.work_date, rates_map.get(uid))
+            amt, _cur = _billable_amount_for_entry(
+                h, e.is_billable, e.work_date, rates_map.get(uid), project_currency=project_currency,
+            )
             total_bill += amt
             user_bill[uid] += amt
             ws = _week_start_monday(e.work_date)
@@ -101,7 +101,9 @@ async def build_client_project_dashboard(
             if e.id not in inv_map:
                 unbilled_bill += amt
 
-        c_amt, c_rate, _c_cur = _cost_amount_for_entry(h, e.work_date, cost_rates_map.get(uid))
+        c_amt, c_rate, _c_cur = _cost_amount_for_entry(
+            h, e.work_date, cost_rates_map.get(uid), project_currency=project_currency,
+        )
         total_cost += c_amt
         user_cost[uid] += c_amt
         if h > 0 and c_rate is None:
@@ -226,7 +228,7 @@ async def build_client_project_dashboard(
         )
 
     return {
-        "currency": currency,
+        "currency": project_currency,
         "totals": {
             "total_hours": _hours_json(tot),
             "billable_hours": _hours_json(bill),
