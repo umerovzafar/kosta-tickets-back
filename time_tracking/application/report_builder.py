@@ -21,6 +21,7 @@ from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
     TimeManagerClientProjectModel,
+    TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
 )
@@ -295,6 +296,12 @@ async def _load_projects_map(session: AsyncSession) -> dict[str, TimeManagerClie
 async def _load_clients_map(session: AsyncSession) -> dict[str, TimeManagerClientModel]:
     rows = (await session.execute(select(TimeManagerClientModel))).scalars().all()
     return {c.id: c for c in rows}
+
+
+async def _load_tasks_map(session: AsyncSession) -> dict[str, TimeManagerClientTaskModel]:
+    """Справочник задач — для time_report_service (имена в `entries`), не для GROUP_OPTIONS."""
+    rows = (await session.execute(select(TimeManagerClientTaskModel))).scalars().all()
+    return {t.id: t for t in rows}
 
 
 # ---------------------------------------------------------------------------
