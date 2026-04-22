@@ -10,7 +10,13 @@ Expenses: удаляются только заявки, у которых одн
 Скрипт сида ранее **заменял** у всех TT-пользователей весь project access только на мок-проекты; этот скрипт
 **не восстанавливает** старые назначения — их нужно выставить вручную/другим процессом.
 
-Запуск (из корня репозитория tickets-back):
+Запуск из корня приложения time tracking (например ``cd /app`` в Docker):
+
+  ./scripts/delete_mock_data.sh
+  ./scripts/delete_mock_data.sh --apply
+  chmod +x scripts/delete_mock_data.sh   # один раз на Linux
+
+Или из корня репозитория tickets-back:
 
   set PYTHONPATH=time_tracking
   python time_tracking/scripts/delete_mock_data.py

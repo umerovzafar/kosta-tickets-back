@@ -1,21 +1,23 @@
-"""Мок-данные: клиенты, проекты, доступ TT-пользователей, записи времени.
+"""Мок-данные: клиенты, проекты, доступ TT-пользователей, записи времени, почасовые ставки, расходы.
 
 Запуск (из корня репозитория tickets-back, с .env с TIME_TRACKING_DATABASE_URL / DATABASE_URL):
 
   set PYTHONPATH=time_tracking
   python time_tracking/scripts/seed_mock_data.py
 
-Или из каталога time_tracking:
-
-  set PYTHONPATH=.
-  python scripts/seed_mock_data.py
+Или из корня приложения (например ``cd /app``): ``python scripts/seed_mock_data.py``
 
 Переменные: TIME_TRACKING_DATABASE_URL (или DATABASE_URL) — БД time tracking; опционально
-EXPENSES_DATABASE_URL — отдельная БД модуля расходов (см. docker-compose). Если задана,
-в неё добавляются мок-заявки с project_id = UUID проекта из TT; сумма в нативной валюте
-проекта пересчитывается в amount_uzs + equivalent_amount (USD) с фикс. курсом UZS/USD
-и кросс-курсами EUR/GBP/RUB→USD, как в expense_service.calc_equivalent. Отключить: --skip-expenses.
-Повторный запуск добавит ещё одну партию данных (не идемпотентно).
+EXPENSES_DATABASE_URL — БД модуля расходов. Мок-заявки: нативная сумма в валюте проекта →
+``amount_uzs`` и ``equivalent_amount`` согласованы с ``expenses.application.expense_service.calc_equivalent``
+(``equivalent_amount = amount_uzs / exchange_rate``). Курс UZS за 1 USD: из таблицы
+``exchange_rates`` в БД expenses на дату расхода (если есть), иначе ``--uzs-per-usd`` (по умолчанию 12850).
+Кросс-курсы EUR/GBP/RUB→USD — как в старом сиде (см. константы ниже).
+
+Почасовые ставки billable/cost: по одной паре на каждую валюту из MOCK_CURRENCIES — только если у
+пользователя ещё нет ставки этого типа в этой валюте (повторный запуск не падает и не дублирует).
+
+Повторный запуск добавляет ещё клиентов/проекты/время/расходы; мок-клиенты с префиксом ``[mock] ``.
 """
 
 from __future__ import annotations
@@ -47,6 +49,17 @@ _TT = Path(__file__).resolve().parent.parent
 if str(_TT) not in sys.path:
     sys.path.insert(0, str(_TT))
 
+_EXP_ROOT = _ROOT / "expenses"
+if _EXP_ROOT.is_dir() and str(_EXP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_EXP_ROOT))
+try:
+    from application.expense_service import calc_equivalent as _calc_equivalent
+except ImportError:  # образ только time_tracking / нет каталога expenses
+    def _calc_equivalent(amount_uzs: Decimal, exchange_rate: Decimal) -> Decimal:
+        if exchange_rate <= 0:
+            raise ValueError("exchange_rate must be positive")
+        return (amount_uzs / exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
 from sqlalchemy import delete, text  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     async_sessionmaker,
@@ -61,6 +74,7 @@ from infrastructure.repositories import (  # noqa: E402
     TimeEntryRepository,
     TimeTrackingUserRepository,
 )
+from infrastructure.repository_rates import HourlyRateRepository  # noqa: E402
 from infrastructure.repository_shared import _now_utc  # noqa: E402
 MOCK_PREFIX = "[mock] "
 
@@ -81,36 +95,118 @@ def _make_async_pg_url(url: str) -> str:
     return url
 
 
-def _expense_stored_amounts(currency: str, rng: random.Random) -> tuple[Decimal, Decimal, Decimal]:
-    """(amount_uzs, exchange_rate UZS/USD, equivalent_amount в USD) — в духе expenses.application.expense_service.calc_equivalent."""
+def _expense_stored_amounts(
+    currency: str, rng: random.Random, *, uzs_per_usd: Decimal
+) -> tuple[Decimal, Decimal, Decimal]:
+    """amount_uzs, exchange_rate (UZS за 1 USD), equivalentAmount (USD) = calc_equivalent(amount_uzs, rate)."""
     c = (currency or "USD").upper()
-    r = _UZS_PER_USD
+    r = uzs_per_usd
+    u: Decimal
     if c == "UZS":
         u = Decimal(rng.randint(150_000, 12_000_000))
-        eq = (u / r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return u, r, eq
-    if c == "USD":
+    elif c == "USD":
         usd = Decimal(rng.randint(30, 6_000))
         u = (usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return u, r, usd
-    if c == "EUR":
+    elif c == "EUR":
         eur = Decimal(rng.randint(25, 5_000))
-        eq = (eur * _EUR_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return u, r, eq
-    if c == "GBP":
+        eq_usd = (eur * _EUR_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq_usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    elif c == "GBP":
         gbp = Decimal(rng.randint(20, 4_000))
-        eq = (gbp * _GBP_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return u, r, eq
-    if c == "RUB":
+        eq_usd = (gbp * _GBP_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq_usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    elif c == "RUB":
         rub = Decimal(rng.randint(5_000, 500_000))
-        eq = (rub / _RUB_PER_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        u = (eq * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        return u, r, eq
-    usd = Decimal(rng.randint(30, 6_000))
-    u = (usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return u, r, usd
+        eq_usd = (rub / _RUB_PER_USD).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        u = (eq_usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        usd = Decimal(rng.randint(30, 6_000))
+        u = (usd * r).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    eq = _calc_equivalent(u, r)
+    return u, r, eq
+
+
+def _norm_rate_currency(c: str | None) -> str:
+    return (c or "USD").strip().upper()[:10] or "USD"
+
+
+def _random_billable_hourly(currency: str, rng: random.Random) -> Decimal:
+    """Почасовая ставка (billable) в масштабе, похожем на реальные значения по валюте."""
+    c = (currency or "USD").upper()
+    if c == "UZS":
+        return Decimal(rng.randint(400_000, 9_000_000))
+    if c == "RUB":
+        return Decimal(rng.randint(3_000, 65_000))
+    if c == "EUR":
+        return Decimal(rng.randint(70, 420))
+    if c == "GBP":
+        return Decimal(rng.randint(65, 380))
+    return Decimal(rng.randint(75, 480))
+
+
+async def _seed_hourly_rates_if_missing(session, users: list, rng: random.Random) -> int:
+    """По billable + cost в каждой валюте из MOCK_CURRENCIES, если ещё нет ставки в этой валюте."""
+    hrr = HourlyRateRepository(session)
+    n = 0
+    for u in users:
+        aid = u.auth_user_id
+        existing_b = await hrr.list_by_user_and_kind(aid, "billable")
+        have_b = {_norm_rate_currency(r.currency) for r in existing_b}
+        for cur in MOCK_CURRENCIES:
+            if cur in have_b:
+                continue
+            amt = _random_billable_hourly(cur, rng)
+            await hrr.create(
+                auth_user_id=aid,
+                rate_kind="billable",
+                amount=amt,
+                currency=cur,
+                valid_from=None,
+                valid_to=None,
+            )
+            n += 1
+        existing_c = await hrr.list_by_user_and_kind(aid, "cost")
+        have_c = {_norm_rate_currency(r.currency) for r in existing_c}
+        bill_rows = await hrr.list_by_user_and_kind(aid, "billable")
+        by_cur = {_norm_rate_currency(r.currency): r for r in bill_rows}
+        for cur in MOCK_CURRENCIES:
+            if cur in have_c:
+                continue
+            base = by_cur.get(cur)
+            if base is not None:
+                amt = (base.amount * Decimal(rng.randint(45, 78) / 100)).quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+            else:
+                amt = (_random_billable_hourly(cur, rng) * Decimal("0.60")).quantize(
+                    Decimal("0.0001"), rounding=ROUND_HALF_UP
+                )
+            if amt <= 0:
+                amt = Decimal("0.0001")
+            await hrr.create(
+                auth_user_id=aid,
+                rate_kind="cost",
+                amount=amt,
+                currency=cur,
+                valid_from=None,
+                valid_to=None,
+            )
+            n += 1
+    return n
+
+
+async def _uzs_per_usd_for_date(session, on_date: date, fallback: Decimal) -> Decimal:
+    r = await session.execute(
+        text(
+            "SELECT rate FROM exchange_rates WHERE rate_date <= :d "
+            "ORDER BY rate_date DESC LIMIT 1"
+        ),
+        {"d": on_date},
+    )
+    row = r.first()
+    if row is not None and row[0] is not None:
+        return Decimal(str(row[0]))
+    return fallback
 
 
 async def _alloc_kl_id_expenses(session) -> str:
@@ -134,6 +230,9 @@ async def _seed_expenses_mocks(
     rng: random.Random,
     d_from: date,
     d_to: date,
+    *,
+    default_uzs_per_usd: Decimal,
+    use_exchange_table: bool,
 ) -> int:
     if not project_currency or not auth_user_ids:
         return 0
@@ -149,9 +248,12 @@ async def _seed_expenses_mocks(
             for pid, cur in project_currency:
                 k = rng.randint(1, 3)
                 for _ in range(k):
-                    amount_u, rate, eq = _expense_stored_amounts(cur, rng)
-                    eid = await _alloc_kl_id_expenses(session)
                     ed = rng.choice(week_days)
+                    r_uzs = default_uzs_per_usd
+                    if use_exchange_table:
+                        r_uzs = await _uzs_per_usd_for_date(session, ed, default_uzs_per_usd)
+                    amount_u, rate, eq = _expense_stored_amounts(cur, rng, uzs_per_usd=r_uzs)
+                    eid = await _alloc_kl_id_expenses(session)
                     uid = rng.choice(auth_user_ids)
                     desc = f"[mock] seed_mock_data, проект {cur}"
                     await session.execute(
@@ -247,10 +349,13 @@ async def _seed(
     clients_max: int,
     weeks_back: int,
     skip_expenses: bool = False,
+    default_uzs_per_usd: Decimal = _UZS_PER_USD,
+    use_exchange_table: bool = True,
 ) -> None:
     rng = random.Random(seed)
     n_clients = rng.randint(clients_min, clients_max)
     n_exp_mocks = 0
+    n_rate_rows = 0
     users: list = []
     project_ids: list[str] = []
     projects_meta: list[tuple[str, str]] = []
@@ -349,6 +454,8 @@ async def _seed(
                 )
         await session.flush()
 
+        n_rate_rows = await _seed_hourly_rates_if_missing(session, users, rng)
+
         today = date.today()
         d_from = today - timedelta(weeks=weeks_back)
         weekdays = list(_iter_weekdays_in_range(d_from, today))
@@ -405,6 +512,8 @@ async def _seed(
                 rng,
                 d_from,
                 today,
+                default_uzs_per_usd=default_uzs_per_usd,
+                use_exchange_table=use_exchange_table,
             )
         except Exception as e:
             print(f"Мок-расходы (expenses) не записаны: {e}", file=sys.stderr)
@@ -418,6 +527,8 @@ async def _seed(
         f"Готово: клиентов {n_clients}, проектов {len(project_ids)}, "
         f"пользователей TT с полным доступом: {len(users)} (время за ~{weeks_back} нед."
     )
+    if n_rate_rows:
+        msg += f", новых почасовых ставок: {n_rate_rows}"
     if n_exp_mocks:
         msg += f", мок-расходов в БД expenses: {n_exp_mocks}"
     msg += ")."
@@ -435,9 +546,23 @@ def main() -> None:
         action="store_true",
         help="Не писать мок-заявки в БД expenses (даже если задана EXPENSES_DATABASE_URL)",
     )
+    p.add_argument(
+        "--uzs-per-usd",
+        type=str,
+        default="12850",
+        help="Курс UZS за 1 USD, если в exchange_rates (expenses) нет строки на дату расхода",
+    )
+    p.add_argument(
+        "--no-exchange-table",
+        action="store_true",
+        help="Не читать exchange_rates: для всех мок-расходов только --uzs-per-usd",
+    )
     args = p.parse_args()
     if args.clients_min < 1 or args.clients_max < args.clients_min:
         p.error("clients-min/max некорректны")
+    uzs = Decimal(str(args.uzs_per_usd).strip().replace(",", "."))
+    if uzs <= 0:
+        p.error("uzs-per-usd must be positive")
     asyncio.run(
         _seed(
             seed=args.seed,
@@ -445,6 +570,8 @@ def main() -> None:
             clients_max=args.clients_max,
             weeks_back=max(1, args.weeks),
             skip_expenses=bool(args.skip_expenses),
+            default_uzs_per_usd=uzs,
+            use_exchange_table=not bool(args.no_exchange_table),
         )
     )
 
