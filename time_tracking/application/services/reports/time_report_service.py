@@ -9,6 +9,12 @@
 `entries_truncated`;
 для tasks в строке также `client_id` / `client_name` (клиент справочника задачи).
 Для группировки team каждая строка сама является пользователем.
+
+Суммы billable (число + валюта) всегда в **валюте проекта** записи времени. Для clients /
+tasks / team бакет — это не только id сущности, а **(id, project_currency)**, чтобы
+не складывать разные валюты в одной строке; одна и та же задача/клиент/сотрудник
+может появиться **несколько раз** (по разным валютам). group_by=projects — по-прежнему
+один проект = одна валюта, ключ только project_id.
 """
 
 from __future__ import annotations
@@ -87,9 +93,6 @@ async def get_time_report(
             bkt["last_recorded_at"] = e.created_at
         h = _d(e.hours)
         bkt["total"] += h
-        # Обновляем валюту из проекта если она ещё не задана
-        if bkt["currency"] == "USD" and project_currency != "USD":
-            bkt["currency"] = project_currency
 
         uid = e.auth_user_id
         ubkt = bkt["user_buckets"].setdefault(uid, {
@@ -161,15 +164,17 @@ async def get_time_report_all_rows(
 
 
 def _get_group_id(e: Any, group_by: str, projects_map: dict) -> Any:
+    p = projects_map.get(e.project_id) if e.project_id else None
+    pc = (getattr(p, "currency", None) or "USD") if p else "USD"
     if group_by == "team":
-        return e.auth_user_id
-    elif group_by == "projects":
+        return (e.auth_user_id, pc)
+    if group_by == "projects":
         return e.project_id
-    elif group_by == "clients":
-        p = projects_map.get(e.project_id) if e.project_id else None
-        return p.client_id if p else None
-    else:  # tasks
-        return e.task_id
+    if group_by == "clients":
+        cid = p.client_id if p else None
+        return (cid, pc) if cid is not None else (None, pc)
+    # tasks — одна сущность (task) может встречаться в проектах с разной валютой
+    return (e.task_id, pc)
 
 
 MAX_ENTRY_LOG_ROWS = 50
@@ -229,8 +234,13 @@ def _build_row(
     row["last_recorded_at"] = last_bucket.isoformat() if last_bucket else None
 
     if group_by == "clients":
-        c = clients_map.get(gid) if gid else None
-        row["client_id"] = gid
+        cid: Any
+        if isinstance(gid, tuple) and len(gid) == 2:
+            cid, _pcur = gid
+        else:
+            cid = gid
+        c = clients_map.get(cid) if cid else None
+        row["client_id"] = cid
         row["client_name"] = c.name if c else None
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
@@ -244,8 +254,13 @@ def _build_row(
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
     elif group_by == "tasks":
-        t = tasks_map.get(gid) if gid else None
-        row["task_id"] = gid
+        tid: Any
+        if isinstance(gid, tuple) and len(gid) == 2:
+            tid, _pcur = gid
+        else:
+            tid = gid
+        t = tasks_map.get(tid) if tid else None
+        row["task_id"] = tid
         row["task_name"] = t.name if t else None
         row["client_id"] = t.client_id if t else None
         c = clients_map.get(t.client_id) if (t and t.client_id) else None
@@ -253,13 +268,18 @@ def _build_row(
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
     else:  # team — строка сама является пользователем
-        u = users_map.get(gid) if gid else None
-        row["user_id"] = gid
-        row["user_name"] = (u.display_name or u.email) if u else str(gid or "")
+        tuid: Any
+        if isinstance(gid, tuple) and len(gid) == 2:
+            tuid, _pcur = gid
+        else:
+            tuid = gid
+        u = users_map.get(tuid) if tuid is not None else None
+        row["user_id"] = tuid
+        row["user_name"] = (u.display_name or u.email) if u else str(tuid or "")
         row["is_contractor"] = False
         row["weekly_capacity"] = float(u.weekly_capacity_hours) if u else 0.0
         row["avatar_url"] = u.picture if u else None
-        ub = bkt["user_buckets"].get(gid)
+        ub = bkt["user_buckets"].get(tuid) if tuid is not None else None
         if ub:
             row.update(_entry_log_payload(ub))
         else:
