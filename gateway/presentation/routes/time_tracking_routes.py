@@ -1083,6 +1083,14 @@ async def invoices_unbilled_expenses(
     return await _tt_json("GET", "/invoices/unbilled-expenses", params=dict(request.query_params), timeout=30.0)
 
 
+@router.get("/invoices/stats")
+async def invoices_stats(
+    request: Request,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", "/invoices/stats", params=dict(request.query_params), timeout=30.0)
+
+
 @router.get("/invoices")
 async def invoices_list(
     request: Request,

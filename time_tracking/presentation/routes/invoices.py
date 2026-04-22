@@ -13,6 +13,7 @@ from application.invoice_service import (
     cancel_invoice,
     create_invoice,
     delete_draft_invoice,
+    get_invoices_aggregated_stats,
     invoice_to_dict,
     list_unbilled_expenses,
     list_unbilled_time_entries,
@@ -62,6 +63,29 @@ async def unbilled_expenses(
     )
 
 
+@router.get("/stats")
+async def invoices_stats(
+    session: AsyncSession = Depends(get_session),
+    client_id: Optional[str] = Query(None, alias="clientId"),
+    project_id: Optional[str] = Query(None, alias="projectId"),
+    status: Optional[str] = Query(
+        None,
+        description="draft|sent|viewed|partial_paid|paid|canceled|overdue|… — тот же фильтр, что и у списка",
+    ),
+    date_from: Optional[date] = Query(None, alias="dateFrom"),
+    date_to: Optional[date] = Query(None, alias="dateTo"),
+):
+    """Сводка по счетам: сколько в каждом (эффективном) статусе, оплачено/остаток по валютам, непогашенные."""
+    return await get_invoices_aggregated_stats(
+        session,
+        client_id=client_id,
+        project_id=project_id,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 @router.get("")
 async def list_invoices(
     session: AsyncSession = Depends(get_session),
@@ -72,6 +96,7 @@ async def list_invoices(
     date_to: Optional[date] = Query(None, alias="dateTo"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    include_total: bool = Query(False, alias="includeTotalCount"),
 ):
     repo = InvoiceRepository(session)
     rows = await repo.list_invoices(
@@ -86,7 +111,16 @@ async def list_invoices(
     out = []
     for inv in rows:
         out.append(invoice_to_dict(inv, include_lines=False, include_payments=False))
-    return {"items": out, "limit": limit, "offset": offset}
+    payload: dict = {"items": out, "limit": limit, "offset": offset}
+    if include_total:
+        payload["totalCount"] = await repo.count_invoices(
+            client_id=client_id,
+            project_id=project_id,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    return payload
 
 
 @router.post("", status_code=201)

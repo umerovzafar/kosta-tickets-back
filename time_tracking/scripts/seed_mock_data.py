@@ -307,6 +307,50 @@ async def _seed_expenses_mocks(
     return n_ins
 
 
+def _money_budget_for_currency(currency: str, rng: random.Random) -> Decimal:
+    """Лимит бюджета в валюте проекта (как в UI «40 000 USD» / UZS / RUB)."""
+    c = (currency or "USD").upper()
+    if c == "UZS":
+        return Decimal(rng.randint(80_000_000, 450_000_000))
+    if c == "RUB":
+        return Decimal(rng.randint(1_500_000, 18_000_000))
+    if c == "EUR" or c == "GBP":
+        return Decimal(rng.randint(18_000, 220_000))
+    return Decimal(rng.randint(12_000, 120_000))
+
+
+async def _apply_optional_project_budget(
+    cpr: ClientProjectRepository,
+    client_id: str,
+    project_id: str,
+    proj_currency: str,
+    rng: random.Random,
+) -> None:
+    """Части проектов — бюджет в деньгах или часах (пересчёт в дашборде/отчёте бюджетов)."""
+    if rng.random() > 0.52:
+        return
+    if rng.random() < 0.38:
+        await cpr.update(
+            client_id,
+            project_id,
+            {
+                "budget_type": "hours",
+                "budget_hours": Decimal(rng.randint(200, 3600)),
+                "budget_amount": None,
+            },
+        )
+    else:
+        await cpr.update(
+            client_id,
+            project_id,
+            {
+                "budget_type": "money",
+                "budget_amount": _money_budget_for_currency(proj_currency, rng),
+                "budget_hours": None,
+            },
+        )
+
+
 def _fixed_fee_amount(currency: str, rng: random.Random) -> Decimal:
     """Сумма «фикса» в масштабе, типичном для валюты (мок-данные)."""
     c = (currency or "USD").upper()
@@ -411,6 +455,7 @@ async def _seed(
                         fixed_fee_amount=_fixed_fee_amount(proj_cur, rng),
                     )
                     projects_meta.append((p.id, proj_cur))
+                    await _apply_optional_project_budget(cpr, c.id, p.id, proj_cur, rng)
                 else:
                     p = await cpr.create(
                         client_id=c.id,
@@ -424,6 +469,7 @@ async def _seed(
                         currency=proj_cur,
                     )
                     projects_meta.append((p.id, proj_cur))
+                    await _apply_optional_project_budget(cpr, c.id, p.id, proj_cur, rng)
                 project_ids.append(p.id)
 
         if not project_ids:

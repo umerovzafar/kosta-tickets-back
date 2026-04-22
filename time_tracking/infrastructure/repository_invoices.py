@@ -76,18 +76,16 @@ class InvoiceRepository:
             .scalar_subquery()
         )
 
-    async def list_invoices(
+    def _where_invoice_filters(
         self,
+        q,
         *,
         client_id: str | None = None,
         project_id: str | None = None,
         status: str | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[InvoiceModel]:
-        q = select(InvoiceModel).order_by(InvoiceModel.issue_date.desc(), InvoiceModel.invoice_number.desc())
+    ):
         if client_id:
             q = q.where(InvoiceModel.client_id == client_id)
         if project_id:
@@ -132,7 +130,72 @@ class InvoiceRepository:
             q = q.where(InvoiceModel.issue_date >= date_from)
         if date_to:
             q = q.where(InvoiceModel.issue_date <= date_to)
+        return q
+
+    async def count_invoices(
+        self,
+        *,
+        client_id: str | None = None,
+        project_id: str | None = None,
+        status: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> int:
+        q = self._where_invoice_filters(
+            select(func.count()).select_from(InvoiceModel),
+            client_id=client_id,
+            project_id=project_id,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        return int((await self._s.execute(q)).scalar_one() or 0)
+
+    async def list_invoices(
+        self,
+        *,
+        client_id: str | None = None,
+        project_id: str | None = None,
+        status: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[InvoiceModel]:
+        q = self._where_invoice_filters(
+            select(InvoiceModel),
+            client_id=client_id,
+            project_id=project_id,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        q = q.order_by(InvoiceModel.issue_date.desc(), InvoiceModel.invoice_number.desc())
         q = q.limit(min(limit, 500)).offset(offset)
+        rows = list((await self._s.execute(q)).scalars().all())
+        await self._apply_batch_payment_totals(rows)
+        return rows
+
+    async def list_invoices_for_aggregation(
+        self,
+        *,
+        client_id: str | None = None,
+        project_id: str | None = None,
+        status: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        cap: int = 50_000,
+    ) -> list[InvoiceModel]:
+        """Все подходящие под фильтр счета (до cap) — для /invoices/stats и сводок."""
+        q = self._where_invoice_filters(
+            select(InvoiceModel),
+            client_id=client_id,
+            project_id=project_id,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        q = q.order_by(InvoiceModel.issue_date.desc(), InvoiceModel.invoice_number.desc()).limit(cap)
         rows = list((await self._s.execute(q)).scalars().all())
         await self._apply_batch_payment_totals(rows)
         return rows

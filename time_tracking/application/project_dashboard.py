@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from application.report_builder import (
     _load_user_rates,
 )
 from application.services.reports._base import _d, _money
+from application.services.reports.budget_report_service import _get_budget_info, _get_budget_spent
 from infrastructure.repositories import (
     ClientProjectRepository,
     ClientRepository,
@@ -24,6 +26,8 @@ from infrastructure.repositories import (
     TimeTrackingUserRepository,
 )
 from infrastructure.repository_invoices import InvoiceRepository
+
+_ZERO = Decimal(0)
 
 
 def _hours_json(d: Decimal) -> float:
@@ -227,8 +231,37 @@ async def build_client_project_dashboard(
             }
         )
 
+    b_by, b_val = _get_budget_info(proj_row)
+    spent_b = _get_budget_spent(
+        proj_row, {project_id: bill}, {project_id: total_bill},
+    )
+    rem_b = max(_ZERO, b_val - spent_b) if b_val > _ZERO else _ZERO
+    pct_u: float | None = None
+    if b_val > _ZERO:
+        pct_u = float(
+            min(
+                Decimal("100"),
+                (spent_b / b_val * Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            )
+        )
+    budget_out: dict[str, Any] = {
+        "hasBudget": b_val > _ZERO,
+        "budgetBy": b_by,
+        "currency": project_currency,
+        "percentUsed": pct_u,
+    }
+    if b_by == "hours":
+        budget_out["budget"] = _hours_json(b_val)
+        budget_out["spent"] = _hours_json(spent_b)
+        budget_out["remaining"] = _hours_json(rem_b)
+    else:
+        budget_out["budget"] = float(_money(b_val))
+        budget_out["spent"] = float(_money(spent_b))
+        budget_out["remaining"] = float(_money(rem_b))
+
     return {
         "currency": project_currency,
+        "budget": budget_out,
         "totals": {
             "total_hours": _hours_json(tot),
             "billable_hours": _hours_json(bill),

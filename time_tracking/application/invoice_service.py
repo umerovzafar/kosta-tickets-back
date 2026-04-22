@@ -602,6 +602,79 @@ def invoice_to_dict(inv: InvoiceModel, *, include_lines: bool = True, include_pa
     return out
 
 
+async def get_invoices_aggregated_stats(
+    session: AsyncSession,
+    *,
+    client_id: str | None = None,
+    project_id: str | None = None,
+    status: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    """Сводка: сколько счетов по эффективным статусам, суммы/оплаты/остаток по валютам, непогашенный остаток.
+
+    Статусы считаются как в ``effective_invoice_status`` (в т.ч. overdue, paid по факту оплаты).
+    """
+    repo = InvoiceRepository(session)
+    rows = await repo.list_invoices_for_aggregation(
+        client_id=client_id,
+        project_id=project_id,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    by_eff: dict[str, int] = {}
+    by_cur: dict[str, dict[str, Decimal]] = {}
+    total_amount_all = Decimal(0)
+    amount_paid_all = Decimal(0)
+    for inv in rows:
+        eff = effective_invoice_status(inv)
+        by_eff[eff] = by_eff.get(eff, 0) + 1
+        cur = (inv.currency or "USD").strip().upper()[:10] or "USD"
+        b = by_cur.setdefault(
+            cur,
+            {"count": 0, "totalAmount": Decimal(0), "amountPaid": Decimal(0)},
+        )
+        b["count"] += 1
+        b["totalAmount"] += _money4(inv.total_amount)
+        b["amountPaid"] += _money4(inv.amount_paid)
+        total_amount_all += _money4(inv.total_amount)
+        amount_paid_all += _money4(inv.amount_paid)
+    unpaid_count = 0
+    open_balance = Decimal(0)
+    for inv in rows:
+        bal = _money4(inv.total_amount - inv.amount_paid)
+        if inv.status in ("canceled", "draft"):
+            continue
+        if bal > 0:
+            unpaid_count += 1
+            open_balance += bal
+    by_currency_out: dict[str, Any] = {}
+    for c, v in sorted(by_cur.items()):
+        t = v["totalAmount"]
+        p = v["amountPaid"]
+        by_currency_out[c] = {
+            "count": v["count"],
+            "totalAmount": float(_money4(t)),
+            "amountPaid": float(_money4(p)),
+            "balanceDue": float(_money4(t - p)),
+        }
+    return {
+        "totalInvoices": len(rows),
+        "byEffectiveStatus": by_eff,
+        "byCurrency": by_currency_out,
+        "totals": {
+            "totalAmount": float(_money4(total_amount_all)),
+            "amountPaid": float(_money4(amount_paid_all)),
+            "balanceDue": float(_money4(total_amount_all - amount_paid_all)),
+        },
+        "unpaidInvoicesCount": unpaid_count,
+        "openBalanceDue": float(_money4(open_balance)),
+        "cappedAt": 50_000,
+        "isCapped": len(rows) >= 50_000,
+    }
+
+
 async def list_unbilled_time_entries(
     session: AsyncSession,
     *,
