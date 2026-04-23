@@ -1,6 +1,6 @@
-"""Снимки отчётов (report snapshots) — список и чтение.
+"""Снимки отчётов (report snapshots): список, чтение, правки строк (overrides).
 
-Ранее таблицы и репозиторий были в БД, HTTP-маршрутов не было → фронт получал 404.
+Редактирование не затрагивает id строки/снимка и ссылочные поля; код проекта менять нельзя.
 """
 
 from __future__ import annotations
@@ -9,8 +9,13 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.report_snapshot_overrides import (
+    merge_frozen_and_overrides,
+    validate_and_normalize_overrides,
+)
 from infrastructure.database import get_session
 from infrastructure.models_reports import ReportSnapshotRowModel
 from infrastructure.repository_reports import ReportSnapshotRepository
@@ -27,6 +32,34 @@ def _json_obj(raw: str | None) -> dict[str, Any]:
         return o if isinstance(o, dict) else {}
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+class SnapshotRowPatchBody(BaseModel):
+    """Частичные правки отображаемых полей строки (после merge с `data` → `effective`)."""
+
+    model_config = {"populate_by_name": True}
+
+    overrides: dict[str, Any] = Field(
+        ...,
+        description="Только разрешённые поля; без id, projectCode, внешних ключей",
+    )
+
+
+def _snapshot_row_to_dict(r: ReportSnapshotRowModel) -> dict[str, Any]:
+    data = _json_obj(r.frozen_data_json)
+    ovr = _json_obj(r.overrides_json) if r.overrides_json else None
+    effective = merge_frozen_and_overrides(data, ovr or {})
+    return {
+        "id": r.id,
+        "sortOrder": r.sort_order,
+        "sourceType": r.source_type,
+        "sourceId": r.source_id,
+        "data": data,
+        "overrides": ovr,
+        "effective": effective,
+        "editedByUserId": r.edited_by_user_id,
+        "editedAt": r.edited_at.isoformat() if r.edited_at else None,
+    }
 
 
 @router.get("/snapshots")
@@ -62,7 +95,7 @@ async def get_report_snapshot(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> dict[str, Any]:
-    """Один снимок со строками; только владелец (создатель)."""
+    """Один снимок со строками; только владелец. У каждой строки: data, overrides, effective."""
     uid = int(viewer["id"])
     repo = ReportSnapshotRepository(session)
     snap = await repo.get_by_id(snapshot_id, load_rows=True)
@@ -70,20 +103,7 @@ async def get_report_snapshot(
         raise HTTPException(status_code=404, detail="Not Found")
     row_models: list[ReportSnapshotRowModel] = list(snap.rows or [])
     row_models.sort(key=lambda r: (r.sort_order, r.id))
-    rows_out: list[dict[str, Any]] = []
-    for r in row_models:
-        rows_out.append(
-            {
-                "id": r.id,
-                "sortOrder": r.sort_order,
-                "sourceType": r.source_type,
-                "sourceId": r.source_id,
-                "data": _json_obj(r.frozen_data_json),
-                "overrides": _json_obj(r.overrides_json) if r.overrides_json else None,
-                "editedByUserId": r.edited_by_user_id,
-                "editedAt": r.edited_at.isoformat() if r.edited_at else None,
-            }
-        )
+    rows_out = [_snapshot_row_to_dict(r) for r in row_models]
     return {
         "id": snap.id,
         "name": snap.name,
@@ -95,3 +115,31 @@ async def get_report_snapshot(
         "updatedAt": snap.updated_at.isoformat() if snap.updated_at else None,
         "rows": rows_out,
     }
+
+
+@router.patch("/snapshots/{snapshot_id}/rows/{row_id}")
+async def patch_report_snapshot_row(
+    snapshot_id: str,
+    row_id: str,
+    body: SnapshotRowPatchBody,
+    session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
+) -> dict[str, Any]:
+    """Сохранить overrides для строки снимка (только разрешённые поля). `projectCode` / id / ключи сущностей — нельзя."""
+    uid = int(viewer["id"])
+    repo = ReportSnapshotRepository(session)
+    snap = await repo.get_by_id(snapshot_id, load_rows=False)
+    if not snap or snap.created_by_user_id != uid:
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        norm = validate_and_normalize_overrides(body.overrides)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    row = await repo.patch_row(
+        snapshot_id, row_id, norm, edited_by_user_id=uid
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Not Found")
+    await session.commit()
+    await session.refresh(row)
+    return _snapshot_row_to_dict(row)

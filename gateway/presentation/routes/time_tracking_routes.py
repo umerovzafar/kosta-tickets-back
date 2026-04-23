@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from starlette.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -940,6 +940,21 @@ async def reports_snapshot_detail(
     _: dict = Depends(require_view_role),
 ):
     return await _tt_json("GET", f"/reports/snapshots/{snapshot_id}", timeout=30.0)
+
+
+@router.patch("/reports/snapshots/{snapshot_id}/rows/{row_id}")
+async def reports_snapshot_row_patch(
+    snapshot_id: str,
+    row_id: str,
+    body: dict = Body(...),
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json(
+        "PATCH",
+        f"/reports/snapshots/{snapshot_id}/rows/{row_id}",
+        json=body,
+        timeout=30.0,
+    )
 
 
 @router.get("/reports/time/{group_by}")
