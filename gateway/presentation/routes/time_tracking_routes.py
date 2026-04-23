@@ -929,6 +929,19 @@ async def reports_users_for_filter(_: dict = Depends(require_view_role)):
     return await _tt_json("GET", "/reports/users-for-filter")
 
 
+@router.get("/reports/snapshots")
+async def reports_snapshots_list(_: dict = Depends(require_view_role)):
+    return await _tt_json("GET", "/reports/snapshots", timeout=30.0)
+
+
+@router.get("/reports/snapshots/{snapshot_id}")
+async def reports_snapshot_detail(
+    snapshot_id: str,
+    _: dict = Depends(require_view_role),
+):
+    return await _tt_json("GET", f"/reports/snapshots/{snapshot_id}", timeout=30.0)
+
+
 @router.get("/reports/time/{group_by}")
 async def reports_time(
     group_by: str,

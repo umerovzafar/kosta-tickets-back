@@ -40,6 +40,7 @@ from presentation.routes import (
     health,
     hourly_rates,
     project_access,
+    report_snapshots,
     reports,
     team_workload,
     time_entries,
@@ -98,5 +99,6 @@ app.include_router(time_entries.router, dependencies=_tt_auth)
 app.include_router(project_access.router, dependencies=_tt_auth)
 app.include_router(users.router, dependencies=_tt_auth)
 app.include_router(reports.router, dependencies=_tt_auth)
+app.include_router(report_snapshots.router, dependencies=_tt_auth)
 app.include_router(invoices.router, dependencies=_tt_auth)
 app.include_router(client_projects._global_projects_router, dependencies=_tt_auth)
