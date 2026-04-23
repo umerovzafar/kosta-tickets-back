@@ -23,6 +23,7 @@ from infrastructure.schema_patches import (
     apply_time_entries_task_id_schema_patch,
     apply_time_entries_hours_precision_patch,
     apply_time_entries_seconds_and_rounded_patch,
+    apply_time_entries_external_reference_patch,
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
     apply_project_currency_patch,
@@ -65,6 +66,7 @@ async def lifespan(app: FastAPI):
         await apply_invoices_schema_patch(conn)
         await apply_project_currency_patch(conn)
         await apply_time_entries_seconds_and_rounded_patch(conn)
+        await apply_time_entries_external_reference_patch(conn)
         await apply_weekly_submissions_schema_patch(conn)
     async with async_session_factory() as session:
         await seed_default_common_tasks_for_all_clients(session)

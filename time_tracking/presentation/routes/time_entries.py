@@ -118,6 +118,7 @@ async def create_time_entry(
             project_id=project_id,
             task_id=tid,
             description=body.description,
+            external_reference_url=body.external_reference_url,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

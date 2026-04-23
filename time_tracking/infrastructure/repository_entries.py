@@ -218,6 +218,7 @@ class TimeEntryRepository:
         project_id: str | None,
         task_id: str | None = None,
         description: str | None,
+        external_reference_url: str | None = None,
     ) -> TimeEntryModel:
         sec = self._resolve_duration_seconds(duration_seconds, hours)
         h = hours_from_seconds(sec)
@@ -233,6 +234,9 @@ class TimeEntryRepository:
             project_id=project_id,
             task_id=task_id,
             description=description,
+            external_reference_url=(external_reference_url.strip() or None)
+            if isinstance(external_reference_url, str)
+            else None,
             created_at=_now_utc(),
             updated_at=None,
         )
@@ -269,6 +273,12 @@ class TimeEntryRepository:
             row.task_id = patch["task_id"]
         if "description" in patch:
             row.description = patch["description"]
+        if "external_reference_url" in patch:
+            v = patch["external_reference_url"]
+            if v is None or (isinstance(v, str) and not v.strip()):
+                row.external_reference_url = None
+            elif isinstance(v, str):
+                row.external_reference_url = v.strip()[:4000]
         row.updated_at = _now_utc()
         self._session.add(row)
         return row

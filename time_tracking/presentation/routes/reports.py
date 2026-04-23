@@ -7,8 +7,8 @@
 
 Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
 
-GET /reports/time/{group_by}            — time report (clients/projects)
-GET /reports/time/{group_by}/export
+GET /reports/time/{group_by}            — time report (clients/projects), в `users[].entries` полные поля строки
+GET /reports/time/{group_by}/export        — плоский CSV/XLSX: одна строка на запись времени, полный набор колонок
 GET /reports/expenses/{group_by}        — expense report
 GET /reports/expenses/{group_by}/export
 GET /reports/uninvoiced
@@ -33,7 +33,7 @@ _log = logging.getLogger(__name__)
 
 from application.services.reports.time_report_service import (
     get_time_report,
-    get_time_report_all_rows,
+    get_time_report_flat_entries,
 )
 from application.services.reports.expense_report_service import (
     get_expense_report,
@@ -246,7 +246,7 @@ async def export_time_report_endpoint(
 ):
     df, dt = period
     try:
-        rows = await get_time_report_all_rows(
+        rows = await get_time_report_flat_entries(
             session,
             group_by=group_by.value,
             date_from=df,

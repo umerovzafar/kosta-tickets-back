@@ -607,6 +607,15 @@ async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) ->
     )
 
 
+async def apply_time_entries_external_reference_patch(conn: AsyncConnection) -> None:
+    """Внешняя ссылка (тикет/URL) на строку учёта времени — для отчётов и сверок."""
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_entries",
+        ("external_reference_url TEXT",),
+    )
+
+
 async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
     """Недельные сдачи учёта времени (блокировка прошлых дней) + reports_to для уведомлений."""
     await add_columns_if_missing(

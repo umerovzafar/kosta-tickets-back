@@ -100,6 +100,7 @@ class TimeEntryModel(Base):
         nullable=True,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    external_reference_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

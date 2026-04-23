@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -24,6 +24,7 @@ from infrastructure.models import (
     TimeManagerClientTaskModel,
     TimeTrackingUserModel,
     UserHourlyRateModel,
+    WeeklyTimeSubmissionModel,
 )
 from infrastructure.models_invoices import InvoiceLineItemModel, InvoiceModel
 
@@ -218,6 +219,74 @@ async def _invoice_info_for_time_entries(
         k = str(tid)
         if k not in out:
             out[k] = (str(iid), str(num))
+    return out
+
+
+async def invoice_details_for_time_entries(
+    session: AsyncSession, entry_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """По id строки времени: счёт, признак оплаты, номер (неотменённые счета)."""
+    if not entry_ids:
+        return {}
+    q = (
+        select(
+            InvoiceLineItemModel.time_entry_id,
+            InvoiceModel.id,
+            InvoiceModel.invoice_number,
+            InvoiceModel.status,
+            InvoiceModel.amount_paid,
+            InvoiceModel.total_amount,
+        )
+        .select_from(InvoiceLineItemModel)
+        .join(InvoiceModel, InvoiceModel.id == InvoiceLineItemModel.invoice_id)
+        .where(
+            InvoiceLineItemModel.time_entry_id.in_(entry_ids),
+            InvoiceLineItemModel.time_entry_id.is_not(None),
+            InvoiceModel.status != "canceled",
+        )
+    )
+    rows = (await session.execute(q)).all()
+    out: dict[str, dict[str, Any]] = {}
+    for tid, iid, inum, st, ap, tot in rows:
+        if not tid:
+            continue
+        k = str(tid)
+        if k in out:
+            continue
+        apd, ttd = _d(ap), _d(tot)
+        is_paid = st == "paid" or (ttd > 0 and apd + _Q2 >= ttd)
+        out[k] = {
+            "invoice_id": str(iid),
+            "invoice_number": str(inum),
+            "invoice_status": str(st or ""),
+            "is_paid": bool(is_paid),
+        }
+    return out
+
+
+async def load_week_submitted_user_dates(
+    session: AsyncSession,
+    auth_user_ids: set[int],
+    date_from: date,
+    date_to: date,
+) -> set[tuple[int, date]]:
+    """Пары (user, work_date), для которых ISO-неделя сдана (status=submitted) и дата в периоде отчёта."""
+    if not auth_user_ids:
+        return set()
+    q = select(WeeklyTimeSubmissionModel).where(
+        WeeklyTimeSubmissionModel.status == "submitted",
+        WeeklyTimeSubmissionModel.auth_user_id.in_(auth_user_ids),
+        WeeklyTimeSubmissionModel.week_end >= date_from,
+        WeeklyTimeSubmissionModel.week_start <= date_to,
+    )
+    rows = list((await session.execute(q)).scalars().all())
+    out: set[tuple[int, date]] = set()
+    for s in rows:
+        d = s.week_start
+        while d <= s.week_end:
+            if date_from <= d <= date_to:
+                out.add((s.auth_user_id, d))
+            d += timedelta(days=1)
     return out
 
 

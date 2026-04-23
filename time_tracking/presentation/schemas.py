@@ -149,6 +149,7 @@ class TimeEntryOut(BaseModel):
     project_id: Optional[str] = None
     task_id: Optional[str] = None
     description: Optional[str] = None
+    external_reference_url: Optional[str] = Field(None, alias="externalReferenceUrl")
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -177,6 +178,12 @@ class TimeEntryCreateBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
+    external_reference_url: Optional[str] = Field(
+        None,
+        alias="externalReferenceUrl",
+        max_length=4000,
+        description="Внешняя ссылка (тикет, URL) — в отчётах и сверках.",
+    )
 
 
 class TimeEntryPatchBody(BaseModel):
@@ -189,6 +196,11 @@ class TimeEntryPatchBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
+    external_reference_url: Optional[str] = Field(
+        None,
+        alias="externalReferenceUrl",
+        max_length=4000,
+    )
 
 
 class ProjectAccessOut(BaseModel):
