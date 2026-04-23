@@ -371,6 +371,7 @@ services:
       - EXPENSES_DATABASE_URL=${EXPENSES_DATABASE_URL:-postgresql://expenses:expenses@expenses_db:5432/kosta_expenses}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
+      - WEEKLY_SUBMIT_TZ=${WEEKLY_SUBMIT_TZ:-UTC}
     healthcheck:
       test:
         [
@@ -383,6 +384,52 @@ services:
       start_period: 30s
     depends_on:
       time_tracking_db:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  time_tracking_celery_worker:
+    build:
+      context: .
+      dockerfile: time_tracking/Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "celery_app", "worker", "--loglevel=info"]
+    working_dir: /app
+    environment:
+      - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
+      - REDIS_URL=redis://redis:6379/0
+      - WEEKLY_SUBMIT_TZ=${WEEKLY_SUBMIT_TZ:-UTC}
+    depends_on:
+      redis:
+        condition: service_healthy
+      time_tracking_db:
+        condition: service_healthy
+
+  time_tracking_celery_beat:
+    build:
+      context: .
+      dockerfile: time_tracking/Dockerfile
+    restart: unless-stopped
+    command: ["celery", "-A", "celery_app", "beat", "--loglevel=info"]
+    working_dir: /app
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WEEKLY_SUBMIT_TZ=${WEEKLY_SUBMIT_TZ:-UTC}
+      - WEEKLY_SUBMIT_HOUR=${WEEKLY_SUBMIT_HOUR:-6}
+      - WEEKLY_SUBMIT_MINUTE=${WEEKLY_SUBMIT_MINUTE:-0}
+      - WEEKLY_SUBMIT_DOW=${WEEKLY_SUBMIT_DOW:-1}
+    depends_on:
+      redis:
         condition: service_healthy
 
   time_tracking_db:
@@ -556,6 +603,7 @@ services:
 
 volumes:
   media_storage:
+  redis_data:
   users_db_data:
   tickets_db_data:
   notifications_db_data:

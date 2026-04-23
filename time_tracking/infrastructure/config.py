@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     expenses_service_url: str = "http://expenses:1242"
     # Проверка JWT на /users/me (обязательно при работе через API)
     auth_service_url: str = ""
+    # Celery (воркер; брокер по умолчанию — локальный Redis)
+    redis_url: str = "redis://localhost:6379/0"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

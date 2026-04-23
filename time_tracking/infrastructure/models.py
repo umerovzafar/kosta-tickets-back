@@ -40,6 +40,8 @@ class TimeTrackingUserModel(Base):
         default=Decimal("35"),
         server_default=text("35"),
     )
+    # Начальник для уведомлений о недельной отчётности (auth user id; без FK — пользователь в users_db).
+    reports_to_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -261,3 +263,28 @@ class TimeTrackingUserProjectAccessModel(Base):
     )
     granted_by_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WeeklyTimeSubmissionModel(Base):
+    """Авто-/ручняя фиксация календарной ISO-недели: после статуса submitted дни закрыты для правок."""
+
+    __tablename__ = "time_tracking_weekly_submissions"
+    __table_args__ = (
+        UniqueConstraint("auth_user_id", "week_start", name="uq_tt_weekly_sub_user_week"),
+        Index("ix_tt_weekly_sub_user_dates", "auth_user_id", "week_start", "week_end"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auth_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("time_tracking_users.auth_user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    week_start: Mapped[date] = mapped_column(Date, nullable=False)
+    week_end: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)  # submitted
+    auto_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

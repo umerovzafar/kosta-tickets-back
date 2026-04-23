@@ -606,3 +606,38 @@ async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) ->
         )
     )
 
+
+async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
+    """Недельные сдачи учёта времени (блокировка прошлых дней) + reports_to для уведомлений."""
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_users",
+        ("reports_to_auth_user_id INTEGER",),
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS time_tracking_weekly_submissions (
+                id VARCHAR(36) PRIMARY KEY,
+                auth_user_id INTEGER NOT NULL
+                    REFERENCES time_tracking_users (auth_user_id) ON DELETE CASCADE,
+                week_start DATE NOT NULL,
+                week_end DATE NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                auto_submitted_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL,
+                updated_at TIMESTAMPTZ,
+                CONSTRAINT uq_tt_weekly_sub_user_week UNIQUE (auth_user_id, week_start)
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_weekly_sub_user_dates
+                ON time_tracking_weekly_submissions (auth_user_id, week_start, week_end)
+            """
+        )
+    )
+

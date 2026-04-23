@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import ensure_time_entry_subject_allowed
 from application.time_entry_task import resolve_time_entry_task_for_project
+from application.weekly_submission_service import is_work_date_locked_for_user
 from infrastructure.database import get_session
 from infrastructure.repositories import (
     ClientProjectRepository,
@@ -96,6 +97,11 @@ async def create_time_entry(
 ) -> TimeEntryOut:
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
+    if await is_work_date_locked_for_user(session, auth_user_id, body.work_date):
+        raise HTTPException(
+            status_code=409,
+            detail="Период уже сдан. Редактирование даты запрещено (обратитесь к менеджеру).",
+        )
     project_id = await _validate_project_if_set(session, body.project_id)
     await _require_project_access_if_set(session, auth_user_id, project_id)
     tid, bb = await resolve_time_entry_task_for_project(session, project_id, body.task_id)
@@ -137,6 +143,18 @@ async def patch_time_entry(
     row = await repo.get_by_id(auth_user_id, entry_id)
     if not row:
         raise HTTPException(status_code=404, detail="Запись не найдена")
+    if await is_work_date_locked_for_user(session, auth_user_id, row.work_date):
+        raise HTTPException(
+            status_code=409,
+            detail="Период уже сдан. Редактирование запрещено (обратитесь к менеджеру).",
+        )
+    if patch.get("work_date") and await is_work_date_locked_for_user(
+        session, auth_user_id, patch["work_date"]
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Целевой день в закрытом периоде. Перенос запрещён.",
+        )
 
     if "project_id" in patch:
         project_id = await _validate_project_if_set(session, patch.get("project_id"))
@@ -175,6 +193,14 @@ async def delete_time_entry(
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = TimeEntryRepository(session)
+    row = await repo.get_by_id(auth_user_id, entry_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if await is_work_date_locked_for_user(session, auth_user_id, row.work_date):
+        raise HTTPException(
+            status_code=409,
+            detail="Период уже сдан. Удаление запрещено (обратитесь к менеджеру).",
+        )
     ok = await repo.delete(auth_user_id, entry_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Запись не найдена")
