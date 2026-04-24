@@ -23,6 +23,28 @@ _log = logging.getLogger(__name__)
 router = APIRouter(tags=["call_schedule"])
 
 
+def _graph_client_error_message(e: httpx.HTTPStatusError) -> str:
+    """Сообщение для фронта/логов: статус Graph + error.code (если есть) + подсказка при 403."""
+    status = e.response.status_code
+    code = None
+    try:
+        j = e.response.json()
+        err = j.get("error")
+        if isinstance(err, dict):
+            code = err.get("code")
+    except Exception:
+        pass
+    tail = f" ({code})" if code else ""
+    if status == 403:
+        return (
+            f"Microsoft Graph: 403{tail}. "
+            "Проверьте: 1) Application permissions Calendars.Read / Calendars.ReadWrite и согласие администратора; "
+            "2) в Exchange Online не блокирует ли политика доступа приложений к ящику "
+            f"{get_settings().call_schedule_mailbox or '…'} — см. docs/call-schedule.md раздел «403 от Graph»."
+        )
+    return f"Microsoft Graph: {status}{tail}"
+
+
 def _parse_dt(raw: str) -> datetime:
     raw = (raw or "").strip()
     if not raw:
@@ -54,7 +76,7 @@ async def get_calendars(
         _log.warning("Graph calendars: %s", e.response.text[:800])
         raise HTTPException(
             status_code=502,
-            detail=f"Microsoft Graph: {e.response.status_code} — проверьте права Calendars.Read на приложение",
+            detail=_graph_client_error_message(e),
         ) from e
     return {
         "mailbox": m,
@@ -91,7 +113,7 @@ async def get_events(
         _log.warning("Graph events: %s", e.response.text[:800])
         raise HTTPException(
             status_code=502,
-            detail=f"Microsoft Graph: {e.response.status_code}",
+            detail=_graph_client_error_message(e),
         ) from e
     return {
         "mailbox": m,
@@ -150,6 +172,6 @@ async def post_event(
         _log.warning("Graph create: %s", e.response.text[:800])
         raise HTTPException(
             status_code=502,
-            detail=f"Microsoft Graph: {e.response.status_code}",
+            detail=_graph_client_error_message(e),
         ) from e
     return ev
