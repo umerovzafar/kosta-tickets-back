@@ -12,14 +12,19 @@ async def get_current_user_id(
     request: Request,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> int:
-    if not authorization or not authorization.strip():
-        raise HTTPException(status_code=401, detail="Authorization required")
     settings = get_settings()
+    auth = (authorization or "").strip()
+    if not auth and settings.auth_session_cookie_name:
+        raw = (request.cookies.get(settings.auth_session_cookie_name) or "").strip()
+        if raw:
+            auth = f"Bearer {raw}"
+    if not auth:
+        raise HTTPException(status_code=401, detail="Authorization required")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(
                 f"{settings.auth_service_url.rstrip('/')}/users/me",
-                headers={"Authorization": authorization},
+                headers={"Authorization": auth},
             )
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Auth service unavailable")

@@ -17,10 +17,12 @@ _log = logging.getLogger(__name__)
 GRAPH = "https://graph.microsoft.com/v1.0"
 TOKEN_URL_TPL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
-# Кэш токена (без БД)
+# Кэш токена (без БД). После согласия admin consent в Entra старый token может остаться
+# до истечения (до ~1 ч) с устаревшим набором roles — сбрасываем кэш при 401/403 от Graph.
 _lock = asyncio.Lock()
 _cached_token: str | None = None
 _cached_expires: datetime | None = None
+_credential_fingerprint: str | None = None
 # обновлять чуть раньше истечения
 _SKEW = timedelta(minutes=2)
 
@@ -29,17 +31,35 @@ def _user_segment(mailbox: str) -> str:
     return quote(mailbox.strip(), safe="")
 
 
+def _cred_fp(tenant: str, client_id: str, client_secret: str) -> str:
+    return f"{tenant}:{client_id}:{hash(client_secret) & 0xFFFF_FFFF_FFFF_FFFF}"
+
+
+def invalidate_graph_token_cache() -> None:
+    global _cached_token, _cached_expires, _credential_fingerprint
+    _cached_token = None
+    _cached_expires = None
+    _credential_fingerprint = None
+
+
 async def get_app_access_token() -> str:
     """Client credentials: scope .default, кэш до expires."""
-    global _cached_token, _cached_expires
+    global _cached_token, _cached_expires, _credential_fingerprint
     s = get_settings()
-    if not s.microsoft_tenant_id or not s.microsoft_client_id or not s.microsoft_client_secret:
+    tenant_id, client_id, client_secret = s.graph_client_credentials()
+    if not tenant_id or not client_id or not client_secret:
         raise ValueError(
             "Задайте MICROSOFT_TENANT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET "
-            "и в Azure: Application permissions Calendars.Read + Calendars.ReadWrite (создание), admin consent"
+            "(или CALL_SCHEDULE_MICROSOFT_*) и в Azure: Application Calendars.Read + Calendars.ReadWrite, admin consent"
         )
     now = datetime.now(timezone.utc)
+    fp = _cred_fp(tenant_id, client_id, client_secret)
     async with _lock:
+        if fp != _credential_fingerprint:
+            _cached_token = None
+            _cached_expires = None
+            _credential_fingerprint = fp
+
         if (
             _cached_token
             and _cached_expires
@@ -47,10 +67,10 @@ async def get_app_access_token() -> str:
         ):
             return _cached_token
 
-        url = TOKEN_URL_TPL.format(tenant=s.microsoft_tenant_id)
+        url = TOKEN_URL_TPL.format(tenant=tenant_id)
         data = {
-            "client_id": s.microsoft_client_id,
-            "client_secret": s.microsoft_client_secret,
+            "client_id": client_id,
+            "client_secret": client_secret,
             "scope": "https://graph.microsoft.com/.default",
             "grant_type": "client_credentials",
         }
@@ -71,7 +91,7 @@ async def get_app_access_token() -> str:
         return token
 
 
-async def _graph_get(path_after_v1: str) -> Any:
+async def _graph_get_once(path_after_v1: str) -> Any:
     token = await get_app_access_token()
     url = f"{GRAPH}{path_after_v1}" if path_after_v1.startswith("/") else f"{GRAPH}/{path_after_v1}"
     async with httpx.AsyncClient() as client:
@@ -86,7 +106,22 @@ async def _graph_get(path_after_v1: str) -> Any:
     return {}
 
 
-async def _graph_post(path_after_v1: str, payload: dict) -> Any:
+async def _graph_get(path_after_v1: str) -> Any:
+    try:
+        return await _graph_get_once(path_after_v1)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (401, 403):
+            _log.warning(
+                "Graph GET retry after %s: %s",
+                e.response.status_code,
+                (e.response.text or "")[:500],
+            )
+            invalidate_graph_token_cache()
+            return await _graph_get_once(path_after_v1)
+        raise
+
+
+async def _graph_post_once(path_after_v1: str, payload: dict) -> Any:
     token = await get_app_access_token()
     url = f"{GRAPH}{path_after_v1}" if path_after_v1.startswith("/") else f"{GRAPH}/{path_after_v1}"
     async with httpx.AsyncClient() as client:
@@ -103,6 +138,21 @@ async def _graph_post(path_after_v1: str, payload: dict) -> Any:
     if r.text:
         return r.json()
     return {}
+
+
+async def _graph_post(path_after_v1: str, payload: dict) -> Any:
+    try:
+        return await _graph_post_once(path_after_v1, payload)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (401, 403):
+            _log.warning(
+                "Graph POST retry after %s: %s",
+                e.response.status_code,
+                (e.response.text or "")[:500],
+            )
+            invalidate_graph_token_cache()
+            return await _graph_post_once(path_after_v1, payload)
+        raise
 
 
 async def list_calendars_for_mailbox(mailbox: str) -> list[dict[str, Any]]:
