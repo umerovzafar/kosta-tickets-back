@@ -32,6 +32,7 @@ services:
       - PROJECTS_SERVICE_URL=${PROJECTS_SERVICE_URL:-http://projects:1243}
       - ATTENDANCE_SERVICE_URL=${ATTENDANCE_SERVICE_URL:-http://attendance:1239}
       - VACATION_SERVICE_URL=${VACATION_SERVICE_URL:-http://vacation:1244}
+      - CALL_SCHEDULE_SERVICE_URL=${CALL_SCHEDULE_SERVICE_URL:-http://call_schedule:1245}
       - ATTENDANCE_HIKVISION_ALLOWED_IPS=${ATTENDANCE_HIKVISION_ALLOWED_IPS:-}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
@@ -83,6 +84,33 @@ services:
         condition: service_started
       vacation:
         condition: service_started
+      call_schedule:
+        condition: service_started
+
+  call_schedule:
+    build:
+      context: .
+      dockerfile: call_schedule/Dockerfile
+    restart: unless-stopped
+    environment:
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
+      - CALL_SCHEDULE_MAILBOX=${CALL_SCHEDULE_MAILBOX:-info@kostalegal.com}
+      - MICROSOFT_TENANT_ID=${MICROSOFT_TENANT_ID:-}
+      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID:-}
+      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET:-}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1245/health\", timeout=3)"',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      auth:
+        condition: service_healthy
 
   users_db:
     image: postgres:16-alpine

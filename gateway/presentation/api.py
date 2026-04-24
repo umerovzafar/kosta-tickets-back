@@ -19,6 +19,7 @@ from presentation.routes import (
     inventory_routes,
     roles,
     todos_routes,
+    call_schedule_routes,
     media,
     attendance_routes,
     vacation_routes,
@@ -97,6 +98,7 @@ app.include_router(notifications_rest.router)
 app.include_router(inventory_routes.router)
 app.include_router(roles.router)
 app.include_router(todos_routes.router)
+app.include_router(call_schedule_routes.router)
 app.include_router(media.router)
 app.include_router(attendance_routes.router_compat)  # /hikvision/attendance — до attendance
 app.include_router(attendance_routes.router)

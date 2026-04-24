@@ -15,6 +15,7 @@ _DEFAULT_SERVICE_URLS: dict[str, str] = {
     "projects_service_url": "http://projects:1243",
     "attendance_service_url": "http://attendance:1239",
     "vacation_service_url": "http://vacation:1244",
+    "call_schedule_service_url": "http://call_schedule:1245",
 }
 
 
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     vacation_service_url: str = ""
     attendance_hikvision_allowed_ips: str = ""
     todos_service_url: str = ""
+    call_schedule_service_url: str = ""
     frontend_url: str = ""
     admin_frontend_url: str = ""
     # CORS: широкий regex для частных сетей (RFC1918). В проде обычно отключают.
