@@ -9,9 +9,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.entry_pricing import _cost_amount_for_entry
 from application.report_builder import (
     _billable_amount_for_entry,
-    _cost_amount_for_entry,
     _fetch_expense_report_data,
     _invoice_info_for_time_entries,
     _load_user_cost_rates,

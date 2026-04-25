@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     call_schedule_microsoft_client_id: str = ""
     call_schedule_microsoft_client_secret: str = ""
 
+    # Создание встречи как онлайн (Teams) — в ответе появляется onlineMeeting.joinUrl; отключить: false
+    call_schedule_create_as_teams_meeting: bool = True
+    # Провайдер ящика/организации: teamsForBusiness | skypeForBusiness (см. allowedOnlineMeetingProviders календаря)
+    call_schedule_online_meeting_provider: str = "teamsForBusiness"
+
     @field_validator("auth_service_url", mode="before")
     @classmethod
     def _auth_url(cls, v: object) -> object:
@@ -41,6 +46,7 @@ class Settings(BaseSettings):
         "call_schedule_microsoft_client_id",
         "call_schedule_microsoft_client_secret",
         "auth_session_cookie_name",
+        "call_schedule_online_meeting_provider",
         mode="before",
     )
     @classmethod

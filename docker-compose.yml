@@ -459,7 +459,8 @@ services:
       - WEEKLY_SUBMIT_TZ=${WEEKLY_SUBMIT_TZ:-UTC}
       - WEEKLY_SUBMIT_HOUR=${WEEKLY_SUBMIT_HOUR:-6}
       - WEEKLY_SUBMIT_MINUTE=${WEEKLY_SUBMIT_MINUTE:-0}
-      - WEEKLY_SUBMIT_DOW=${WEEKLY_SUBMIT_DOW:-1}
+      # День недели: 0=вс … 6=сб (Celery crontab). Понедельник = 1
+      - WEEKLY_SUBMIT_DOW=${WEEKLY_SUBMIT_DOW:-6}
     depends_on:
       redis:
         condition: service_healthy

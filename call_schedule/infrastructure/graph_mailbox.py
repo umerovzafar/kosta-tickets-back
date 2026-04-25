@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -25,6 +25,13 @@ _cached_expires: datetime | None = None
 _credential_fingerprint: str | None = None
 # обновлять чуть раньше истечения
 _SKEW = timedelta(minutes=2)
+
+# Явно запрашиваем ссылки: webLink, onlineMeeting.joinUrl (Teams) — иначе calendarView может отдать срез по умолчанию
+_EVENT_SELECT = (
+    "id,subject,bodyPreview,webLink,start,end,location,organizer,"
+    "isOnlineMeeting,onlineMeetingProvider,onlineMeeting,showAs,isCancelled,"
+    "createdDateTime,lastModifiedDateTime"
+)
 
 
 def _user_segment(mailbox: str) -> str:
@@ -121,17 +128,32 @@ async def _graph_get(path_after_v1: str) -> Any:
         raise
 
 
-async def _graph_post_once(path_after_v1: str, payload: dict) -> Any:
+def _graph_post_headers(
+    token: str,
+    extra: dict[str, str] | None = None,
+) -> dict[str, str]:
+    h = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        h.update(extra)
+    return h
+
+
+async def _graph_post_once(
+    path_after_v1: str,
+    payload: dict,
+    *,
+    extra_headers: dict[str, str] | None = None,
+) -> Any:
     token = await get_app_access_token()
     url = f"{GRAPH}{path_after_v1}" if path_after_v1.startswith("/") else f"{GRAPH}/{path_after_v1}"
     async with httpx.AsyncClient() as client:
         r = await client.post(
             url,
             json=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
+            headers=_graph_post_headers(token, extra_headers),
             timeout=60.0,
         )
     r.raise_for_status()
@@ -140,9 +162,14 @@ async def _graph_post_once(path_after_v1: str, payload: dict) -> Any:
     return {}
 
 
-async def _graph_post(path_after_v1: str, payload: dict) -> Any:
+async def _graph_post(
+    path_after_v1: str,
+    payload: dict,
+    *,
+    extra_headers: dict[str, str] | None = None,
+) -> Any:
     try:
-        return await _graph_post_once(path_after_v1, payload)
+        return await _graph_post_once(path_after_v1, payload, extra_headers=extra_headers)
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
             _log.warning(
@@ -151,8 +178,26 @@ async def _graph_post(path_after_v1: str, payload: dict) -> Any:
                 (e.response.text or "")[:500],
             )
             invalidate_graph_token_cache()
-            return await _graph_post_once(path_after_v1, payload)
+            return await _graph_post_once(path_after_v1, payload, extra_headers=extra_headers)
         raise
+
+
+def _enrich_event_with_join_url(ev: dict[str, Any]) -> dict[str, Any]:
+    """Добавляет meetingJoinUrl: Teams joinUrl приоритетно, иначе ссылка на событие в Outlook (webLink)."""
+    out = dict(ev)
+    join: str | None = None
+    om = out.get("onlineMeeting")
+    if isinstance(om, dict):
+        ju = (om.get("joinUrl") or "").strip()
+        if ju:
+            join = ju
+    if not join:
+        wl = (out.get("webLink") or "").strip()
+        if wl:
+            join = wl
+    if join:
+        out["meetingJoinUrl"] = join
+    return out
 
 
 async def list_calendars_for_mailbox(mailbox: str) -> list[dict[str, Any]]:
@@ -160,6 +205,17 @@ async def list_calendars_for_mailbox(mailbox: str) -> list[dict[str, Any]]:
     seg = _user_segment(mailbox)
     j = await _graph_get(f"/users/{seg}/calendars?$top=100")
     return j.get("value", []) if isinstance(j, dict) else []
+
+
+def _calendar_view_query_string(start: datetime, end: datetime) -> str:
+    return urlencode(
+        {
+            "startDateTime": _iso(start),
+            "endDateTime": _iso(end),
+            "$select": _EVENT_SELECT,
+            "$top": "200",
+        }
+    )
 
 
 async def list_calendar_view(
@@ -171,18 +227,20 @@ async def list_calendar_view(
     """
     События в интервале (calendarView).
     calendar_id: id календаря (из list_calendars) или "default" — по умолчанию основной.
+    В каждом элементе добавляется meetingJoinUrl (Teams или webLink), если ссылка есть.
     """
     seg = _user_segment(mailbox)
+    q = _calendar_view_query_string(start, end)
     if calendar_id in ("", "default"):
-        j = await _graph_get(
-            f"/users/{seg}/calendar/calendarView?startDateTime={_iso(start)}&endDateTime={_iso(end)}&$top=200"
-        )
+        j = await _graph_get(f"/users/{seg}/calendar/calendarView?{q}")
     else:
         cal = quote(calendar_id, safe="")
-        j = await _graph_get(
-            f"/users/{seg}/calendars/{cal}/calendarView?startDateTime={_iso(start)}&endDateTime={_iso(end)}&$top=200"
-        )
-    return j.get("value", []) if isinstance(j, dict) else []
+        j = await _graph_get(f"/users/{seg}/calendars/{cal}/calendarView?{q}")
+    raw = j.get("value", []) if isinstance(j, dict) else []
+    return [
+        _enrich_event_with_join_url(x) if isinstance(x, dict) else x
+        for x in raw
+    ]
 
 
 def _iso(d: datetime) -> str:
@@ -224,7 +282,31 @@ async def create_calendar_event(
     }
     if body:
         payload["body"] = {"contentType": "text", "content": body}
+
+    s = get_settings()
+    if s.call_schedule_create_as_teams_meeting:
+        payload["isOnlineMeeting"] = True
+        prov = (s.call_schedule_online_meeting_provider or "teamsForBusiness").strip()
+        if prov:
+            payload["onlineMeetingProvider"] = prov
+
+    # Часовой пояс в теле и в Prefer — как в примерах Microsoft для online meeting
+    prefer_tz = f'outlook.timezone="{time_zone}"'
+    extra_headers = {"Prefer": prefer_tz}
+
     if not calendar_id or calendar_id in ("default",):
-        return await _graph_post(f"/users/{seg}/calendar/events", payload)
-    cal = quote(calendar_id, safe="")
-    return await _graph_post(f"/users/{seg}/calendars/{cal}/events", payload)
+        ev = await _graph_post(
+            f"/users/{seg}/calendar/events",
+            payload,
+            extra_headers=extra_headers,
+        )
+    else:
+        cal = quote(calendar_id, safe="")
+        ev = await _graph_post(
+            f"/users/{seg}/calendars/{cal}/events",
+            payload,
+            extra_headers=extra_headers,
+        )
+    if isinstance(ev, dict):
+        return _enrich_event_with_join_url(ev)
+    return ev

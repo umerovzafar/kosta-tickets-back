@@ -14,5 +14,9 @@ def submit_last_closed_iso_weeks() -> int:
     from application.weekly_submission_service import run_weekly_auto_submit_sync
 
     n = run_weekly_auto_submit_sync()
-    _log.info("weekly auto-submit finished, new or touched rows=%s", n)
+    # Префикс для grep в логах воркера: docker logs ... time_tracking_celery_worker
+    _log.info(
+        "[weekly-celery] auto-submit users_with_new_submission=%s (0 = all weeks already closed or no users)",
+        n,
+    )
     return n

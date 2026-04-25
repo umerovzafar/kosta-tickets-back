@@ -33,7 +33,8 @@ app.conf.update(
 
 H = int(os.environ.get("WEEKLY_SUBMIT_HOUR", "6"))
 M = int(os.environ.get("WEEKLY_SUBMIT_MINUTE", "0"))
-_dow = os.environ.get("WEEKLY_SUBMIT_DOW", "1")
+# По умолчанию суббота (6), как в docker-compose; понедельник = 1 (см. crontab Celery: 0=вс … 6=сб)
+_dow = os.environ.get("WEEKLY_SUBMIT_DOW", "6")
 try:
     DOW: int | str = int(_dow)
 except ValueError:

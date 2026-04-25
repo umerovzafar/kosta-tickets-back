@@ -31,6 +31,21 @@ def hours_from_seconds(seconds: int) -> Decimal:
     return h
 
 
+def resolve_duration_for_entry(duration_seconds: int | None, hours: Decimal | None) -> int:
+    """Единая логика репозитория записей: секунды или часы → квант до минуты, минимум 1 минута."""
+    if duration_seconds is not None:
+        sec = int(duration_seconds)
+    elif hours is not None:
+        h = hours if isinstance(hours, Decimal) else Decimal(str(hours))
+        sec = seconds_from_hours(h)
+    else:
+        raise ValueError("Не указана длительность (durationSeconds или hours)")
+    sec = quantize_seconds_to_minute(sec)
+    if sec <= 0:
+        raise ValueError("Длительность должна быть не меньше 1 минуты")
+    return sec
+
+
 def quantize_seconds_to_minute(seconds: int) -> int:
     """Округляет произвольные секунды до целых минут по мат. принципу (HALF_UP: 30с → +1мин).
 

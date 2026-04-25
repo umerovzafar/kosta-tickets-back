@@ -8,11 +8,7 @@ from sqlalchemy import and_, case, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import DateTime
 
-from application.time_rounding import (
-    hours_from_seconds,
-    quantize_seconds_to_minute,
-    seconds_from_hours,
-)
+from application.time_rounding import hours_from_seconds, resolve_duration_for_entry
 from infrastructure.models import TimeEntryModel, TimeManagerClientTaskModel
 from infrastructure.repository_shared import _now_utc, _to_decimal
 
@@ -194,17 +190,8 @@ class TimeEntryRepository:
         duration_seconds: int | None,
         hours: Decimal | None,
     ) -> int:
-        """Вернуть длительность в секундах, **квантованную до целых минут** (HALF_UP: 30с → +1мин)."""
-        if duration_seconds is not None:
-            sec = int(duration_seconds)
-        elif hours is not None:
-            sec = seconds_from_hours(hours)
-        else:
-            raise ValueError("Не указана длительность (durationSeconds или hours)")
-        sec = quantize_seconds_to_minute(sec)
-        if sec <= 0:
-            raise ValueError("Длительность должна быть не меньше 1 минуты")
-        return sec
+        """См. `application.time_rounding.resolve_duration_for_entry`."""
+        return resolve_duration_for_entry(duration_seconds, hours)
 
     async def create(
         self,

@@ -16,11 +16,10 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.entry_pricing import _billable_rate_for_entry, _cost_amount_for_entry
 from application.report_builder import (
     _base_entry_conditions,
     _billable_amount_for_entry,
-    _billable_rate_for_entry,
-    _cost_amount_for_entry,
     _d,
     _load_user_cost_rates,
     _load_clients_map,

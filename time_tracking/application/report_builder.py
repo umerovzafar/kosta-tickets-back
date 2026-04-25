@@ -15,7 +15,13 @@ import httpx
 from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.hourly_rate_logic import filter_rates_by_currency, pick_rate_for_date
+from application.entry_pricing import (
+    _billable_rate_for_entry,
+    _cost_amount_for_entry,
+    _scoped_rates,
+)
+from application.hourly_rate_logic import pick_rate_for_date
+from application.money_amounts import money_product_hours_rate
 from infrastructure.config import get_settings
 from infrastructure.models import (
     TimeEntryModel,
@@ -142,55 +148,6 @@ async def _load_user_cost_rates(
     return out
 
 
-def _scoped_rates(
-    user_rates: list[UserHourlyRateModel] | None,
-    project_currency: str | None,
-) -> list[UserHourlyRateModel] | None:
-    if not user_rates:
-        return None
-    if not (project_currency and str(project_currency).strip()):
-        return user_rates
-    s = filter_rates_by_currency(user_rates, project_currency)
-    return s
-
-
-def _billable_rate_for_entry(
-    work_date: date,
-    user_rates: list[UserHourlyRateModel] | None,
-    *,
-    project_currency: str | None = None,
-) -> tuple[Decimal | None, str]:
-    """Ставка за час (billable) в валюте проекта, действующая на дату."""
-    base_cur = (project_currency or "USD").strip()[:10] or "USD"
-    scoped = _scoped_rates(user_rates, project_currency)
-    if not scoped:
-        return None, base_cur
-    rate = pick_rate_for_date(scoped, work_date)
-    if not rate:
-        return None, base_cur
-    return _d(rate.amount), (rate.currency or base_cur).strip()[:10] or base_cur
-
-
-def _cost_amount_for_entry(
-    hours: Decimal,
-    work_date: date,
-    user_cost_rates: list[UserHourlyRateModel] | None,
-    *,
-    project_currency: str | None = None,
-) -> tuple[Decimal, Decimal | None, str]:
-    """(cost_amount, cost_rate_per_hour, currency) — в валюте проекта."""
-    base_cur = (project_currency or "USD").strip()[:10] or "USD"
-    scoped = _scoped_rates(user_cost_rates, project_currency)
-    if not scoped:
-        return Decimal(0), None, base_cur
-    rate = pick_rate_for_date(scoped, work_date)
-    if not rate:
-        return Decimal(0), None, base_cur
-    r_amt = _d(rate.amount)
-    amt = (hours * r_amt).quantize(_Q2, rounding=ROUND_HALF_UP)
-    return amt, r_amt, (rate.currency or base_cur).strip()[:10] or base_cur
-
-
 async def _invoice_info_for_time_entries(
     session: AsyncSession, entry_ids: list[str],
 ) -> dict[str, tuple[str, str]]:
@@ -308,7 +265,7 @@ def _billable_amount_for_entry(
     rate = pick_rate_for_date(scoped, work_date)
     if not rate:
         return Decimal(0), out_cur
-    return (hours * _d(rate.amount)).quantize(_Q2, rounding=ROUND_HALF_UP), rate.currency or out_cur
+    return money_product_hours_rate(hours, _d(rate.amount)), rate.currency or out_cur
 
 
 # ---------------------------------------------------------------------------
