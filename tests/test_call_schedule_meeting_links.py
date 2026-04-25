@@ -1,0 +1,81 @@
+"""Логика ссылок на встречу (без Microsoft Graph)."""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+_root = Path(__file__).resolve().parent.parent
+_cs = _root / "call_schedule"
+if str(_cs) not in sys.path:
+    sys.path.insert(0, str(_cs))
+
+from infrastructure.meeting_links import (  # noqa: E402
+    classify_meeting_url,
+    event_body_text,
+    event_meeting_urls_from_body_object,
+)
+from infrastructure.graph_mailbox import _enrich_event_with_join_url  # noqa: E402
+
+
+def test_classify_meeting_url() -> None:
+    assert classify_meeting_url("https://kostalegal.zoom.us/j/123?pwd=x") == "zoom"
+    assert (
+        classify_meeting_url("https://teams.microsoft.com/l/meetup-join/19%3a...")
+        == "teams"
+    )
+    assert classify_meeting_url("https://meet.google.com/abc-defg-hij") == "meet"
+
+
+def test_extract_from_html_body() -> None:
+    ev = {
+        "body": {
+            "contentType": "html",
+            "content": '<a href="https://zoom.us/j/999">join</a>',
+        }
+    }
+    assert event_body_text(ev) == " join "  # без href URL пропал бы из плоского текста
+    assert event_meeting_urls_from_body_object(ev) == ["https://zoom.us/j/999"]
+
+
+def test_enrich_meeting_join_and_links() -> None:
+    ev = {
+        "id": "1",
+        "webLink": "https://outlook.office.com/calendar/item/AAMkAG1",
+        "body": {
+            "contentType": "text",
+            "content": "Встреча\nhttps://kostalegal.zoom.us/j/1",
+        },
+    }
+    out = _enrich_event_with_join_url(ev)
+    assert out.get("meetingJoinUrl", "").find("zoom.us") >= 0
+    assert "meetingLinks" in out
+    assert any("zoom" in m["url"] for m in out["meetingLinks"])
+
+
+def test_enrich_teams_wins_for_primary_join() -> None:
+    ev = {
+        "onlineMeeting": {
+            "joinUrl": "https://teams.microsoft.com/l/meetup-join/xx",
+        },
+        "body": {
+            "content": "https://zoom.us/j/1",
+            "contentType": "text",
+        },
+    }
+    out = _enrich_event_with_join_url(ev)
+    assert out["meetingJoinUrl"] == "https://teams.microsoft.com/l/meetup-join/xx"
+    assert len(out["meetingLinks"]) == 2
+
+
+def test_enrich_fallback_join_url() -> None:
+    ev = {
+        "body": {
+            "content": "только примечание",
+            "contentType": "text",
+        }
+    }
+    out = _enrich_event_with_join_url(
+        ev, fallback_join_url="https://meet.google.com/xxx-yyy-zzz"
+    )
+    assert out["meetingJoinUrl"] == "https://meet.google.com/xxx-yyy-zzz"

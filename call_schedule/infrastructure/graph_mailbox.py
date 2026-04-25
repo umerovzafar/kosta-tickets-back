@@ -11,6 +11,11 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from infrastructure.config import get_settings
+from infrastructure.meeting_links import (
+    build_meeting_link_objects,
+    classify_meeting_url,
+    event_meeting_urls_from_body_object,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -26,9 +31,9 @@ _credential_fingerprint: str | None = None
 # обновлять чуть раньше истечения
 _SKEW = timedelta(minutes=2)
 
-# Явно запрашиваем ссылки: webLink, onlineMeeting.joinUrl (Teams) — иначе calendarView может отдать срез по умолчанию
+# body — чтобы вытаскивать Zoom/Meet/Webex из текста; webLink, onlineMeeting — Teams/Outlook
 _EVENT_SELECT = (
-    "id,subject,bodyPreview,webLink,start,end,location,organizer,"
+    "id,subject,body,bodyPreview,webLink,start,end,location,organizer,"
     "isOnlineMeeting,onlineMeetingProvider,onlineMeeting,showAs,isCancelled,"
     "createdDateTime,lastModifiedDateTime"
 )
@@ -182,21 +187,58 @@ async def _graph_post(
         raise
 
 
-def _enrich_event_with_join_url(ev: dict[str, Any]) -> dict[str, Any]:
-    """Добавляет meetingJoinUrl: Teams joinUrl приоритетно, иначе ссылка на событие в Outlook (webLink)."""
+def _enrich_event_with_join_url(
+    ev: dict[str, Any],
+    *,
+    fallback_join_url: str | None = None,
+) -> dict[str, Any]:
+    """Добавляет `meetingJoinUrl` (основная кнопка Join) и `meetingLinks` (все https из Graph + тела)."""
     out = dict(ev)
-    join: str | None = None
+    all_urls: list[str] = []
+    seen: set[str] = set()
+
+    def _add(u: str) -> None:
+        u = (u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            all_urls.append(u)
+
     om = out.get("onlineMeeting")
     if isinstance(om, dict):
-        ju = (om.get("joinUrl") or "").strip()
-        if ju:
-            join = ju
+        _add(om.get("joinUrl") or "")
+
+    for u in event_meeting_urls_from_body_object(out):
+        _add(u)
+
+    _add(out.get("webLink") or "")
+
+    if fallback_join_url and fallback_join_url.strip():
+        _add(fallback_join_url.strip())
+
+    join: str | None = None
+    if isinstance(om, dict):
+        j = (om.get("joinUrl") or "").strip()
+        if j:
+            join = j
+    if not join and fallback_join_url and fallback_join_url.strip():
+        join = fallback_join_url.strip()
+    if not join:
+        for u in all_urls:
+            if classify_meeting_url(u) != "other":
+                join = u
+                break
+    if not join and all_urls:
+        join = all_urls[0]
     if not join:
         wl = (out.get("webLink") or "").strip()
         if wl:
             join = wl
     if join:
         out["meetingJoinUrl"] = join
+
+    objs = build_meeting_link_objects([u for u in all_urls if u])
+    if objs:
+        out["meetingLinks"] = objs
     return out
 
 
@@ -249,6 +291,13 @@ def _iso(d: datetime) -> str:
     return d.isoformat().replace("+00:00", "Z")
 
 
+def _format_invitation_text(meeting_url: str, extra_body: str | None) -> str:
+    lead = f"Ссылка на встречу (Join):\n{meeting_url.strip()}\n"
+    if extra_body and str(extra_body).strip():
+        return f"{lead}\n{str(extra_body).strip()}"
+    return lead
+
+
 async def create_calendar_event(
     mailbox: str,
     *,
@@ -256,11 +305,13 @@ async def create_calendar_event(
     start: datetime,
     end: datetime,
     body: str | None = None,
+    meeting_url: str | None = None,
     calendar_id: str | None = None,
     time_zone: str = "UTC",
 ) -> dict[str, Any]:
     """
     Создать событие (звонок).
+    `meeting_url` — внешняя ссылка (Zoom, Meet, …) вынесем в тело, чтобы в календаре был явный URL.
     calendar_id: None / default — основной календарь: POST /users/.../calendar/events
     иначе POST .../calendars/{id}/events
     """
@@ -280,8 +331,13 @@ async def create_calendar_event(
             "timeZone": time_zone,
         },
     }
-    if body:
-        payload["body"] = {"contentType": "text", "content": body}
+    murl = (meeting_url or "").strip() if meeting_url else ""
+    if murl:
+        if not murl.lower().startswith("https://"):
+            raise ValueError("meetingUrl должен начинаться с https://")
+        payload["body"] = {"contentType": "text", "content": _format_invitation_text(murl, body)}
+    elif body and str(body).strip():
+        payload["body"] = {"contentType": "text", "content": str(body).strip()}
 
     s = get_settings()
     if s.call_schedule_create_as_teams_meeting:
@@ -308,5 +364,5 @@ async def create_calendar_event(
             extra_headers=extra_headers,
         )
     if isinstance(ev, dict):
-        return _enrich_event_with_join_url(ev)
+        return _enrich_event_with_join_url(ev, fallback_join_url=murl or None)
     return ev

@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from infrastructure.config import get_settings
 from infrastructure.graph_mailbox import (
@@ -132,13 +132,28 @@ class CreateCallBody(BaseModel):
     subject: str = Field(..., min_length=1, max_length=500)
     start: str = Field(..., description="Начало (ISO 8601)")
     end: str = Field(..., description="Конец (ISO 8601)")
-    body: str | None = Field(None, description="Текст приглашения / заметка")
+    body: str | None = Field(None, description="Текст приглашения / заметка (после строки с Join)")
+    meeting_url: str | None = Field(
+        None,
+        description="Обязателен, если не создаёте ссылку Microsoft Teams (см. call_schedule): https:// ссылка на Zoom, Meet, Webex, …",
+        min_length=8,
+        max_length=2000,
+        alias="meetingUrl",
+    )
     calendar_id: str | None = Field(
         None,
         description="id календаря; не задано = основной",
         alias="calendarId",
     )
     time_zone: str = Field("UTC", alias="timeZone")
+
+    @field_validator("meeting_url", mode="before")
+    @classmethod
+    def _strip_meeting_url(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
 
 
 @router.post("/events", summary="Создать событие (запись звонка)")
@@ -156,6 +171,20 @@ async def post_event(
         raise HTTPException(status_code=400, detail=f"Неверные даты: {e}") from e
     if t1 <= t0:
         raise HTTPException(status_code=400, detail="end должен быть позже start")
+    murl = body.meeting_url
+    if not s.call_schedule_create_as_teams_meeting:
+        if not murl:
+            raise HTTPException(
+                status_code=400,
+                detail="Укажите meetingUrl (https://) на Zoom, Google Meet, Webex и т.д. "
+                "Либо в конфигурации включите online meeting Microsoft Teams: "
+                "CALL_SCHEDULE_CREATE_AS_TEAMS_MEETING=true (тогда ссылка создастся в Exchange).",
+            )
+    if murl and not murl.lower().startswith("https://"):
+        raise HTTPException(
+            status_code=400,
+            detail="meetingUrl должен быть ссылкой https://",
+        )
     try:
         ev = await create_calendar_event(
             m,
@@ -163,6 +192,7 @@ async def post_event(
             start=t0,
             end=t1,
             body=body.body,
+            meeting_url=murl,
             calendar_id=body.calendar_id,
             time_zone=body.time_zone or "UTC",
         )
