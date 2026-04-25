@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     call_schedule_create_as_teams_meeting: bool = True
     # Провайдер ящика/организации: teamsForBusiness | skypeForBusiness (см. allowedOnlineMeetingProviders календаря)
     call_schedule_online_meeting_provider: str = "teamsForBusiness"
+    # Если в событии и Teams, и ссылка Zoom (часто Zoom вставлен в тело) — use Zoom для `meetingJoinUrl`
+    call_schedule_prefer_zoom_join_over_teams: bool = True
 
     @field_validator("auth_service_url", mode="before")
     @classmethod

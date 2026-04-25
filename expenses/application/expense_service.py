@@ -52,6 +52,18 @@ ALLOWED_PAYMENT_METHODS = frozenset({"cash", "card", "transfer", "other_payment"
 # Реестр «утверждённых» (§10)
 REGISTRY_STATUSES = frozenset({"approved", "paid", "closed"})
 
+# Отчёты time_tracking / дашборд: всё, что не черновик и не отменено (иначе отчёт «Расходы» пуст при очереди на согласование)
+REPORT_INCLUSION_STATUSES = frozenset(
+    {
+        "pending_approval",
+        "revision_required",
+        "approved",
+        "paid",
+        "closed",
+        "not_reimbursable",
+    }
+)
+
 
 def calc_equivalent(amount_uzs: Decimal, exchange_rate: Decimal) -> Decimal:
     """equivalentAmount в USD: UZS / (UZS за 1 USD)."""

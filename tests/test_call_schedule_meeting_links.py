@@ -53,7 +53,8 @@ def test_enrich_meeting_join_and_links() -> None:
     assert any("zoom" in m["url"] for m in out["meetingLinks"])
 
 
-def test_enrich_teams_wins_for_primary_join() -> None:
+def test_enrich_prefer_zoom_join_when_both_with_teams() -> None:
+    """С Zoom в теле и Teams: по умолчанию кнопка Join — Zoom (см. CALL_SCHEDULE_PREFER_ZOOM_JOIN_OVER_TEAMS)."""
     ev = {
         "onlineMeeting": {
             "joinUrl": "https://teams.microsoft.com/l/meetup-join/xx",
@@ -64,8 +65,28 @@ def test_enrich_teams_wins_for_primary_join() -> None:
         },
     }
     out = _enrich_event_with_join_url(ev)
-    assert out["meetingJoinUrl"] == "https://teams.microsoft.com/l/meetup-join/xx"
+    assert "zoom" in (out.get("meetingJoinUrl") or "")
     assert len(out["meetingLinks"]) == 2
+    assert any("teams" in m["url"] for m in out["meetingLinks"])
+
+
+def test_enrich_location_zoom() -> None:
+    ev = {
+        "location": {
+            "displayName": "Созвон",
+            "locationUri": "https://us02web.zoom.us/j/123456?pwd=abc",
+        }
+    }
+    out = _enrich_event_with_join_url(ev)
+    assert "zoom" in (out.get("meetingJoinUrl") or "")
+    assert any(m["kind"] == "zoom" for m in out.get("meetingLinks", []))
+
+
+def test_http_zoom_normalized_to_https() -> None:
+    from infrastructure.meeting_links import extract_https_urls
+
+    u = extract_https_urls("join http://zoom.us/j/9")
+    assert u == ["https://zoom.us/j/9"]
 
 
 def test_enrich_fallback_join_url() -> None:

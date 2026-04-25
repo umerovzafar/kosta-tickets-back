@@ -55,7 +55,7 @@ async def get_project_expense_totals(
     user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Агрегация расходов по project_id (approved/paid/closed) — для дашборда проекта TT."""
+    """Агрегация расходов по project_id — те же статусы, что и отчёт Расходы (REPORT_INCLUSION_STATUSES)."""
     check_view_role(user)
     repo = ExpenseRepository(session)
     return await repo.aggregate_expenses_for_project(project_id, date_from, date_to)
@@ -69,7 +69,7 @@ async def get_expense_report_data(
     projectIds: Optional[str] = Query(None, alias="projectIds"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Строки расходов (approved/paid/closed) для модуля отчётов TT — внутренний endpoint."""
+    """Строки расходов для модуля отчётов TT (см. REPORT_INCLUSION_STATUSES) — внутренний endpoint."""
     try:
         df = date.fromisoformat(dateFrom.strip()[:10])
         dt = date.fromisoformat(dateTo.strip()[:10])

@@ -34,6 +34,9 @@ from infrastructure.repositories import ClientProjectRepository
 from infrastructure.repository_invoices import InvoiceRepository
 from infrastructure.repository_shared import _now_utc
 
+# В счёт — только согласованные расходы (отчёт шире — см. REPORT_INCLUSION_STATUSES в expenses)
+_INVOICABLE_EXPENSE_STATUSES = frozenset({"approved", "paid", "closed"})
+
 _Q4 = Decimal("0.0001")
 
 def _money4(v: Decimal) -> Decimal:
@@ -293,6 +296,13 @@ async def _append_expense_line(
     other = await repo.expense_on_active_invoice(eid, exclude_invoice_id=inv.id)
     if other:
         raise HTTPException(status_code=400, detail=f"Расход уже в счёте {other}")
+    st = (row.get("status") or "").strip()
+    if st not in _INVOICABLE_EXPENSE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="В счёт можно включать только расходы в статусе approved, paid или closed "
+            f"(сейчас: {st or '—'})",
+        )
     reimb = row.get("is_reimbursable")
     if not reimb:
         raise HTTPException(status_code=400, detail="В счёт можно включать только reimbursable-расходы")

@@ -364,8 +364,10 @@ class ExpenseRepository:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> dict:
-        """Суммы расходов по проекту (approved + paid + closed) для дашборда TT."""
-        statuses = ("approved", "paid", "closed")
+        """Суммы расходов по проекту — те же статусы, что и в отчёте TT (см. REPORT_INCLUSION_STATUSES)."""
+        from application.expense_service import REPORT_INCLUSION_STATUSES
+
+        statuses = tuple(REPORT_INCLUSION_STATUSES)
         from sqlalchemy import and_
 
         conds = [
@@ -393,8 +395,10 @@ class ExpenseRepository:
         user_ids: list[int] | None = None,
         project_ids: list[str] | None = None,
     ) -> list[ExpenseRequestModel]:
-        """Строки расходов для модуля отчётов TT (approved/paid/closed)."""
-        statuses = ("approved", "paid", "closed")
+        """Строки расходов для модуля отчётов TT (см. REPORT_INCLUSION_STATUSES в expense_service)."""
+        from application.expense_service import REPORT_INCLUSION_STATUSES
+
+        statuses = tuple(REPORT_INCLUSION_STATUSES)
         conds = [
             ExpenseRequestModel.status.in_(list(statuses)),
             ExpenseRequestModel.expense_date >= date_from,

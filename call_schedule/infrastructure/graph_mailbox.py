@@ -12,9 +12,12 @@ import httpx
 
 from infrastructure.config import get_settings
 from infrastructure.meeting_links import (
+    body_preview_suggests_external_meeting,
     build_meeting_link_objects,
     classify_meeting_url,
+    event_body_is_empty_for_fetch,
     event_meeting_urls_from_body_object,
+    extract_urls_from_location,
 )
 
 _log = logging.getLogger(__name__)
@@ -210,6 +213,9 @@ def _enrich_event_with_join_url(
     for u in event_meeting_urls_from_body_object(out):
         _add(u)
 
+    for u in extract_urls_from_location(out.get("location")):
+        _add(u)
+
     _add(out.get("webLink") or "")
 
     if fallback_join_url and fallback_join_url.strip():
@@ -233,6 +239,16 @@ def _enrich_event_with_join_url(
         wl = (out.get("webLink") or "").strip()
         if wl:
             join = wl
+
+    s = get_settings()
+    if s.call_schedule_prefer_zoom_join_over_teams:
+        zfirst = next(
+            (u for u in all_urls if classify_meeting_url(u) == "zoom"),
+            None,
+        )
+        if zfirst:
+            join = zfirst
+
     if join:
         out["meetingJoinUrl"] = join
 
@@ -260,6 +276,33 @@ def _calendar_view_query_string(start: datetime, end: datetime) -> str:
     )
 
 
+async def _merge_full_event_body_if_needed(mailbox: str, ev: dict[str, Any]) -> dict[str, Any]:
+    """calendarView иногда не возвращает `body`, хотя Zoom в preview — догружаем GET /events/{id}."""
+    if not event_body_is_empty_for_fetch(ev):
+        return ev
+    if not body_preview_suggests_external_meeting(
+        (ev.get("bodyPreview") or "")
+    ) or not ev.get("id"):
+        return ev
+    seg = _user_segment(mailbox)
+    eidq = quote(str(ev["id"]), safe="")
+    try:
+        full = await _graph_get(
+            f"/users/{seg}/events/{eidq}?$select=body,location,bodyPreview,onlineMeeting,webLink"
+        )
+    except httpx.HTTPStatusError as e:
+        _log.debug("call_schedule: full event %s: %s", eidq, e.response.status_code)
+        return ev
+    if not isinstance(full, dict):
+        return ev
+    if not event_body_is_empty_for_fetch(full):
+        merged = {**ev, "body": full.get("body")}
+        if full.get("location") is not None:
+            merged["location"] = full.get("location")
+        return merged
+    return ev
+
+
 async def list_calendar_view(
     mailbox: str,
     calendar_id: str,
@@ -279,10 +322,14 @@ async def list_calendar_view(
         cal = quote(calendar_id, safe="")
         j = await _graph_get(f"/users/{seg}/calendars/{cal}/calendarView?{q}")
     raw = j.get("value", []) if isinstance(j, dict) else []
-    return [
-        _enrich_event_with_join_url(x) if isinstance(x, dict) else x
-        for x in raw
-    ]
+    out: list[dict[str, Any] | Any] = []
+    for x in raw:
+        if not isinstance(x, dict):
+            out.append(x)
+            continue
+        x2 = await _merge_full_event_body_if_needed(mailbox, x)
+        out.append(_enrich_event_with_join_url(x2))
+    return out
 
 
 def _iso(d: datetime) -> str:

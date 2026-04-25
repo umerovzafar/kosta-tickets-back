@@ -282,6 +282,10 @@ async def _fetch_expense_report_data(
     settings = get_settings()
     base = (settings.expenses_service_url or "").rstrip("/")
     if not base:
+        _log.error(
+            "expenses report: `expenses_service_url` is empty; set EXPENSES_SERVICE_URL "
+            "(e.g. http://expenses:1242) for the time_tracking service or expense report stays empty"
+        )
         return []
     params: dict[str, str] = {
         "dateFrom": date_from.isoformat(),
@@ -295,12 +299,17 @@ async def _fetch_expense_report_data(
         async with httpx.AsyncClient(timeout=20.0) as client:
             r = await client.get(f"{base}/expenses/report-data", params=params)
         if r.status_code != 200:
-            _log.warning("expenses/report-data returned %s", r.status_code)
+            _log.error(
+                "expenses report-data: HTTP %s from %s — %s",
+                r.status_code,
+                f"{base}/expenses/report-data",
+                (r.text or "")[:800],
+            )
             return []
         data = r.json()
         return data if isinstance(data, list) else data.get("rows", [])
     except Exception as exc:
-        _log.warning("expenses/report-data error: %s", exc)
+        _log.exception("expenses report-data: request failed (%s): %s", base, exc)
         return []
 
 
