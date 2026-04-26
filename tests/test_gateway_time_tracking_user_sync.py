@@ -1,16 +1,13 @@
 """Логика самосинхронизации POST /api/v1/time-tracking/users (gateway)."""
 
-import sys
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
-_root = Path(__file__).resolve().parent.parent
-_gateway = _root / "gateway"
-if str(_gateway) not in sys.path:
-    sys.path.insert(0, str(_gateway))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("gateway")
 
 from presentation.routes.time_tracking_routes import (  # noqa: E402
     UserUpsertBody,

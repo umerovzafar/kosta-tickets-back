@@ -2,6 +2,10 @@
 
 import pytest
 
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("time_tracking")
+
 from application.report_snapshot_overrides import (
     OVERRIDE_ALLOWED_KEYS,
     merge_frozen_and_overrides,

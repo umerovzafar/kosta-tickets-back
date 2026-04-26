@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import _ensure_service_in_path
+from service_path import ensure_service_in_path
 
 
 @pytest.mark.skip(reason="Требует PostgreSQL и изолированный path")
@@ -21,7 +21,7 @@ async def test_attendance_hikvision_no_config(attendance_client):
 
 def test_hikvision_host_override_is_limited_to_configured_hosts():
     """camera_ip не должен позволять выход за configured allowlist."""
-    _ensure_service_in_path("attendance")
+    ensure_service_in_path("attendance")
 
     from infrastructure.hikvision_hosts import resolve_hikvision_hosts
 

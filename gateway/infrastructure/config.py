@@ -20,9 +20,13 @@ _DEFAULT_SERVICE_URLS: dict[str, str] = {
 
 
 class Settings(BaseSettings):
+    """environment: development — в JSON 500 можно добавить trace; production — только requestId."""
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     database_url: str = ""
     media_path: str = "./media"
     service_name: str = "gateway"
+    # Sentry (опционально): задайте DSN в .env / Portainer
+    sentry_dsn: str = ""
     gateway_base_url: str = ""
     auth_service_url: str = ""
     tickets_service_url: str = ""

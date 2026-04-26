@@ -1,19 +1,16 @@
 """Логика ссылок на встречу (без Microsoft Graph)."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_cs = _root / "call_schedule"
-if str(_cs) not in sys.path:
-    sys.path.insert(0, str(_cs))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("call_schedule")
 
 from infrastructure.meeting_links import (  # noqa: E402
     classify_meeting_url,
     event_body_text,
     event_meeting_urls_from_body_object,
+    extract_https_urls,
 )
 from infrastructure.graph_mailbox import _enrich_event_with_join_url  # noqa: E402
 
@@ -83,8 +80,6 @@ def test_enrich_location_zoom() -> None:
 
 
 def test_http_zoom_normalized_to_https() -> None:
-    from infrastructure.meeting_links import extract_https_urls
-
     u = extract_https_urls("join http://zoom.us/j/9")
     assert u == ["https://zoom.us/j/9"]
 

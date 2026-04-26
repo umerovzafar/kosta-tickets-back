@@ -1,15 +1,12 @@
 """ISO-неделя для автосдачи (weekly_period)."""
 
-import sys
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_tt = _root / "time_tracking"
-if str(_tt) not in sys.path:
-    sys.path.insert(0, str(_tt))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("time_tracking")
 
 from application.weekly_period import ( 
     monday_of_same_iso_week,

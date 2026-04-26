@@ -1,0 +1,8 @@
+# Пример production override: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Дополните переменные в Portainer / секретах, не коммитьте реальные пароли.
+
+services:
+  gateway:
+    environment:
+      - ENVIRONMENT=production
+      - CORS_ALLOW_PRIVATE_NETWORK=false

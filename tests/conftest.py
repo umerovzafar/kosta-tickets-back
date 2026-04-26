@@ -1,37 +1,12 @@
 """Общие фикстуры и настройки для тестов."""
 
 import os
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-_root = Path(__file__).resolve().parent.parent
-_SERVICES = ("gateway", "auth", "tickets", "notifications", "inventory", "attendance", "time_tracking", "todos")
-
-
-def _ensure_service_in_path(service: str):
-    """Оставить только нужный сервис в path для изоляции импортов."""
-    service_paths = {str((_root / s).resolve()) for s in _SERVICES if (_root / s).exists()}
-    for p in list(sys.path):
-        try:
-            if Path(p).resolve() in {Path(x).resolve() for x in service_paths}:
-                sys.path.remove(p)
-        except (OSError, ValueError):
-            pass
-    target = _root / service
-    if target.exists():
-        sys.path.insert(0, str(target.resolve()))
-    # Очистить кэш модулей других сервисов (включая presentation, infrastructure)
-    to_remove = [
-        k for k in sys.modules
-        if k in ("presentation", "infrastructure", "application", "domain")
-        or k.startswith(("presentation.", "infrastructure.", "application.", "domain."))
-    ]
-    for k in to_remove:
-        del sys.modules[k]
+from service_path import ensure_service_in_path as _ensure_service_in_path
 
 
 def pytest_configure(config):
@@ -64,7 +39,7 @@ def anyio_backend():
 async def gateway_client():
     """Клиент для тестирования Gateway API."""
     _ensure_service_in_path("gateway")
-    from gateway.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -74,8 +49,8 @@ async def gateway_client():
 async def auth_client():
     """Клиент для тестирования Auth API."""
     _ensure_service_in_path("auth")
-    with patch("auth.infrastructure.config.validate_production_secrets", lambda x: None):
-        from auth.presentation.api import app
+    with patch("infrastructure.config.validate_production_secrets", lambda x: None):
+        from presentation.api import app
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
@@ -85,7 +60,7 @@ async def auth_client():
 async def tickets_client():
     """Клиент для тестирования Tickets API."""
     _ensure_service_in_path("tickets")
-    from tickets.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -95,7 +70,7 @@ async def tickets_client():
 async def notifications_client():
     """Клиент для тестирования Notifications API."""
     _ensure_service_in_path("notifications")
-    from notifications.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -105,7 +80,7 @@ async def notifications_client():
 async def inventory_client():
     """Клиент для тестирования Inventory API."""
     _ensure_service_in_path("inventory")
-    from inventory.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -115,7 +90,7 @@ async def inventory_client():
 async def attendance_client():
     """Клиент для тестирования Attendance API."""
     _ensure_service_in_path("attendance")
-    from attendance.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -125,7 +100,7 @@ async def attendance_client():
 async def time_tracking_client():
     """Клиент для тестирования Time Tracking API."""
     _ensure_service_in_path("time_tracking")
-    from time_tracking.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -135,7 +110,7 @@ async def time_tracking_client():
 async def todos_client():
     """Клиент для тестирования Todos API."""
     _ensure_service_in_path("todos")
-    from todos.presentation.api import app
+    from presentation.api import app
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

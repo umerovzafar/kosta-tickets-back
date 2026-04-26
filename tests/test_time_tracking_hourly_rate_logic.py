@@ -1,16 +1,13 @@
 """Интервалы дат и выбор ставки (hourly_rate_logic)."""
 
-import sys
 from datetime import date
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_tt = _root / "time_tracking"
-if str(_tt) not in sys.path:
-    sys.path.insert(0, str(_tt))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("time_tracking")
 
 from application.hourly_rate_logic import (  # noqa: E402
     filter_rates_by_currency,

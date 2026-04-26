@@ -1,16 +1,13 @@
 """Правила для расхода партнёра (без согласования)."""
 
-import sys
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_expenses = _root / "expenses"
-if str(_expenses) not in sys.path:
-    sys.path.insert(0, str(_expenses))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("expenses")
 
 from application.expense_service import is_partner_expense, validate_submit_fields  # noqa: E402
 

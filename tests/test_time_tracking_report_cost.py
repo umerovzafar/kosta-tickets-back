@@ -1,17 +1,14 @@
 """Себестоимость и ставки (`application.entry_pricing`) + центы HALF_UP (`money_product_hours_rate`)."""
 
-import sys
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_tt = _root / "time_tracking"
-if str(_tt) not in sys.path:
-    sys.path.insert(0, str(_tt))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("time_tracking")
 
 from application import entry_pricing as ep  # noqa: E402
 from application.money_amounts import money_product_hours_rate  # noqa: E402

@@ -1,15 +1,12 @@
 """Точность часов в записях учёта времени (секунды в долях часа)."""
 
-import sys
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
-_root = Path(__file__).resolve().parent.parent
-_tt = _root / "time_tracking"
-if str(_tt) not in sys.path:
-    sys.path.insert(0, str(_tt))
+from service_path import ensure_service_in_path
+
+ensure_service_in_path("time_tracking")
 
 from infrastructure.repository_shared import normalize_time_entry_hours  # noqa: E402
 

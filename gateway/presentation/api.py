@@ -1,15 +1,20 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.upstream_auth_context import IncomingAuthorizationMiddleware
 from infrastructure.config import get_settings
+from presentation.exception_handlers import register_exception_handlers
+from presentation.middleware.request_id import RequestIdMiddleware
 from presentation.middleware.security_headers import SecurityHeadersMiddleware
 from presentation.middleware.time_tracking_clients_rewrite import TimeTrackingClientsPathRewriteMiddleware
 from presentation.routes import (
     desktop_backgrounds_public,
     spa_auth_callback,
     health,
+    ops,
     auth_azure,
     auth_admin,
     users,
@@ -28,7 +33,27 @@ from presentation.routes import (
     expenses_routes,
 )
 
-app = FastAPI(title="Gateway", version="1.0.0")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    s = get_settings()
+    dsn = (s.sentry_dsn or "").strip()
+    if dsn:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=dsn,
+                environment=(s.environment or "development").strip(),
+                traces_sample_rate=0.1,
+            )
+        except Exception:
+            pass
+    yield
+
+
+app = FastAPI(title="Gateway", version="1.0.0", lifespan=_lifespan)
+register_exception_handlers(app)
 
 def _cors_origins() -> list[str]:
     settings = get_settings()
@@ -85,7 +110,10 @@ app.add_middleware(
 )
 app.add_middleware(SqlInjectionGuardMiddleware)
 app.add_middleware(IncomingAuthorizationMiddleware)
+# Внешний слой: correlation id (должен быть последним add_middleware = первым в цепочке)
+app.add_middleware(RequestIdMiddleware)
 app.include_router(spa_auth_callback.router)
+app.include_router(ops.router)
 app.include_router(health.router)
 app.include_router(desktop_backgrounds_public.router)
 app.include_router(auth_azure.router)

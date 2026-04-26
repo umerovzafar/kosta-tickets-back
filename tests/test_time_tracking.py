@@ -1,8 +1,10 @@
 """Тесты Time Tracking API."""
 
+from pathlib import Path
+
 import pytest
 
-from conftest import _ensure_service_in_path
+_root = Path(__file__).resolve().parent.parent
 
 
 @pytest.mark.skip(reason="Требует PostgreSQL")
@@ -14,8 +16,7 @@ async def test_time_tracking_health(time_tracking_client):
 
 def test_time_tracking_repository_facade_exports_split_modules():
     """Фасад infrastructure.repositories должен вести в новые доменные модули."""
-    root = _ensure_service_in_path.__globals__["_root"]
-    repositories_facade = (root / "time_tracking" / "infrastructure" / "repositories.py").read_text(encoding="utf-8")
+    repositories_facade = (_root / "time_tracking" / "infrastructure" / "repositories.py").read_text(encoding="utf-8")
 
     assert "from infrastructure.repository_entries import TimeEntryRepository" in repositories_facade
     assert "from infrastructure.repository_clients import (" in repositories_facade

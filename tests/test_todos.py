@@ -2,7 +2,7 @@
 
 import pytest
 
-from conftest import _ensure_service_in_path
+from service_path import ensure_service_in_path
 
 
 @pytest.mark.skip(reason="Требует PostgreSQL")
@@ -16,7 +16,7 @@ def test_calendar_oauth_state_is_signed_and_rejects_tampering(monkeypatch):
     """OAuth state должен быть подписан и ломаться при подмене."""
     monkeypatch.setenv("MICROSOFT_OAUTH_STATE_SECRET", "todos-state-secret-for-tests")
     monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "")
-    _ensure_service_in_path("todos")
+    ensure_service_in_path("todos")
 
     from infrastructure.config import get_settings
     from infrastructure.oauth_state import decode_oauth_state, encode_oauth_state, resolve_oauth_state_secret

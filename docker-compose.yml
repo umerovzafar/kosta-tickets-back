@@ -51,11 +51,12 @@ services:
       - AUTH_SESSION_COOKIE_SAMESITE=${AUTH_SESSION_COOKIE_SAMESITE:-lax}
     volumes:
       - media_storage:/app/media
+    # Liveness: /live без БД. Полный /health (с users_db) — для ручной проверки; /ready — readiness
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1234/health\", timeout=3)"',
+          'python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:1234/live\", timeout=3)"',
         ]
       interval: 10s
       timeout: 5s
@@ -430,6 +431,7 @@ services:
       timeout: 3s
       retries: 5
 
+  # Планировщик: beat шлёт задачи в Redis, worker берёт и пишет в time_tracking (auto-submit ISO-недели)
   time_tracking_celery_worker:
     build:
       context: .
@@ -446,6 +448,8 @@ services:
         condition: service_healthy
       time_tracking_db:
         condition: service_healthy
+      time_tracking:
+        condition: service_started
 
   time_tracking_celery_beat:
     build:
@@ -464,6 +468,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      time_tracking_celery_worker:
+        condition: service_started
 
   time_tracking_db:
     image: postgres:16-alpine
