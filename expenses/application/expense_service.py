@@ -148,8 +148,9 @@ def validate_submit_fields(
     if is_partner_expense(expense_type):
         return
     if is_reimbursable:
-        if not (project_id or "").strip():
-            raise ValueError("Для возмещаемого расхода укажите projectId")
+        # projectId не обязателен: не все возмещаемые расходы ведутся по проекту
+        # (транспорт, общекомандные, «за клиента» без привязки к matter и т.д.).
+        # Отчёты time tracking по проекту учитывают только строки с непустым project_id.
         # Документ для оплаты при отправке; квитанция может быть добавлена до/после оплаты (см. политику вложений).
         if payment_document_count >= 1:
             pass

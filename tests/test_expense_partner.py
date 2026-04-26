@@ -37,6 +37,26 @@ def test_partner_submit_relaxes_reimbursable_requirements():
     )
 
 
+def test_reimbursable_without_project_allowed_when_docs_ok():
+    """Возмещаемый не-партнёрский расход без projectId: допустимо (см. политику вложений)."""
+    validate_submit_fields(
+        description="Такси",
+        expense_date=date(2026, 1, 10),
+        payment_deadline=None,
+        amount_uzs=Decimal("100.00"),
+        exchange_rate=Decimal("12500"),
+        expense_type="transport",
+        expense_subtype=None,
+        is_reimbursable=True,
+        comment=None,
+        project_id=None,
+        attachment_count=0,
+        expense_amount_limit_uzs=None,
+        payment_document_count=1,
+        payment_receipt_count=0,
+    )
+
+
 def test_partner_submit_still_enforces_amount_limit():
     with pytest.raises(ValueError, match="exceeds"):
         validate_submit_fields(
