@@ -408,6 +408,9 @@ class ExpenseRepository:
             conds.append(ExpenseRequestModel.created_by_user_id.in_(user_ids))
         if project_ids:
             conds.append(ExpenseRequestModel.project_id.in_(project_ids))
+        # Отчёты time tracking — только расходы с привязкой к проекту (без пустого project_id).
+        conds.append(ExpenseRequestModel.project_id.isnot(None))
+        conds.append(ExpenseRequestModel.project_id != "")
         q = (
             select(ExpenseRequestModel)
             .where(and_(*conds))

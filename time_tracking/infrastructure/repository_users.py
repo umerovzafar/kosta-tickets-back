@@ -35,9 +35,12 @@ class TimeTrackingUserRepository:
         is_blocked: bool = False,
         is_archived: bool = False,
         weekly_capacity_hours: Decimal | None = None,
+        position: str | None = None,
+        update_position: bool = False,
     ) -> TimeTrackingUserModel:
         row = await self.get_by_auth_user_id(auth_user_id)
         now = _now_utc()
+        pos_norm = (position or "").strip() or None if update_position else None
         if row:
             row.email = email
             row.display_name = display_name
@@ -47,6 +50,8 @@ class TimeTrackingUserRepository:
             row.is_archived = is_archived
             if weekly_capacity_hours is not None:
                 row.weekly_capacity_hours = weekly_capacity_hours
+            if update_position:
+                row.position = pos_norm
             row.updated_at = now
             self._session.add(row)
             return row
@@ -57,6 +62,7 @@ class TimeTrackingUserRepository:
             email=email,
             display_name=display_name,
             picture=picture,
+            position=pos_norm if update_position else None,
             role=role,
             is_blocked=is_blocked,
             is_archived=is_archived,

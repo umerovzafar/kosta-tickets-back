@@ -1,4 +1,8 @@
-"""Project Budget Report Service — отчёт по бюджетам проектов."""
+"""Project Budget Report Service — отчёт по бюджетам проектов.
+
+Бюджет может быть: только часы, только сумма, или **одновременно** лимит часов и сумма
+(«пакет»: услуга до N часов и не более M в валюте проекта).
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.budget_mode import budget_limit_hours, budget_limit_money, budget_mode
 from application.report_builder import (
     _base_entry_conditions,
     _billable_amount_for_entry,
@@ -19,6 +24,23 @@ from application.report_builder import (
 )
 from infrastructure.models import TimeEntryModel, TimeManagerClientProjectModel
 from application.services.reports._base import _d, _hours, _money, _ZERO, build_response
+
+# Часы «потрачено» — сумма всех списанных часов по проекту (как в отчёте).
+# Сумма — только billable по ставкам.
+
+
+def _spent_hours_project(
+    p: TimeManagerClientProjectModel,
+    hours_by_project: dict[str, Decimal],
+) -> Decimal:
+    return hours_by_project.get(p.id, _ZERO)
+
+
+def _spent_money_project(
+    p: TimeManagerClientProjectModel,
+    amount_by_project: dict[str, Decimal],
+) -> Decimal:
+    return amount_by_project.get(p.id, _ZERO)
 
 
 async def get_budget_report(
@@ -65,17 +87,14 @@ async def get_budget_report(
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, target_pids, client_ids, True,
     )
-    # Бюджет проекта считается по округлённым часам (согласовано со счетами и отчётами).
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
     all_user_ids = list({e.auth_user_id for e in entries})
     rates_map = await _load_user_rates(session, all_user_ids or None)
 
-    # Aggregate hours/amount per project + per-user tracking
     hours_by_project: dict[str, Decimal] = {}
     amount_by_project: dict[str, Decimal] = {}
-    # pid -> { uid -> {hours, amount} }
     user_buckets_by_project: dict[str, dict[int, dict]] = {}
 
     for e in entries:
@@ -103,29 +122,58 @@ async def get_budget_report(
     all_rows: list[dict] = []
     for p in target_projects:
         c = clients_map.get(p.client_id) if p.client_id else None
-
-        budget_by, budget_val = _get_budget_info(p)
-        spent = _get_budget_spent(p, hours_by_project, amount_by_project)
-        remaining = max(_ZERO, budget_val - spent) if budget_val > _ZERO else _ZERO
+        mode = budget_mode(p)
+        lim_h = budget_limit_hours(p)
+        lim_m = budget_limit_money(p)
+        spent_h = _spent_hours_project(p, hours_by_project)
+        spent_m = _spent_money_project(p, amount_by_project)
+        rem_h = max(_ZERO, lim_h - spent_h) if lim_h > _ZERO else _ZERO
+        rem_m = max(_ZERO, lim_m - spent_m) if lim_m > _ZERO else _ZERO
 
         user_buckets = user_buckets_by_project.get(p.id, {})
-        users_list = _build_users_list(user_buckets, users_map, budget_by)
+        users_list = _build_users_list(user_buckets, users_map)
         project_currency = (getattr(p, "currency", None) or "USD")
 
-        all_rows.append({
+        row: dict[str, Any] = {
             "client_id": p.client_id,
             "client_name": c.name if c else None,
             "project_id": p.id,
             "project_name": p.name,
             "currency": project_currency,
             "budget_is_monthly": p.budget_resets_every_month,
-            "budget_by": budget_by,
+            "budget_by": mode,
             "is_active": not p.is_archived,
-            "budget": _budget_display(budget_val, budget_by),
-            "budget_spent": _budget_display(spent, budget_by),
-            "budget_remaining": _budget_display(remaining, budget_by),
             "users": users_list,
-        })
+        }
+
+        if mode == "none":
+            row["has_budget"] = False
+            row["budget"] = 0.0
+            row["budget_spent"] = 0.0
+            row["budget_remaining"] = 0.0
+        elif mode == "hours":
+            row["has_budget"] = lim_h > _ZERO
+            row["budget"] = _hours(lim_h)
+            row["budget_spent"] = _hours(spent_h)
+            row["budget_remaining"] = _hours(rem_h)
+        elif mode == "money":
+            row["has_budget"] = lim_m > _ZERO
+            row["budget"] = _money(lim_m)
+            row["budget_spent"] = _money(spent_m)
+            row["budget_remaining"] = _money(rem_m)
+        else:  # hours_and_money
+            row["has_budget"] = (lim_h > _ZERO) or (lim_m > _ZERO)
+            row["budget"] = None
+            row["budget_spent"] = None
+            row["budget_remaining"] = None
+            row["budget_hours_limit"] = _hours(lim_h)
+            row["budget_hours_spent"] = _hours(spent_h)
+            row["budget_hours_remaining"] = _hours(rem_h)
+            row["budget_money_limit"] = _money(lim_m)
+            row["budget_money_spent"] = _money(spent_m)
+            row["budget_money_remaining"] = _money(rem_m)
+
+        all_rows.append(row)
 
     all_rows.sort(key=lambda r: r.get("project_name") or "", reverse=False)
 
@@ -154,39 +202,9 @@ async def get_budget_report_all_rows(
     return result.get("results", [])
 
 
-def _get_budget_info(p: Any) -> tuple[str, Decimal]:
-    """Определить тип бюджета и его значение."""
-    budget_type = (p.budget_type or "").lower()
-    if "hour" in budget_type and p.budget_hours:
-        return "hours", _d(p.budget_hours)
-    if p.budget_amount:
-        return "money", _d(p.budget_amount)
-    if p.budget_hours:
-        return "hours", _d(p.budget_hours)
-    return "money", _ZERO
-
-
-def _get_budget_spent(
-    p: Any,
-    hours_by_project: dict[str, Decimal],
-    amount_by_project: dict[str, Decimal],
-) -> Decimal:
-    budget_type = (p.budget_type or "").lower()
-    if "hour" in budget_type:
-        return hours_by_project.get(p.id, _ZERO)
-    return amount_by_project.get(p.id, _ZERO)
-
-
-def _budget_display(val: Decimal, budget_by: str) -> float:
-    if budget_by == "hours":
-        return _hours(val)
-    return _money(val)
-
-
 def _build_users_list(
     user_buckets: dict,
     users_map: dict,
-    budget_by: str,
 ) -> list[dict[str, Any]]:
     """Список пользователей, логировавших время по проекту."""
     result = []

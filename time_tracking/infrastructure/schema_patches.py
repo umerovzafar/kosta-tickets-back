@@ -40,6 +40,14 @@ async def apply_team_workload_schema_patch(conn: AsyncConnection) -> None:
     await conn.execute(
         text(
             """
+            ALTER TABLE time_tracking_users
+                ADD COLUMN IF NOT EXISTS position VARCHAR(256)
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
             CREATE TABLE IF NOT EXISTS time_tracking_entries (
                 id VARCHAR(36) PRIMARY KEY,
                 auth_user_id INTEGER NOT NULL REFERENCES time_tracking_users (auth_user_id) ON DELETE CASCADE,

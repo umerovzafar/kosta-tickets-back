@@ -1,9 +1,13 @@
 """Маршруты пользователей учёта времени (список из БД и синхронизация)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.auth_user_directory import (
+    fetch_auth_user_position,
+    fetch_auth_user_positions_by_id,
+)
 from application.access_control import (
     ensure_can_list_all_tt_users,
     ensure_can_read_tt_user_row,
@@ -20,21 +24,34 @@ from presentation.schemas import UserResponse, UserUpsertBody, WeeklyCapacityPat
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+def _position_merged(row_pos: str | None, auth_map: dict[int, str | None], auth_user_id: int) -> str | None:
+    """Должность из БД TT, иначе из auth (если есть)."""
+    if row_pos is not None and str(row_pos).strip():
+        return str(row_pos).strip()
+    v = auth_map.get(auth_user_id)
+    if v is not None and str(v).strip():
+        return str(v).strip()
+    return None
+
+
 @router.get("", response_model=list[UserResponse], summary="Список пользователей")
 async def list_users(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> list[UserResponse]:
     """Возвращает пользователей из БД time_tracking."""
     await ensure_can_list_all_tt_users(viewer)
     repo = TimeTrackingUserRepository(session)
     rows = await repo.list_users()
+    pos_map = await fetch_auth_user_positions_by_id(authorization or "")
     return [
         UserResponse(
             id=row.auth_user_id,
             email=row.email,
             display_name=row.display_name,
             picture=row.picture,
+            position=_position_merged(row.position, pos_map, row.auth_user_id),
             role=row.role,
             is_blocked=row.is_blocked,
             is_archived=row.is_archived,
@@ -55,6 +72,7 @@ async def list_users_in_manager_scope(
     manager_auth_user_id: int,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> list[UserResponse]:
     """Список auth_user_id: менеджер + все, у кого есть доступ хотя бы к одному из проектов менеджера."""
     await ensure_managed_scope_allowed(viewer, manager_auth_user_id)
@@ -62,6 +80,7 @@ async def list_users_in_manager_scope(
     ur = TimeTrackingUserRepository(session)
     scope_ids = set(await par.list_peer_auth_user_ids_for_manager(manager_auth_user_id))
     rows = await ur.list_users()
+    pos_map = await fetch_auth_user_positions_by_id(authorization or "")
     out: list[UserResponse] = []
     for row in rows:
         if row.auth_user_id not in scope_ids:
@@ -72,6 +91,7 @@ async def list_users_in_manager_scope(
                 email=row.email,
                 display_name=row.display_name,
                 picture=row.picture,
+                position=_position_merged(row.position, pos_map, row.auth_user_id),
                 role=row.role,
                 is_blocked=row.is_blocked,
                 is_archived=row.is_archived,
@@ -88,17 +108,27 @@ async def get_user(
     auth_user_id: int,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> UserResponse:
     await ensure_can_read_tt_user_row(session, viewer, auth_user_id)
     repo = TimeTrackingUserRepository(session)
     row = await repo.get_by_auth_user_id(auth_user_id)
     if not row:
         raise HTTPException(status_code=404, detail="User not in time tracking")
+    ap = await fetch_auth_user_position(authorization or "", auth_user_id)
+    pos = row.position
+    if pos is not None and str(pos).strip():
+        pos = str(pos).strip()
+    elif ap is not None:
+        pos = ap
+    else:
+        pos = None
     return UserResponse(
         id=row.auth_user_id,
         email=row.email,
         display_name=row.display_name,
         picture=row.picture,
+        position=pos,
         role=row.role,
         is_blocked=row.is_blocked,
         is_archived=row.is_archived,
@@ -130,6 +160,7 @@ async def patch_weekly_capacity(
         email=row.email,
         display_name=row.display_name,
         picture=row.picture,
+        position=row.position,
         role=row.role,
         is_blocked=row.is_blocked,
         is_archived=row.is_archived,
@@ -148,6 +179,8 @@ async def upsert_user(
     """Добавляет или обновляет пользователя в БД time_tracking. Вызывать из auth или скрипта синхронизации."""
     ensure_upsert_user_allowed(viewer, body.auth_user_id)
     repo = TimeTrackingUserRepository(session)
+    payload = body.model_dump(exclude_unset=True)
+    update_position = "position" in payload
     try:
         await repo.upsert_user(
             auth_user_id=body.auth_user_id,
@@ -158,6 +191,8 @@ async def upsert_user(
             is_blocked=body.is_blocked,
             is_archived=body.is_archived,
             weekly_capacity_hours=body.weekly_capacity_hours,
+            position=body.position,
+            update_position=update_position,
         )
         await session.commit()
     except ProgrammingError as e:

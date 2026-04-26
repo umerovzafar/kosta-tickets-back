@@ -17,6 +17,7 @@ from application.report_builder import (
     _load_user_rates,
     _load_users_map,
     _fetch_expense_report_data,
+    filter_expense_rows_to_tt_projects,
 )
 from infrastructure.models import TimeEntryModel
 from application.services.reports._base import _d, _hours, _money, _ZERO, build_response
@@ -67,8 +68,9 @@ async def get_uninvoiced_report(
     all_uid_set = {e.auth_user_id for e in all_entries} | {e.auth_user_id for e in uninv_entries}
     rates_map = await _load_user_rates(session, list(all_uid_set) or None)
 
-    # Расходы из внешнего сервиса
+    # Расходы из внешнего сервиса (только с project_id = проект time manager)
     raw_expenses = await _fetch_expense_report_data(date_from, date_to, user_ids, project_ids)
+    raw_expenses = filter_expense_rows_to_tt_projects(raw_expenses, projects_map)
     if client_ids:
         client_ids_set = set(client_ids)
         raw_expenses = [

@@ -1,10 +1,17 @@
 """Time Report Service — отчёты по времени (группировка clients / projects).
 
-- **projects:** в `users[].entries` — по строке на каждую запись времени.
-- **clients:** в `users[].projectBreakdown` — по строке на (сотрудник → проект): суммарные часы,
-  те же поля, что в детали; список каждой первичной записи не отдаём (`entries` пустой).
+- **group_by=projects:** строка = один проект; `users[].entries` — по строке на каждую time entry.
+- **group_by=clients:** строка = **клиент + валюта проекта** (`(client_id, currency)`), как в ТЗ: один
+  и тот же клиент в разных валютах — разные строки, суммы **не** смешиваем.
+  В `users[]` — разрез по сотруднику; `projectBreakdown` — (сотрудник → проект) без `entries` по
+  единичным line items.
 
-Плоский экспорт: `projects` — по time entry; `clients` — агрегат сотрудник+проект (`sourceEntryCount`).
+- В каждой **агрегатной** строке: `total_hours`, `billable_hours`, `billable_percent` (доля
+  оплачиваемых в «всех часах»), `billable_amount` (только по billable, в `currency` среза),
+  `source_entry_count` (число time entries), `last_recorded_at`.
+
+Плоский **export** `detail` (по умол.): time entry или агрегат сотрудник+проект (`clients`) /
+по entry (`projects`). `export=summary` — одна строка = одна агрегатная группа, как в превью.
 """
 
 from __future__ import annotations
@@ -31,7 +38,13 @@ from application.report_builder import (
     load_week_submitted_user_dates,
 )
 from infrastructure.models import TimeEntryModel
-from application.services.reports._base import _hours, _money, _ZERO, build_response
+from application.services.reports._base import (
+    _hours,
+    _money,
+    _percent_billable,
+    _ZERO,
+    build_response,
+)
 
 TIME_GROUP_OPTIONS = frozenset({"clients", "projects"})
 
@@ -131,7 +144,7 @@ def _time_entry_line_snake(
         "is_paid": is_paid,
         "is_week_submitted": wk_ok,
         "employee_name": (u.display_name or u.email) if u else str(uid),
-        "employee_position": (u.role or "") if u else None,
+        "employee_position": ((u.position or "").strip() or None) if u else None,
         "auth_user_id": uid,
         "billable_rate": _money(br) if br is not None else None,
         "amount_to_pay": _money(amt),
@@ -253,7 +266,7 @@ def _aggregate_entries_to_snake_line(
         "is_paid": is_paid,
         "is_week_submitted": all_week,
         "employee_name": (u.display_name or u.email) if u else str(uid),
-        "employee_position": (u.role or "") if u else None,
+        "employee_position": ((u.position or "").strip() or None) if u else None,
         "auth_user_id": uid,
         "billable_rate": eff_bill,
         "amount_to_pay": _money(total_amt),
@@ -383,12 +396,14 @@ async def get_time_report(
                 "currency": project_currency,
                 "last_recorded_at": None,
                 "user_buckets": {},
+                "raw_entry_count": 0,
             },
         )
         if bkt["last_recorded_at"] is None or e.created_at > bkt["last_recorded_at"]:
             bkt["last_recorded_at"] = e.created_at
         h = _d(e.hours)
         bkt["total"] += h
+        bkt["raw_entry_count"] = int(bkt.get("raw_entry_count", 0)) + 1
         uid = e.auth_user_id
         if uid not in bkt["user_buckets"]:
             d: dict[str, Any] = {
@@ -638,13 +653,17 @@ def _build_users_list(
     for uid, ubkt in user_buckets.items():
         u = users_map.get(uid)
         log = _entry_log_payload(ubkt, group_by=group_by, line_ctx=line_ctx)
+        ep = ((u.position or "").strip() or None) if u else None
         result.append(
             {
                 "user_id": uid,
                 "user_name": (u.display_name or u.email) if u else str(uid or ""),
+                "employee_position": ep,
+                "employeePosition": ep,
                 "avatar_url": u.picture if u else None,
                 "total_hours": _hours(ubkt["total"]),
                 "billable_hours": _hours(ubkt["billable"]),
+                "billable_percent": _percent_billable(ubkt["total"], ubkt["billable"]),
                 "billable_amount": _money(ubkt["amount"]),
                 "currency": ubkt["currency"],
                 **log,
@@ -667,8 +686,10 @@ def _build_row(
     row: dict[str, Any] = {
         "total_hours": _hours(bkt["total"]),
         "billable_hours": _hours(bkt["billable"]),
+        "billable_percent": _percent_billable(bkt["total"], bkt["billable"]),
         "currency": bkt["currency"],
         "billable_amount": _money(bkt["amount"]),
+        "source_entry_count": int(bkt.get("raw_entry_count") or 0),
     }
 
     last_bucket = bkt.get("last_recorded_at")
@@ -676,13 +697,18 @@ def _build_row(
 
     if group_by == "clients":
         cid: Any
+        pcur: str | None
         if isinstance(gid, tuple) and len(gid) == 2:
-            cid, _pcur = gid
+            cid, pcur = gid
         else:
             cid = gid
+            pcur = None
         c = clients_map.get(cid) if cid else None
         row["client_id"] = cid
         row["client_name"] = c.name if c else None
+        cur_g = pcur or row["currency"]
+        row["group_currency"] = cur_g
+        row["report_group_id"] = f"{cid!s}|{cur_g}"
         row["users"] = _build_users_list(
             bkt["user_buckets"],
             users_map,
@@ -696,6 +722,7 @@ def _build_row(
         row["client_name"] = c.name if c else None
         row["project_id"] = gid
         row["project_name"] = p.name if p else None
+        row["report_group_id"] = str(gid) if gid is not None else None
         row["users"] = _build_users_list(
             bkt["user_buckets"],
             users_map,
@@ -706,3 +733,70 @@ def _build_row(
         raise ValueError(f"Unsupported time report group_by: {group_by!r}")
 
     return row
+
+
+def _row_time_report_summary_for_export(r: dict[str, Any], *, group_by: str) -> dict[str, Any]:
+    """Плоская строка как в превью: без вложенного `users`."""
+    if group_by == "clients":
+        keys = (
+            "client_id",
+            "client_name",
+            "group_currency",
+            "report_group_id",
+            "total_hours",
+            "billable_hours",
+            "billable_percent",
+            "currency",
+            "billable_amount",
+            "source_entry_count",
+            "last_recorded_at",
+        )
+    elif group_by == "projects":
+        keys = (
+            "client_id",
+            "client_name",
+            "project_id",
+            "project_name",
+            "report_group_id",
+            "total_hours",
+            "billable_hours",
+            "billable_percent",
+            "currency",
+            "billable_amount",
+            "source_entry_count",
+            "last_recorded_at",
+        )
+    else:
+        raise ValueError(f"Unsupported time report group_by: {group_by!r}")
+    return {k: r.get(k) for k in keys}
+
+
+async def get_time_report_summary_for_export(
+    session: AsyncSession,
+    *,
+    group_by: str,
+    date_from: date,
+    date_to: date,
+    client_ids: list[str] | None = None,
+    project_ids: list[str] | None = None,
+    user_ids: list[int] | None = None,
+    task_ids: list[str] | None = None,
+    is_billable: bool | None = None,
+    include_fixed_fee: bool = True,
+) -> list[dict[str, Any]]:
+    """Одна строка = одна агрегатная группа (как JSON GET /reports/time/...), для Excel/CSV «как на экране»."""
+    rows = await get_time_report_all_rows(
+        session,
+        group_by=group_by,
+        date_from=date_from,
+        date_to=date_to,
+        client_ids=client_ids,
+        project_ids=project_ids,
+        user_ids=user_ids,
+        task_ids=task_ids,
+        is_billable=is_billable,
+        include_fixed_fee=include_fixed_fee,
+    )
+    if not rows:
+        return []
+    return [_row_time_report_summary_for_export(r, group_by=group_by) for r in rows]

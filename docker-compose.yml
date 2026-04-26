@@ -431,7 +431,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # Планировщик: beat шлёт задачи в Redis, worker берёт и пишет в time_tracking (auto-submit ISO-недели)
+  # Планировщик: beat → Redis → worker, авто-сдача отчётной сб-пт-недели
   time_tracking_celery_worker:
     build:
       context: .

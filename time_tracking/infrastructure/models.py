@@ -31,6 +31,8 @@ class TimeTrackingUserModel(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     picture: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Должность (как в auth.users.position); для отчётов, не путать с role (роль в модуле TT).
+    position: Mapped[str | None] = mapped_column(String(256), nullable=True)
     role: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

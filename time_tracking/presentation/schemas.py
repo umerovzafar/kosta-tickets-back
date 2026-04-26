@@ -15,10 +15,13 @@ class HealthResponse(BaseModel):
 class UserResponse(BaseModel):
     """Пользователь для списка учёта времени (совместимо с gateway UserResponse)."""
 
+    model_config = ConfigDict(ser_json_exclude_none=False)
+
     id: int
     email: str
     display_name: Optional[str] = None
     picture: Optional[str] = None
+    position: Optional[str] = None  # должность (auth), для отчётов
     role: str = ""
     is_blocked: bool = False
     is_archived: bool = False
@@ -45,6 +48,7 @@ class UserUpsertBody(BaseModel):
     email: str
     display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
+    position: Optional[str] = None  # должность; не передавать — не менять в БД при обновлении
     role: str = ""
     is_blocked: bool = Field(False, alias="isBlocked")
     is_archived: bool = Field(False, alias="isArchived")

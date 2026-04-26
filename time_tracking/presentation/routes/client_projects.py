@@ -6,6 +6,7 @@ from datetime import date
 from io import StringIO
 from typing import Literal
 
+from application.budget_mode import normalize_budget_type_for_persist
 from application.project_dashboard import build_client_project_dashboard
 from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -372,6 +373,8 @@ async def create_client_project(
             status_code=409,
             detail="Another project with this code already exists for this client",
         )
+    _bt_persist = normalize_budget_type_for_persist(body.budget_hours, body.budget_amount)
+    _budget_type_create = _bt_persist if _bt_persist is not None else body.budget_type
     try:
         row = await repo.create(
             client_id=client_id,
@@ -384,7 +387,7 @@ async def create_client_project(
             project_type=body.project_type.value,
             currency=body.currency.value if body.currency else "USD",
             billable_rate_type=body.billable_rate_type,
-            budget_type=body.budget_type,
+            budget_type=_budget_type_create,
             budget_amount=body.budget_amount,
             budget_hours=body.budget_hours,
             budget_resets_every_month=body.budget_resets_every_month,
@@ -449,6 +452,12 @@ async def patch_client_project(
         patch["project_type"] = pt.value if hasattr(pt, "value") else str(pt)
     if "is_archived" in patch and patch["is_archived"] is not None:
         patch["is_archived"] = bool(patch["is_archived"])
+
+    if any(k in patch for k in ("budget_hours", "budget_amount", "budget_type")):
+        m_h = patch["budget_hours"] if "budget_hours" in patch else row.budget_hours
+        m_a = patch["budget_amount"] if "budget_amount" in patch else row.budget_amount
+        nt = normalize_budget_type_for_persist(m_h, m_a)
+        patch["budget_type"] = nt
 
     try:
         updated = await repo.update(client_id, project_id, patch)

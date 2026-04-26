@@ -69,7 +69,10 @@ async def get_expense_report_data(
     projectIds: Optional[str] = Query(None, alias="projectIds"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Строки расходов для модуля отчётов TT (см. REPORT_INCLUSION_STATUSES) — внутренний endpoint."""
+    """Строки расходов для модуля отчётов TT (см. REPORT_INCLUSION_STATUSES) — внутренний endpoint.
+
+    Без project_id (не привязан к проекту) в выборку не попадают.
+    """
     try:
         df = date.fromisoformat(dateFrom.strip()[:10])
         dt = date.fromisoformat(dateTo.strip()[:10])

@@ -88,3 +88,31 @@ def test_self_payload_blocked_flags_from_auth_not_body():
     payload = _self_time_tracking_user_upsert_payload(user, body)
     assert payload["is_blocked"] is True
     assert payload["is_archived"] is False
+
+
+def test_self_payload_includes_position_from_auth():
+    user = {
+        "id": 42,
+        "email": "user@example.com",
+        "display_name": "Иван",
+        "time_tracking_role": "user",
+        "position": "  Юрист  ",
+        "is_blocked": False,
+        "is_archived": False,
+    }
+    body = _body(auth_user_id=42)
+    payload = _self_time_tracking_user_upsert_payload(user, body)
+    assert payload["position"] == "Юрист"
+
+
+def test_self_payload_position_absent_becomes_none():
+    user = {
+        "id": 42,
+        "email": "user@example.com",
+        "time_tracking_role": "user",
+        "is_blocked": False,
+        "is_archived": False,
+    }
+    body = _body(auth_user_id=42)
+    payload = _self_time_tracking_user_upsert_payload(user, body)
+    assert payload.get("position") is None

@@ -25,6 +25,15 @@ def _money(v: Decimal) -> float:
     return float(v.quantize(_Q2, rounding=ROUND_HALF_UP))
 
 
+def _percent_billable(total: Decimal, billable: Decimal) -> float:
+    """Процент оплачиваемых часов от всех: 0..100, 1 десятичный, при total=0 — 0.0."""
+    t = _d(total)
+    if t <= 0:
+        return 0.0
+    p = (_d(billable) / t) * Decimal(100)
+    return float(p.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
 def build_response(
     results: list[dict],
     total_entries: int,

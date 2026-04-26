@@ -317,6 +317,7 @@ class UserUpsertBody(BaseModel):
     email: str
     display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
+    position: Optional[str] = None  # должность (auth); для отчётов в time_tracking
     role: str = ""
     is_blocked: bool = Field(False, alias="isBlocked")
     is_archived: bool = Field(False, alias="isArchived")
@@ -363,11 +364,18 @@ def _self_time_tracking_user_upsert_payload(user: dict, body: UserUpsertBody) ->
         s = str(pic).strip()
         picture = s if s else None
 
+    pos = user.get("position")
+    if pos is not None and str(pos).strip():
+        position = str(pos).strip()
+    else:
+        position = None
+
     safe = UserUpsertBody(
         auth_user_id=my_id,
         email=email,
         display_name=display_name,
         picture=picture,
+        position=position,
         role=tt_auth_role,
         is_blocked=_user_payload_bool(user, "is_blocked", "isBlocked"),
         is_archived=_user_payload_bool(user, "is_archived", "isArchived"),

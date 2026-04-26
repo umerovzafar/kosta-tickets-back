@@ -20,6 +20,7 @@ from application.report_builder import (
     _load_clients_map,
     _load_projects_map,
     _load_users_map,
+    filter_expense_rows_to_tt_projects,
 )
 from infrastructure.models import TimeManagerClientExpenseCategoryModel
 from application.services.reports._base import _d, _money, _ZERO, build_response
@@ -51,6 +52,7 @@ async def get_expense_report(
     )
 
     projects_map = await _load_projects_map(session)
+    raw_expenses = filter_expense_rows_to_tt_projects(raw_expenses, projects_map)
     clients_map = await _load_clients_map(session)
     users_map = await _load_users_map(session)
     categories_map = await _load_expense_categories_map(session)

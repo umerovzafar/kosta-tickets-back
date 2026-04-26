@@ -307,10 +307,19 @@ async def _fetch_expense_report_data(
             )
             return []
         data = r.json()
-        return data if isinstance(data, list) else data.get("rows", [])
+        rows = data if isinstance(data, list) else data.get("rows", [])
+        return [r for r in rows if (str(r.get("project_id") or "")).strip()]
     except Exception as exc:
         _log.exception("expenses report-data: request failed (%s): %s", base, exc)
         return []
+
+
+def filter_expense_rows_to_tt_projects(
+    rows: list[dict],
+    projects_map: dict[str, Any],
+) -> list[dict]:
+    """Оставить расходы, привязанные к проекту из справочника time manager (не иначе)."""
+    return [r for r in rows if (str(r.get("project_id") or "")).strip() in projects_map]
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +367,9 @@ async def build_report_summary(
     period = {"dateFrom": date_from.isoformat(), "dateTo": date_to.isoformat()}
 
     if report_type == "detailed-expense":
-        return await _summary_expense(period, date_from, date_to, user_ids, project_ids)
+        return await _summary_expense(
+            session, period, date_from, date_to, user_ids, project_ids,
+        )
 
     cond = _base_entry_conditions(
         date_from,
@@ -421,6 +432,7 @@ async def build_report_summary(
 
 
 async def _summary_expense(
+    session: AsyncSession,
     period: dict,
     date_from: date,
     date_to: date,
@@ -428,6 +440,8 @@ async def _summary_expense(
     project_ids: list[str] | None,
 ) -> dict:
     rows = await _fetch_expense_report_data(date_from, date_to, user_ids, project_ids)
+    projects_map = await _load_projects_map(session)
+    rows = filter_expense_rows_to_tt_projects(rows, projects_map)
     total_uzs = Decimal(0)
     reimbursable = Decimal(0)
     count = 0
@@ -469,7 +483,7 @@ async def build_report_table(
 ) -> dict:
     if report_type == "detailed-expense":
         return await _table_expense(
-            date_from, date_to, user_ids, project_ids, sort, page, page_size,
+            session, date_from, date_to, user_ids, project_ids, sort, page, page_size,
         )
 
     if report_type in ("time", "contractor", "uninvoiced"):
@@ -614,6 +628,7 @@ async def _table_aggregated(
 
 
 async def _table_expense(
+    session: AsyncSession,
     date_from: date,
     date_to: date,
     user_ids: list[int] | None,
@@ -623,6 +638,8 @@ async def _table_expense(
     page_size: int,
 ) -> dict:
     all_rows = await _fetch_expense_report_data(date_from, date_to, user_ids, project_ids)
+    projects_map = await _load_projects_map(session)
+    all_rows = filter_expense_rows_to_tt_projects(all_rows, projects_map)
 
     reverse = sort.endswith("_desc")
     all_rows.sort(key=lambda r: r.get("expense_date", ""), reverse=reverse)

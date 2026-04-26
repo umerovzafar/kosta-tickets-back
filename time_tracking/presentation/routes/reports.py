@@ -7,8 +7,8 @@
 
 Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
 
-GET /reports/time/{group_by}            — time report (clients/projects), в `users[].entries` полные поля строки
-GET /reports/time/{group_by}/export        — плоский CSV/XLSX: одна строка на запись времени, полный набор колонок
+GET /reports/time/{group_by}            — time report: clients = строка (клиент|валюта); projects = проект
+GET /reports/time/{group_by}/export        — `export=detail` (по умол.): time entry / детализация; `export=summary` — агрегат как в превью
 GET /reports/expenses/{group_by}        — expense report
 GET /reports/expenses/{group_by}/export
 GET /reports/uninvoiced
@@ -34,6 +34,7 @@ _log = logging.getLogger(__name__)
 from application.services.reports.time_report_service import (
     get_time_report,
     get_time_report_flat_entries,
+    get_time_report_summary_for_export,
 )
 from application.services.reports.expense_report_service import (
     get_expense_report,
@@ -242,22 +243,46 @@ async def export_time_report_endpoint(
     is_billable: Optional[str] = Query(None),
     include_fixed_fee: bool = Query(True, alias="include_fixed_fee"),
     format: ExportFormat = Query(ExportFormat.csv),
+    export: str = Query(
+        "detail",
+        description="detail: построчно (как раньше); summary: одна строка на группу, как в превью отчёта",
+    ),
     session: AsyncSession = Depends(get_session),
 ):
     df, dt = period
     try:
-        rows = await get_time_report_flat_entries(
-            session,
-            group_by=group_by.value,
-            date_from=df,
-            date_to=dt,
-            client_ids=_parse_ids_str(client_id),
-            project_ids=_parse_ids_str(project_id),
-            user_ids=_parse_ids_int(user_id),
-            task_ids=_parse_ids_str(task_id),
-            is_billable=_parse_bool(is_billable),
-            include_fixed_fee=include_fixed_fee,
-        )
+        ex = (export or "detail").strip().lower()
+        if ex not in ("detail", "summary"):
+            raise HTTPException(
+                status_code=400,
+                detail="Параметр export: detail (по умолчанию) или summary",
+            )
+        if ex == "summary":
+            rows = await get_time_report_summary_for_export(
+                session,
+                group_by=group_by.value,
+                date_from=df,
+                date_to=dt,
+                client_ids=_parse_ids_str(client_id),
+                project_ids=_parse_ids_str(project_id),
+                user_ids=_parse_ids_int(user_id),
+                task_ids=_parse_ids_str(task_id),
+                is_billable=_parse_bool(is_billable),
+                include_fixed_fee=include_fixed_fee,
+            )
+        else:
+            rows = await get_time_report_flat_entries(
+                session,
+                group_by=group_by.value,
+                date_from=df,
+                date_to=dt,
+                client_ids=_parse_ids_str(client_id),
+                project_ids=_parse_ids_str(project_id),
+                user_ids=_parse_ids_int(user_id),
+                task_ids=_parse_ids_str(task_id),
+                is_billable=_parse_bool(is_billable),
+                include_fixed_fee=include_fixed_fee,
+            )
         return export_report(rows, format.value, "time", group_by.value, df, dt)
     except HTTPException:
         raise

@@ -14,11 +14,17 @@ from application.report_builder import (
     _billable_amount_for_entry,
     _fetch_expense_report_data,
     _invoice_info_for_time_entries,
+    _load_projects_map,
     _load_user_cost_rates,
     _load_user_rates,
+    filter_expense_rows_to_tt_projects,
 )
 from application.services.reports._base import _d, _money
-from application.services.reports.budget_report_service import _get_budget_info, _get_budget_spent
+from application.budget_mode import budget_limit_hours, budget_limit_money, budget_mode
+from application.services.reports.budget_report_service import (
+    _spent_hours_project,
+    _spent_money_project,
+)
 from infrastructure.repositories import (
     ClientProjectRepository,
     ClientRepository,
@@ -201,6 +207,8 @@ async def build_client_project_dashboard(
     df_eff = date_from or date(2000, 1, 1)
     dt_eff = date_to or date.today()
     raw_exp = await _fetch_expense_report_data(df_eff, dt_eff, None, [project_id])
+    _pmap = await _load_projects_map(session)
+    raw_exp = filter_expense_rows_to_tt_projects(raw_exp, _pmap)
     exp_uzs = Decimal(0)
     exp_n = 0
     for row in raw_exp:
@@ -231,33 +239,66 @@ async def build_client_project_dashboard(
             }
         )
 
-    b_by, b_val = _get_budget_info(proj_row)
-    spent_b = _get_budget_spent(
-        proj_row, {project_id: bill}, {project_id: total_bill},
-    )
-    rem_b = max(_ZERO, b_val - spent_b) if b_val > _ZERO else _ZERO
-    pct_u: float | None = None
-    if b_val > _ZERO:
-        pct_u = float(
+    # Бюджет: часы считаем по всем списаниям в периоде (согласовано с отчётом project-budget);
+    # сумма — по billable (как раньше для денежного лимита).
+    hours_map = {project_id: tot}
+    money_map = {project_id: total_bill}
+    b_mode = budget_mode(proj_row)
+    lim_h = budget_limit_hours(proj_row)
+    lim_m = budget_limit_money(proj_row)
+    spent_h = _spent_hours_project(proj_row, hours_map)
+    spent_m = _spent_money_project(proj_row, money_map)
+    rem_h = max(_ZERO, lim_h - spent_h) if lim_h > _ZERO else _ZERO
+    rem_m = max(_ZERO, lim_m - spent_m) if lim_m > _ZERO else _ZERO
+
+    def _pct(used: Decimal, limit: Decimal) -> float | None:
+        if limit <= _ZERO:
+            return None
+        return float(
             min(
                 Decimal("100"),
-                (spent_b / b_val * Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                (used / limit * Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             )
         )
+
     budget_out: dict[str, Any] = {
-        "hasBudget": b_val > _ZERO,
-        "budgetBy": b_by,
+        "hasBudget": (lim_h > _ZERO) or (lim_m > _ZERO),
+        "budgetBy": b_mode,
         "currency": project_currency,
-        "percentUsed": pct_u,
     }
-    if b_by == "hours":
-        budget_out["budget"] = _hours_json(b_val)
-        budget_out["spent"] = _hours_json(spent_b)
-        budget_out["remaining"] = _hours_json(rem_b)
-    else:
-        budget_out["budget"] = float(_money(b_val))
-        budget_out["spent"] = float(_money(spent_b))
-        budget_out["remaining"] = float(_money(rem_b))
+
+    if b_mode == "none":
+        budget_out["percentUsed"] = None
+        budget_out["budget"] = 0.0
+        budget_out["spent"] = 0.0
+        budget_out["remaining"] = 0.0
+    elif b_mode == "hours":
+        budget_out["percentUsed"] = _pct(spent_h, lim_h)
+        budget_out["budget"] = _hours_json(lim_h)
+        budget_out["spent"] = _hours_json(spent_h)
+        budget_out["remaining"] = _hours_json(rem_h)
+    elif b_mode == "money":
+        budget_out["percentUsed"] = _pct(spent_m, lim_m)
+        budget_out["budget"] = float(_money(lim_m))
+        budget_out["spent"] = float(_money(spent_m))
+        budget_out["remaining"] = float(_money(rem_m))
+    else:  # hours_and_money
+        budget_out["percentUsedHours"] = _pct(spent_h, lim_h)
+        budget_out["percentUsedMoney"] = _pct(spent_m, lim_m)
+        _pu_vals = [
+            x for x in (budget_out["percentUsedHours"], budget_out["percentUsedMoney"]) if x is not None
+        ]
+        budget_out["percentUsed"] = max(_pu_vals) if _pu_vals else None
+        budget_out["budgetHours"] = {
+            "limit": _hours_json(lim_h),
+            "spent": _hours_json(spent_h),
+            "remaining": _hours_json(rem_h),
+        }
+        budget_out["budgetMoney"] = {
+            "limit": float(_money(lim_m)),
+            "spent": float(_money(spent_m)),
+            "remaining": float(_money(rem_m)),
+        }
 
     return {
         "currency": project_currency,

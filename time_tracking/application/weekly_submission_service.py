@@ -1,35 +1,47 @@
-"""Автосдача прошлой ISO-недели и проверка блокировки дат."""
+"""Автосдача прошлой отчётной недели (сб..пт) и блокировка правок после сб 9:00 (WEEKLY_SUBMIT_TZ)."""
 
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.weekly_period import local_today, previous_closed_iso_week_range
+from application.weekly_period import (
+    is_work_week_edit_deadline_passed,
+    local_today,
+    previous_closed_saturday_fri_for_anchor,
+)
 from infrastructure.repository_users import TimeTrackingUserRepository
 from infrastructure.repository_weekly_submissions import WeeklySubmissionRepository
 
 _log = logging.getLogger(__name__)
 
 
+def _submit_tz() -> str:
+    return (os.environ.get("WEEKLY_SUBMIT_TZ", "UTC") or "UTC").strip() or "UTC"
+
+
 async def is_work_date_locked_for_user(
     session: AsyncSession, auth_user_id: int, work_date: date
 ) -> bool:
+    if is_work_week_edit_deadline_passed(work_date, submit_tz=_submit_tz()):
+        return True
     repo = WeeklySubmissionRepository(session)
     return await repo.is_work_date_locked(auth_user_id, work_date)
 
 
 async def run_weekly_auto_submit(session: AsyncSession) -> int:
-    """Создаёт записи сдачи за **предыдущую** полную ISO-неделю (Пн–Вс) для всех неархивных пользователей.
+    """Создаёт записи сдачи за **предыдущую** отчётную неделю (сб..пт), закрываемую в субботу 9:00.
+
+    Celery: якорь = сегодня (в т.з.); при запуске в субботу 9:00 в Asia/Tashkent
+    сдаётся последний полный блок сб–пт.
 
     Возвращает число **новых** записей.
     """
-    import os
-
-    anchor = local_today(os.environ.get("WEEKLY_SUBMIT_TZ", "UTC"))
-    w0, w1 = previous_closed_iso_week_range(anchor)
+    anchor = local_today(_submit_tz())
+    w0, w1 = previous_closed_saturday_fri_for_anchor(anchor)
     ur = TimeTrackingUserRepository(session)
     users = await ur.list_users()
     wr = WeeklySubmissionRepository(session)
