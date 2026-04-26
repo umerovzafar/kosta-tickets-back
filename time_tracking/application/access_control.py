@@ -20,6 +20,22 @@ _VIEW_ROLES_TIME_ENTRIES = frozenset(
 _MANAGE_ROLES_TIME_ENTRIES = frozenset({"Главный администратор", "Администратор", "Партнер"})
 
 
+async def viewer_can_bypass_work_week_submission_lock(
+    session: AsyncSession,
+    viewer: dict,
+) -> bool:
+    """Закрытая отчётная неделя (сдача / сб 9:00): правки разрешены менеджеру TT и орг-админам.
+
+    Обычные пользователи не обходят блок — только роль ``manager`` в ``time_tracking_users``
+    (менеджер учёта времени) и роли с полным доступом к чужим записям (партнёр/админ).
+    """
+    if _org_role(viewer) in _MANAGE_ROLES_TIME_ENTRIES:
+        return True
+    ur = TimeTrackingUserRepository(session)
+    row = await ur.get_by_auth_user_id(_viewer_id(viewer))
+    return bool(row and (row.role or "").strip() == "manager")
+
+
 def _org_role(viewer: dict) -> str:
     return (viewer.get("role") or "").strip()
 

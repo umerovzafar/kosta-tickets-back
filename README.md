@@ -67,4 +67,8 @@ pytest tests/ -q
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker, env, health |
 | [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Alembic |
 | [docs/TESTING.md](docs/TESTING.md) | Pytest, CI |
-| [docs/frontend-time-tracking-reports.md](docs/frontend-time-tracking-reports.md) | Отчёты для фронта |
+| [docs/frontend-setup.md](docs/frontend-setup.md) | Настройка фронта (env, пути, чеклист) |
+| [docs/frontend-reports-guide.md](docs/frontend-reports-guide.md) | **Все отчёты: данные, экспорт, снимки, чеклист (главный по отчётам)** |
+| [docs/frontend-time-tracking.md](docs/frontend-time-tracking.md) | Учёт времени: неделя, 409, менеджер |
+| [docs/frontend-reports-time.md](docs/frontend-reports-time.md) | Отчёты по времени (клиенты/проекты, экспорт) |
+| [docs/frontend-reports-changes.md](docs/frontend-reports-changes.md) | Правки UI отчёта: поля, summary/detail, чеклист |
