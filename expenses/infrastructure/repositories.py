@@ -364,10 +364,10 @@ class ExpenseRepository:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> dict:
-        """Суммы расходов по проекту — те же статусы, что и в отчёте TT (см. REPORT_INCLUSION_STATUSES)."""
-        from application.expense_service import REPORT_INCLUSION_STATUSES
+        """Суммы расходов по проекту — те же статусы, что и список `view=timeTracking` / `scope=registry` (реестр §10)."""
+        from application.expense_service import REGISTRY_STATUSES
 
-        statuses = tuple(REPORT_INCLUSION_STATUSES)
+        statuses = tuple(REGISTRY_STATUSES)
         from sqlalchemy import and_
 
         conds = [

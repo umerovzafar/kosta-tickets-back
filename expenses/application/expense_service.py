@@ -49,7 +49,7 @@ _EXPENSE_TYPE_ALIASES = {"meals": "food", "office": "services"}
 # §3.2 paymentMethod
 ALLOWED_PAYMENT_METHODS = frozenset({"cash", "card", "transfer", "other_payment"})
 
-# Реестр «утверждённых» (§10)
+# Реестр «утверждённых» (§10); вкладка «Расходы» в Учёте времени: view=timeTracking / scope=registry
 REGISTRY_STATUSES = frozenset({"approved", "paid", "closed"})
 
 # Отчёты time_tracking / дашборд: всё, что не черновик и не отменено (иначе отчёт «Расходы» пуст при очереди на согласование)

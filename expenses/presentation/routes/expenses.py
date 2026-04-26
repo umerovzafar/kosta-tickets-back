@@ -376,6 +376,10 @@ async def list_expenses(
         None,
         description="registry — только approved, paid, closed (ТЗ §10)",
     ),
+    view: Optional[Literal["timeTracking"]] = Query(
+        None,
+        description="timeTracking — как scope=registry: без черновиков и «на проверке» (вкладка «Расходы» в Учёте времени)",
+    ),
     expense_type: Optional[str] = Query(None, alias="expenseType"),
     is_reimbursable: Optional[bool] = Query(None, alias="isReimbursable"),
     date_from: Optional[date] = Query(None, alias="dateFrom"),
@@ -393,11 +397,12 @@ async def list_expenses(
     session: AsyncSession = Depends(get_session),
 ):
     check_view_role(user)
+    list_scope: str | None = "registry" if view == "timeTracking" else scope
     uid_filter = created_by_filter_for_user(user)
     if uid_filter is not None:
         if is_time_tracking_manager(user) and employee_user_id is not None:
-            scope = await fetch_managed_scope_user_ids(int(user["id"]))
-            if int(employee_user_id) not in scope:
+            managed_ids = await fetch_managed_scope_user_ids(int(user["id"]))
+            if int(employee_user_id) not in managed_ids:
                 raise HTTPException(
                     status_code=403,
                     detail="Нет доступа к заявкам выбранного пользователя (вне зоны общих проектов учёта времени)",
@@ -411,7 +416,7 @@ async def list_expenses(
     rows, total = await repo.list_requests(
         created_by_user_id=eff_creator,
         status=status,
-        scope=scope,
+        scope=list_scope,
         expense_type=expense_type,
         is_reimbursable=is_reimbursable,
         date_from=date_from,

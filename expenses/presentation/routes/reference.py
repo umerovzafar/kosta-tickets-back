@@ -55,7 +55,7 @@ async def get_project_expense_totals(
     user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Агрегация расходов по project_id — те же статусы, что и отчёт Расходы (REPORT_INCLUSION_STATUSES)."""
+    """Агрегация расходов по project_id — REGISTRY (approved, paid, closed), в т.ч. для дашборда TT и списка view=timeTracking."""
     check_view_role(user)
     repo = ExpenseRepository(session)
     return await repo.aggregate_expenses_for_project(project_id, date_from, date_to)
