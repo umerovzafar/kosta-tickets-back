@@ -624,6 +624,19 @@ async def apply_time_entries_external_reference_patch(conn: AsyncConnection) -> 
     )
 
 
+async def apply_time_entries_manager_void_patch(conn: AsyncConnection) -> None:
+    """Снятие записи с учёта менеджером без физического удаления (видимость сотруднику)."""
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_entries",
+        (
+            "voided_at TIMESTAMPTZ",
+            "voided_by_auth_user_id INTEGER",
+            "void_kind VARCHAR(32)",
+        ),
+    )
+
+
 async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
     """Недельные сдачи учёта времени (блокировка прошлых дней) + reports_to для уведомлений."""
     await add_columns_if_missing(

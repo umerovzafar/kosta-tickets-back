@@ -109,6 +109,10 @@ class TimeEntryModel(Base):
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_reference_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Снятие с учёта менеджером: запись не удаляется из БД, в отчётах/суммах не участвует.
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_by_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    void_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

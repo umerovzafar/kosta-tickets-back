@@ -654,7 +654,10 @@ class ClientProjectRepository:
         )
 
     async def time_entries_count(self, project_id: str) -> int:
-        q = select(func.count()).select_from(TimeEntryModel).where(TimeEntryModel.project_id == project_id)
+        q = select(func.count()).select_from(TimeEntryModel).where(
+            TimeEntryModel.project_id == project_id,
+            TimeEntryModel.voided_at.is_(None),
+        )
         n = (await self._session.execute(q)).scalar_one()
         return int(n or 0)
 
@@ -664,7 +667,10 @@ class ClientProjectRepository:
             return {}
         q = (
             select(TimeEntryModel.project_id, func.count())
-            .where(TimeEntryModel.project_id.in_(unique))
+            .where(
+                TimeEntryModel.project_id.in_(unique),
+                TimeEntryModel.voided_at.is_(None),
+            )
             .group_by(TimeEntryModel.project_id)
         )
         r = await self._session.execute(q)

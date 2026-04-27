@@ -37,7 +37,10 @@ class TimeEntryRepository:
         date_from: date | None,
         date_to: date | None,
     ) -> list[Any]:
-        cond: list[Any] = [TimeEntryModel.project_id == project_id]
+        cond: list[Any] = [
+            TimeEntryModel.voided_at.is_(None),
+            TimeEntryModel.project_id == project_id,
+        ]
         if date_from is not None:
             cond.append(TimeEntryModel.work_date >= date_from)
         if date_to is not None:
@@ -57,6 +60,7 @@ class TimeEntryRepository:
             .where(
                 TimeEntryModel.work_date >= date_from,
                 TimeEntryModel.work_date <= date_to,
+                TimeEntryModel.voided_at.is_(None),
             )
             .group_by(TimeEntryModel.auth_user_id)
         )
@@ -148,6 +152,7 @@ class TimeEntryRepository:
                 TimeEntryModel.work_date >= date_from,
                 TimeEntryModel.work_date <= date_to,
                 TimeEntryModel.project_id == project_id,
+                TimeEntryModel.voided_at.is_(None),
             )
         )
         r = await self._session.execute(q)
@@ -240,6 +245,8 @@ class TimeEntryRepository:
         row = await self.get_by_id(auth_user_id, entry_id)
         if not row:
             raise LookupError("not_found")
+        if row.voided_at is not None:
+            raise ValueError("Запись снята с учёта менеджером и не может быть изменена")
         duration_changed = "duration_seconds" in patch or "hours" in patch
         if duration_changed:
             sec = self._resolve_duration_seconds(
@@ -350,6 +357,8 @@ class TimeEntryRepository:
         row = await self.get_by_id(auth_user_id, entry_id)
         if not row:
             return False
+        if row.voided_at is not None:
+            return False
         await self._session.execute(
             delete(TimeEntryModel).where(
                 TimeEntryModel.auth_user_id == auth_user_id,
@@ -357,3 +366,24 @@ class TimeEntryRepository:
             )
         )
         return True
+
+    async def void_entry(
+        self,
+        auth_user_id: int,
+        entry_id: str,
+        *,
+        voided_by_auth_user_id: int,
+        void_kind: str,
+    ) -> TimeEntryModel:
+        """Снятие с учёта: строка остаётся в БД (для отображения сотруднику), из сумм исключается."""
+        row = await self.get_by_id(auth_user_id, entry_id)
+        if not row:
+            raise LookupError("not_found")
+        if row.voided_at is not None:
+            raise ValueError("Запись уже снята с учёта")
+        row.voided_at = _now_utc()
+        row.voided_by_auth_user_id = int(voided_by_auth_user_id)
+        row.void_kind = str(void_kind)[:32]
+        row.updated_at = _now_utc()
+        self._session.add(row)
+        return row

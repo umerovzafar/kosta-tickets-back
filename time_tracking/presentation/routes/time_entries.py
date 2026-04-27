@@ -3,7 +3,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import (
@@ -19,8 +19,14 @@ from infrastructure.repositories import (
     TimeTrackingUserRepository,
     UserProjectAccessRepository,
 )
+from infrastructure.repository_invoices import InvoiceRepository
 from presentation.deps import require_bearer_user
-from presentation.schemas import TimeEntryCreateBody, TimeEntryOut, TimeEntryPatchBody
+from presentation.schemas import (
+    TimeEntryCreateBody,
+    TimeEntryDeleteBody,
+    TimeEntryOut,
+    TimeEntryPatchBody,
+)
 
 router = APIRouter(prefix="/users", tags=["time_entries"])
 
@@ -163,6 +169,11 @@ async def patch_time_entry(
     row = await repo.get_by_id(auth_user_id, entry_id)
     if not row:
         raise HTTPException(status_code=404, detail="Запись не найдена")
+    if row.voided_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Запись снята с учёта менеджером и не может быть изменена",
+        )
     await _raise_if_work_date_is_closed(
         session,
         viewer,
@@ -220,20 +231,47 @@ async def patch_time_entry(
 
 @router.delete(
     "/{auth_user_id}/time-entries/{entry_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        204: {"description": "Собственная запись физически удалена"},
+        200: {
+            "description": "Снятие с учёта (менеджер/админ). Строка остаётся в БД, сотруднику видна как void",
+            "model": TimeEntryOut,
+        },
+        409: {"description": "Запись в неотменённом счёте"},
+    },
 )
 async def delete_time_entry(
     auth_user_id: int,
     entry_id: str,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
-) -> None:
+    body: TimeEntryDeleteBody | None = Body(default=None),
+) -> TimeEntryOut | Response:
+    """Удаление владельцем — полная очистка (204). Удаление менеджером чужой записи — снятие с учёта (200)."""
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = TimeEntryRepository(session)
     row = await repo.get_by_id(auth_user_id, entry_id)
     if not row:
         raise HTTPException(status_code=404, detail="Запись не найдена")
+    if row.voided_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Запись уже снята с учёта",
+        )
+    v_id = (viewer or {}).get("id")
+    if v_id is None:
+        raise HTTPException(status_code=403, detail="В токене нет id пользователя")
+    viewer_id = int(v_id)
+    is_self = viewer_id == auth_user_id
+
+    inv = InvoiceRepository(session)
+    on_inv = await inv.time_entry_on_active_invoice(entry_id)
+    if on_inv:
+        raise HTTPException(
+            status_code=409,
+            detail="Запись включена в счёт. Снятие с учёта или удаление недоступны.",
+        )
     await _raise_if_work_date_is_closed(
         session,
         viewer,
@@ -241,7 +279,25 @@ async def delete_time_entry(
         row.work_date,
         detail="Период уже сдан. Удаление запрещено (обратитесь к менеджеру).",
     )
-    ok = await repo.delete(auth_user_id, entry_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if is_self:
+        ok = await repo.delete(auth_user_id, entry_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Запись не найдена")
+        await session.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    void_kind = (body.void_kind if body is not None else "rejected")
+    try:
+        row2 = await repo.void_entry(
+            auth_user_id,
+            entry_id,
+            voided_by_auth_user_id=viewer_id,
+            void_kind=void_kind,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Запись не найдена") from None
     await session.commit()
+    await session.refresh(row2)
+    return TimeEntryOut.model_validate(row2)

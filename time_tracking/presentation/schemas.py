@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class HealthResponse(BaseModel):
@@ -161,8 +161,27 @@ class TimeEntryOut(BaseModel):
     task_id: Optional[str] = None
     description: Optional[str] = None
     external_reference_url: Optional[str] = Field(None, alias="externalReferenceUrl")
+    voided_at: Optional[datetime] = Field(
+        None,
+        alias="voidedAt",
+        description="Снята с учёта менеджером/офисом; в суммах и отчётах не учитывается, но отображается в списке сотруднику.",
+    )
+    voided_by_auth_user_id: Optional[int] = Field(
+        None,
+        alias="voidedByAuthUserId",
+    )
+    void_kind: Optional[str] = Field(
+        None,
+        alias="voidKind",
+        description="rejected | reallocated (ярлык причины для UI).",
+    )
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    @computed_field(alias="isVoided")
+    @property
+    def is_voided(self) -> bool:
+        return self.voided_at is not None
 
 
 class TimeEntryCreateBody(BaseModel):
@@ -211,6 +230,20 @@ class TimeEntryPatchBody(BaseModel):
         None,
         alias="externalReferenceUrl",
         max_length=4000,
+    )
+
+
+class TimeEntryDeleteBody(BaseModel):
+    """Опционально на DELETE, только если снимает с учёта менеджер (не владелец).
+
+    `rejected` — не принято / отклонено; `reallocated` — перенос к другим часам/проекту (якорь для маркера на UI).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    void_kind: Literal["rejected", "reallocated"] = Field(
+        "rejected",
+        alias="voidKind",
     )
 
 

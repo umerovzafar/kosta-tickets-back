@@ -50,6 +50,7 @@ from presentation.routes.time_tracking_hourly_proxy import (
 from presentation.routes.time_tracking_te_proxy import (
     ProjectAccessPutBody,
     TimeEntryCreateBody,
+    TimeEntryDeleteBody,
     TimeEntryPatchBody,
     project_access_get_gateway,
     project_access_put_gateway,
@@ -471,14 +472,21 @@ async def proxy_patch_time_entry(
 
 @router.delete(
     "/users/{auth_user_id}/time-entries/{entry_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        204: {"description": "Собственная запись удалена"},
+        200: {"description": "Снятие с учёта чужой записи (менеджер)"},
+    },
 )
 async def proxy_delete_time_entry(
     auth_user_id: int,
     entry_id: str,
+    body: TimeEntryDeleteBody | None = Body(None),
     _: dict = Depends(require_time_entry_write),
-) -> None:
-    await time_entries_delete_gateway(auth_user_id, entry_id)
+):
+    out = await time_entries_delete_gateway(auth_user_id, entry_id, body)
+    if out is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return out
 
 
 @router.get("/users/{auth_user_id}/project-access")

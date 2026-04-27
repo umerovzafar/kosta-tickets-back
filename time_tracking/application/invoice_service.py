@@ -709,6 +709,7 @@ async def list_unbilled_time_entries(
             TimeEntryModel.work_date >= date_from,
             TimeEntryModel.work_date <= date_to,
             TimeEntryModel.is_billable.is_(True),
+            TimeEntryModel.voided_at.is_(None),
         )
         .order_by(TimeEntryModel.work_date, TimeEntryModel.id)
     )

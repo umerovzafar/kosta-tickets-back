@@ -3,7 +3,8 @@
 /api/v1/time-tracking/users/... (нужно, если nginx проксирует только /api/v1/users).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from starlette.responses import Response
 
 from presentation.routes.time_tracking_hourly_proxy import (
     HourlyRateCreateBody,
@@ -26,6 +27,7 @@ from presentation.routes.time_tracking_routes import (
 from presentation.routes.time_tracking_te_proxy import (
     ProjectAccessPutBody,
     TimeEntryCreateBody,
+    TimeEntryDeleteBody,
     TimeEntryPatchBody,
     project_access_get_gateway,
     project_access_put_gateway,
@@ -114,14 +116,18 @@ async def patch_time_entry_under_users(
 
 @router.delete(
     "/{auth_user_id}/time-entries/{entry_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    responses={204: {"description": "Собственная запись удалена"}, 200: {"description": "Снятие с учёта"}},
 )
 async def delete_time_entry_under_users(
     auth_user_id: int,
     entry_id: str,
+    body: TimeEntryDeleteBody | None = Body(None),
     _: dict = Depends(require_time_entry_write),
-) -> None:
-    await time_entries_delete_gateway(auth_user_id, entry_id)
+):
+    out = await time_entries_delete_gateway(auth_user_id, entry_id, body)
+    if out is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return out
 
 
 @router.get("/{auth_user_id}/project-access")

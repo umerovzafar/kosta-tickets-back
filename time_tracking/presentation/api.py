@@ -24,6 +24,7 @@ from infrastructure.schema_patches import (
     apply_time_entries_hours_precision_patch,
     apply_time_entries_seconds_and_rounded_patch,
     apply_time_entries_external_reference_patch,
+    apply_time_entries_manager_void_patch,
     apply_reports_schema_patch,
     apply_invoices_schema_patch,
     apply_project_currency_patch,
@@ -69,6 +70,7 @@ async def lifespan(app: FastAPI):
         await apply_project_currency_patch(conn)
         await apply_time_entries_seconds_and_rounded_patch(conn)
         await apply_time_entries_external_reference_patch(conn)
+        await apply_time_entries_manager_void_patch(conn)
         await apply_weekly_submissions_schema_patch(conn)
         await apply_client_projects_project_billable_amount_patch(conn)
         await apply_hourly_rates_applies_to_project_patch(conn)

@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,6 +44,14 @@ class TimeEntryPatchBody(BaseModel):
     project_id: Optional[str] = Field(None, alias="projectId")
     task_id: Optional[str] = Field(None, alias="taskId")
     description: Optional[str] = None
+
+
+class TimeEntryDeleteBody(BaseModel):
+    """Только при снятии с учёта чужой записи (менеджер)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    void_kind: Literal["rejected", "reallocated"] = Field("rejected", alias="voidKind")
 
 
 async def time_entries_list_gateway(auth_user_id: int, request: Request) -> Any:
@@ -94,20 +102,29 @@ async def time_entries_patch_gateway(auth_user_id: int, entry_id: str, body: Tim
     return r.json()
 
 
-async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> None:
+async def time_entries_delete_gateway(
+    auth_user_id: int,
+    entry_id: str,
+    body: TimeEntryDeleteBody | None = None,
+) -> dict | None:
     base = _base()
+    kwargs: dict[str, Any] = {"headers": merge_upstream_headers()}
+    if body is not None:
+        kwargs["json"] = body.model_dump(mode="json", by_alias=True, exclude_unset=True)
     r = await send_upstream_request(
         "DELETE",
         f"{base}/users/{auth_user_id}/time-entries/{entry_id}",
-        headers=merge_upstream_headers(),
         timeout=15.0,
         unavailable_status=503,
         unavailable_detail="Time tracking service unavailable",
+        **kwargs,
     )
     raise_for_upstream_status(r, "Time tracking service error")
-    if r.status_code == 204 or not (r.text or "").strip():
-        return
-    return r.json()
+    if r.status_code == 204:
+        return None
+    if (r.text or "").strip():
+        return r.json()
+    return None
 
 
 class ProjectAccessPutBody(BaseModel):

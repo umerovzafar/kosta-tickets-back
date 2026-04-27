@@ -76,6 +76,7 @@ def _base_entry_conditions(
     cond: list = [
         TimeEntryModel.work_date >= date_from,
         TimeEntryModel.work_date <= date_to,
+        TimeEntryModel.voided_at.is_(None),
     ]
     if user_ids:
         cond.append(TimeEntryModel.auth_user_id.in_(user_ids))
