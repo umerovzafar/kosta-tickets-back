@@ -9,9 +9,9 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from application.entry_pricing import _billable_amount_for_entry
 from application.report_builder import (
     _base_entry_conditions,
-    _billable_amount_for_entry,
     _load_clients_map,
     _load_projects_map,
     _load_user_rates,
@@ -98,7 +98,12 @@ async def get_uninvoiced_report(
         p_ent = projects_map.get(pid) if pid else None
         pc = (getattr(p_ent, "currency", None) or "USD") if p_ent else "USD"
         amt, cur = _billable_amount_for_entry(
-            h, e.is_billable, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
+            h,
+            e.is_billable,
+            e.work_date,
+            rates_map.get(e.auth_user_id),
+            project_currency=pc,
+            time_entry_project_id=pid,
         )
         uninv_amount_by_project[pid] = uninv_amount_by_project.get(pid, _ZERO) + amt
         if cur != "USD":

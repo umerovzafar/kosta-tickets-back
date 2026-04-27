@@ -23,6 +23,12 @@ class TimeManagerClientProjectCreateBody(BaseModel):
     project_type: ProjectType = Field("time_and_materials", alias="projectType")
     currency: ProjectCurrency = Field("USD", description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    project_billable_rate_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="projectBillableRateAmount",
+        description="Ставка billable за час по проекту; копируется на сотрудников с доступом.",
+    )
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(
         None,
@@ -52,6 +58,16 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         description="Устарело — задайте budgetAmount.",
     )
     is_archived: bool = Field(False, alias="isArchived")
+    initial_time_tracking_user_auth_ids: list[int] = Field(
+        default_factory=list,
+        alias="initialTimeTrackingUserAuthIds",
+        description="Доступ к новому проекту сразу после создания (auth_user_id в TT).",
+    )
+    access_granted_by_auth_user_id: Optional[int] = Field(
+        None,
+        alias="accessGrantedByAuthUserId",
+        description="Кто выдал доступ (аудит).",
+    )
 
 
 class TimeManagerClientProjectPatchBody(BaseModel):
@@ -66,6 +82,12 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     project_type: Optional[ProjectType] = Field(None, alias="projectType")
     currency: Optional[ProjectCurrency] = Field(None, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    project_billable_rate_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="projectBillableRateAmount",
+        description="Ставка billable за час по проекту; копируется на сотрудников с доступом.",
+    )
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(
         None,

@@ -23,10 +23,13 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.entry_pricing import _billable_rate_for_entry, _cost_amount_for_entry
+from application.entry_pricing import (
+    _billable_amount_for_entry,
+    _billable_rate_for_entry,
+    _cost_amount_for_entry,
+)
 from application.report_builder import (
     _base_entry_conditions,
-    _billable_amount_for_entry,
     _d,
     _load_user_cost_rates,
     _load_clients_map,
@@ -110,10 +113,18 @@ def _time_entry_line_snake(
     brates = rates_map.get(uid) or []
     crates = cost_rates_map.get(uid) or []
     amt, _cur = _billable_amount_for_entry(
-        h, e.is_billable, e.work_date, brates, project_currency=project_currency
+        h,
+        e.is_billable,
+        e.work_date,
+        brates,
+        project_currency=project_currency,
+        time_entry_project_id=e.project_id,
     )
     br, _brc = _billable_rate_for_entry(
-        e.work_date, brates, project_currency=project_currency
+        e.work_date,
+        brates,
+        project_currency=project_currency,
+        time_entry_project_id=e.project_id,
     )
     cost_amt, cost_r, _cnc = _cost_amount_for_entry(
         h, e.work_date, crates, project_currency=project_currency
@@ -199,7 +210,12 @@ def _aggregate_entries_to_snake_line(
             billable_h += h
             brt = rates_map.get(uid) or []
             a, _c = _billable_amount_for_entry(
-                h, True, e.work_date, brt, project_currency=project_currency
+                h,
+                True,
+                e.work_date,
+                brt,
+                project_currency=project_currency,
+                time_entry_project_id=e.project_id,
             )
             total_amt += a
         else:
@@ -434,7 +450,12 @@ async def get_time_report(
             bkt["billable"] += h
             br = rates_map.get(uid)
             amt, effective_cur = _billable_amount_for_entry(
-                h, True, e.work_date, br, project_currency=project_currency
+                h,
+                True,
+                e.work_date,
+                br,
+                project_currency=project_currency,
+                time_entry_project_id=e.project_id,
             )
             bkt["amount"] += amt
             bkt["currency"] = effective_cur or project_currency

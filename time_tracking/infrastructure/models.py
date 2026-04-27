@@ -54,6 +54,7 @@ class UserHourlyRateModel(Base):
     __tablename__ = "time_tracking_user_hourly_rates"
     __table_args__ = (
         Index("ix_tt_hourly_rates_user_kind", "auth_user_id", "rate_kind"),
+        Index("ix_tt_hourly_rates_project_scope", "applies_to_project_id"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -67,8 +68,13 @@ class UserHourlyRateModel(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="USD")
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    applies_to_project_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("time_tracking_client_projects.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[date | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TimeEntryModel(Base):
@@ -230,6 +236,9 @@ class TimeManagerClientProjectModel(Base):
         String(10), nullable=False, default="USD", server_default=text("'USD'")
     )
     billable_rate_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    project_billable_rate_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
     budget_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     budget_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     budget_hours: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)

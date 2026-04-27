@@ -641,6 +641,7 @@ class ClientProjectRepository:
             project_type=src.project_type,
             currency=src.currency,
             billable_rate_type=src.billable_rate_type,
+            project_billable_rate_amount=src.project_billable_rate_amount,
             budget_type=src.budget_type,
             budget_amount=src.budget_amount,
             budget_hours=src.budget_hours,
@@ -685,6 +686,7 @@ class ClientProjectRepository:
         project_type: str = "time_and_materials",
         currency: str = "USD",
         billable_rate_type: str | None = None,
+        project_billable_rate_amount: Decimal | None = None,
         budget_type: str | None = None,
         budget_amount: Decimal | None = None,
         budget_hours: Decimal | None = None,
@@ -710,6 +712,7 @@ class ClientProjectRepository:
             project_type=pt,
             currency=cur,
             billable_rate_type=_strip_opt(billable_rate_type),
+            project_billable_rate_amount=project_billable_rate_amount,
             budget_type=_strip_opt(budget_type),
             budget_amount=budget_amount,
             budget_hours=budget_hours,
@@ -752,6 +755,8 @@ class ClientProjectRepository:
             row.project_type = pt if pt in _PROJECT_TYPES else row.project_type
         if "billable_rate_type" in patch:
             row.billable_rate_type = _strip_opt(patch["billable_rate_type"])
+        if "project_billable_rate_amount" in patch:
+            row.project_billable_rate_amount = _decimal_none(patch["project_billable_rate_amount"])
         if "budget_type" in patch:
             row.budget_type = _strip_opt(patch["budget_type"])
         if "budget_amount" in patch:

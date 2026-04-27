@@ -450,6 +450,11 @@ class TimeManagerClientProjectOut(BaseModel):
     project_type: str
     currency: str = "USD"
     billable_rate_type: Optional[str] = None
+    project_billable_rate_amount: Optional[Decimal] = Field(
+        None,
+        alias="projectBillableRateAmount",
+        description="Фиксированная оплачиваемая ставка за час по проекту (режим «по проекту»).",
+    )
     budget_type: Optional[str] = None
     budget_amount: Optional[Decimal] = None
     budget_hours: Optional[Decimal] = None
@@ -480,6 +485,12 @@ class TimeManagerClientProjectCreateBody(BaseModel):
     project_type: ProjectType = Field(ProjectType.time_and_materials, alias="projectType")
     currency: ProjectCurrency = Field(ProjectCurrency.USD, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    project_billable_rate_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="projectBillableRateAmount",
+        description="Ставка billable за час по проекту; при режиме «по проекту» копируется на сотрудников с доступом.",
+    )
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(
         None,
@@ -509,6 +520,19 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         description="Устарело: сумма фикс-контракта задаётся в budgetAmount. Поле принимается для совместимости.",
     )
     is_archived: bool = Field(False, alias="isArchived")
+    initial_time_tracking_user_auth_ids: list[int] = Field(
+        default_factory=list,
+        alias="initialTimeTrackingUserAuthIds",
+        description=(
+            "Сразу выдать доступ к создаваемому проекту этим пользователям TT (auth_user_id). "
+            "Действуют те же проверки: почасовые ставки в валюте проекта, на проекте с командой — партнёр по position."
+        ),
+    )
+    access_granted_by_auth_user_id: int | None = Field(
+        None,
+        alias="accessGrantedByAuthUserId",
+        description="Кто выдал доступ при создании (аудит); опционально.",
+    )
 
 
 class TimeManagerClientProjectPatchBody(BaseModel):
@@ -523,6 +547,11 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     project_type: Optional[ProjectType] = Field(None, alias="projectType")
     currency: Optional[ProjectCurrency] = Field(None, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
+    project_billable_rate_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="projectBillableRateAmount",
+    )
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
     budget_amount: Optional[Decimal] = Field(
         None,

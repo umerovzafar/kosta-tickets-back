@@ -7,7 +7,13 @@ from io import StringIO
 from typing import Literal
 
 from application.budget_mode import normalize_budget_type_for_persist
+from application.project_access_rates import validate_hourly_rates_for_project_access
+from application.project_billable_rate_sync import (
+    reapply_project_billable_mode,
+    sync_project_billable_rates_to_assigned_users,
+)
 from application.project_dashboard import build_client_project_dashboard
+from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from application.services.reports._base import _d
 from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from infrastructure.database import get_session
-from infrastructure.repositories import ClientProjectRepository
+from infrastructure.repositories import (
+    ClientProjectRepository,
+    TimeTrackingUserRepository,
+    UserProjectAccessRepository,
+)
 from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
     ProjectType,
@@ -149,6 +159,7 @@ def _project_out(row, usage: int) -> TimeManagerClientProjectOut:
         project_type=row.project_type,
         currency=getattr(row, "currency", "USD") or "USD",
         billable_rate_type=row.billable_rate_type,
+        project_billable_rate_amount=row.project_billable_rate_amount,
         budget_type=row.budget_type,
         budget_amount=row.budget_amount,
         budget_hours=row.budget_hours,
@@ -417,6 +428,7 @@ async def create_client_project(
             project_type=body.project_type.value,
             currency=body.currency.value if body.currency else "USD",
             billable_rate_type=body.billable_rate_type,
+            project_billable_rate_amount=body.project_billable_rate_amount,
             budget_type=_budget_type_create,
             budget_amount=budget_amount,
             budget_hours=body.budget_hours,
@@ -427,7 +439,36 @@ async def create_client_project(
             fixed_fee_amount=fixed_fee_stored,
             is_archived=body.is_archived,
         )
+        await session.flush()
+        initial = list(
+            dict.fromkeys(int(x) for x in (body.initial_time_tracking_user_auth_ids or []))
+        )
+        if initial:
+            par = UserProjectAccessRepository(session)
+            tur = TimeTrackingUserRepository(session)
+            for uid in initial:
+                if not await tur.get_by_auth_user_id(uid):
+                    raise ValueError(
+                        f"Пользователь не найден в учёте времени (auth_user_id={uid}).",
+                    )
+                await validate_hourly_rates_for_project_access(
+                    session, auth_user_id=uid, project_ids=[str(row.id)]
+                )
+                await par.grant_access_if_absent(
+                    uid,
+                    str(row.id),
+                    granted_by_auth_user_id=body.access_granted_by_auth_user_id,
+                    projects=repo,
+                )
+            await session.flush()
+            await ensure_projects_have_partner_assignee(
+                session, par, {str(row.id)}, projects=repo
+            )
+        await sync_project_billable_rates_to_assigned_users(session, str(row.id))
         await session.commit()
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except IntegrityError:
         await session.rollback()
         raise HTTPException(
@@ -520,6 +561,7 @@ async def patch_client_project(
         updated = await repo.update(client_id, project_id, patch)
         if not updated:
             raise HTTPException(status_code=404, detail="Project not found")
+        await reapply_project_billable_mode(session, project_id, updated)
         await session.commit()
     except IntegrityError:
         await session.rollback()

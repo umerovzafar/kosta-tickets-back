@@ -658,3 +658,33 @@ async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
         )
     )
 
+
+async def apply_client_projects_project_billable_amount_patch(conn: AsyncConnection) -> None:
+    """Фиксированная оплачиваемая ставка по проекту (копируется на сотрудников с доступом)."""
+    await add_columns_if_missing(
+        conn,
+        "time_tracking_client_projects",
+        ("project_billable_rate_amount NUMERIC(18, 4)",),
+    )
+
+
+async def apply_hourly_rates_applies_to_project_patch(conn: AsyncConnection) -> None:
+    """Ставка billable, привязанная к конкретному проекту (ставка «по проекту» на сотрудника)."""
+    await conn.execute(
+        text(
+            """
+            ALTER TABLE time_tracking_user_hourly_rates
+                ADD COLUMN IF NOT EXISTS applies_to_project_id VARCHAR(36)
+                    REFERENCES time_tracking_client_projects (id) ON DELETE CASCADE
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tt_hourly_rates_project_scope
+                ON time_tracking_user_hourly_rates (applies_to_project_id)
+            """
+        )
+    )
+

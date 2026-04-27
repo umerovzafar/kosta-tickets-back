@@ -14,9 +14,9 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.budget_mode import budget_limit_hours, budget_limit_money, budget_mode
+from application.entry_pricing import _billable_amount_for_entry
 from application.report_builder import (
     _base_entry_conditions,
-    _billable_amount_for_entry,
     _load_clients_map,
     _load_projects_map,
     _load_user_rates,
@@ -114,7 +114,12 @@ async def get_budget_report(
             p_ent = projects_map.get(pid)
             pc = (getattr(p_ent, "currency", None) or "USD") if p_ent else "USD"
             amt, _ = _billable_amount_for_entry(
-                h, e.is_billable, e.work_date, rates_map.get(uid), project_currency=pc,
+                h,
+                e.is_billable,
+                e.work_date,
+                rates_map.get(uid),
+                project_currency=pc,
+                time_entry_project_id=pid,
             )
             amount_by_project[pid] = amount_by_project.get(pid, _ZERO) + amt
             ubkt["amount"] += amt

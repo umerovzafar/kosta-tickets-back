@@ -13,8 +13,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from application.entry_pricing import _billable_amount_for_entry
 from application.report_builder import (
-    _billable_amount_for_entry,
     _fetch_expense_report_data,
     _load_projects_map,
     filter_expense_rows_to_tt_projects,
@@ -265,7 +265,12 @@ async def _append_time_line(
     # В счёте количество часов и сумма — billable в валюте проекта.
     qty = dec(entry.hours)
     amt, _cur = _billable_amount_for_entry(
-        qty, entry.is_billable, entry.work_date, user_rates, project_currency=pc,
+        qty,
+        entry.is_billable,
+        entry.work_date,
+        user_rates,
+        project_currency=pc,
+        time_entry_project_id=entry.project_id,
     )
     line_total = _money4(amt)
     unit = _money4(line_total / qty) if qty > 0 else Decimal(0)
@@ -720,7 +725,12 @@ async def list_unbilled_time_entries(
             continue
         h = dec(e.hours)
         amt, cur = _billable_amount_for_entry(
-            h, e.is_billable, e.work_date, rates.get(e.auth_user_id), project_currency=pc,
+            h,
+            e.is_billable,
+            e.work_date,
+            rates.get(e.auth_user_id),
+            project_currency=pc,
+            time_entry_project_id=e.project_id,
         )
         out.append(
             {

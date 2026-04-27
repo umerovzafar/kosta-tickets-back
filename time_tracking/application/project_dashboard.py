@@ -9,9 +9,11 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from application.entry_pricing import _cost_amount_for_entry
-from application.report_builder import (
+from application.entry_pricing import (
     _billable_amount_for_entry,
+    _cost_amount_for_entry,
+)
+from application.report_builder import (
     _fetch_expense_report_data,
     _invoice_info_for_time_entries,
     _load_projects_map,
@@ -101,7 +103,12 @@ async def build_client_project_dashboard(
 
         if e.is_billable:
             amt, _cur = _billable_amount_for_entry(
-                h, e.is_billable, e.work_date, rates_map.get(uid), project_currency=project_currency,
+                h,
+                e.is_billable,
+                e.work_date,
+                rates_map.get(uid),
+                project_currency=project_currency,
+                time_entry_project_id=project_id,
             )
             total_bill += amt
             user_bill[uid] += amt

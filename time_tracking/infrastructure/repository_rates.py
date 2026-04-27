@@ -19,6 +19,13 @@ def _rate_currency_key(row: UserHourlyRateModel) -> str:
     return (row.currency or "USD").strip().upper()[:10] or "USD"
 
 
+def _applies_scope_match(row: UserHourlyRateModel, applies_to_project_id: str | None) -> bool:
+    a = getattr(row, "applies_to_project_id", None)
+    a = (a.strip() or None) if isinstance(a, str) else (a or None)
+    b = (applies_to_project_id or "").strip() or None
+    return a == b
+
+
 class HourlyRateRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -68,6 +75,7 @@ class HourlyRateRepository:
         currency: str,
         valid_from: date | None,
         valid_to: date | None,
+        applies_to_project_id: str | None = None,
     ) -> UserHourlyRateModel:
         if rate_kind not in _RATE_KINDS:
             raise ValueError("Недопустимый тип ставки")
@@ -76,7 +84,11 @@ class HourlyRateRepository:
             raise ValueError("Сумма должна быть больше нуля")
         cur_norm = (currency or "USD").strip().upper()[:10] or "USD"
         existing = await self.list_by_user_and_kind(auth_user_id, rate_kind)
-        same_cur = [r for r in existing if _rate_currency_key(r) == cur_norm]
+        same_cur = [
+            r
+            for r in existing
+            if _rate_currency_key(r) == cur_norm and _applies_scope_match(r, applies_to_project_id)
+        ]
         if self._has_overlap(same_cur, valid_from, valid_to):
             raise ValueError("Интервал пересекается с другой ставкой этого типа и валюты")
         now = _now_utc()
@@ -88,6 +100,7 @@ class HourlyRateRepository:
             currency=cur_norm,
             valid_from=valid_from,
             valid_to=valid_to,
+            applies_to_project_id=applies_to_project_id,
             created_at=now,
             updated_at=None,
         )
@@ -121,7 +134,14 @@ class HourlyRateRepository:
         validate_range_order(new_from, new_to)
         existing = await self.list_by_user_and_kind(auth_user_id, row.rate_kind)
         new_cur = (new_currency or "USD").strip().upper()[:10] or "USD"
-        others = [r for r in existing if r.id != rate_id and _rate_currency_key(r) == new_cur]
+        scope = getattr(row, "applies_to_project_id", None) or None
+        others = [
+            r
+            for r in existing
+            if r.id != rate_id
+            and _rate_currency_key(r) == new_cur
+            and _applies_scope_match(r, scope)
+        ]
         if self._has_overlap(others, new_from, new_to):
             raise ValueError("Интервал пересекается с другой ставкой этого типа и валюты")
 

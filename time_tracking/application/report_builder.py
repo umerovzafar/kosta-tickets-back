@@ -16,12 +16,10 @@ from sqlalchemy import and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.entry_pricing import (
+    _billable_amount_for_entry,
     _billable_rate_for_entry,
     _cost_amount_for_entry,
-    _scoped_rates,
 )
-from application.hourly_rate_logic import pick_rate_for_date
-from application.money_amounts import money_product_hours_rate
 from infrastructure.config import get_settings
 from infrastructure.models import (
     TimeEntryModel,
@@ -247,27 +245,6 @@ async def load_week_submitted_user_dates(
     return out
 
 
-def _billable_amount_for_entry(
-    hours: Decimal,
-    is_billable: bool,
-    work_date: date,
-    user_rates: list[UserHourlyRateModel] | None,
-    *,
-    project_currency: str | None = None,
-) -> tuple[Decimal, str]:
-    """Возвращает (amount, currency) в валюте проекта. Если нет ставки в этой валюте — 0."""
-    out_cur = (project_currency or "USD").strip()[:10] or "USD"
-    if not is_billable or not user_rates:
-        return Decimal(0), out_cur
-    scoped = _scoped_rates(user_rates, project_currency)
-    if not scoped:
-        return Decimal(0), out_cur
-    rate = pick_rate_for_date(scoped, work_date)
-    if not rate:
-        return Decimal(0), out_cur
-    return money_product_hours_rate(hours, _d(rate.amount)), rate.currency or out_cur
-
-
 # ---------------------------------------------------------------------------
 # Cross-service: expense data
 # ---------------------------------------------------------------------------
@@ -402,7 +379,12 @@ async def build_report_summary(
         if e.is_billable:
             billable += h
             amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
+                h,
+                True,
+                e.work_date,
+                rates_map.get(e.auth_user_id),
+                project_currency=pc,
+                time_entry_project_id=e.project_id,
             )
             billable_amount += amt
             if cur != "USD" or (pc and pc != "USD"):
@@ -568,7 +550,12 @@ async def _table_aggregated(
         if e.is_billable:
             bkt["billable"] += h
             amt, cur = _billable_amount_for_entry(
-                h, True, e.work_date, rates_map.get(e.auth_user_id), project_currency=pc,
+                h,
+                True,
+                e.work_date,
+                rates_map.get(e.auth_user_id),
+                project_currency=pc,
+                time_entry_project_id=e.project_id,
             )
             bkt["amount"] += amt
             if cur != "USD" or (pc and pc != "USD"):

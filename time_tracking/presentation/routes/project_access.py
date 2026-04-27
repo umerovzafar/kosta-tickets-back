@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import ensure_time_entry_subject_allowed
+from application.project_billable_rate_sync import sync_project_billable_rates_to_assigned_users
 from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from application.project_access_rates import validate_hourly_rates_for_project_access
 from infrastructure.database import get_session
@@ -46,12 +47,12 @@ async def put_project_access(
 ) -> ProjectAccessOut:
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
-    await validate_hourly_rates_for_project_access(
-        session, auth_user_id=auth_user_id, project_ids=list(body.project_ids)
-    )
     repo = UserProjectAccessRepository(session)
     projects = ClientProjectRepository(session)
     try:
+        await validate_hourly_rates_for_project_access(
+            session, auth_user_id=auth_user_id, project_ids=list(body.project_ids)
+        )
         affected = await repo.replace_all(
             auth_user_id,
             list(body.project_ids),
@@ -61,6 +62,8 @@ async def put_project_access(
         await ensure_projects_have_partner_assignee(
             session, repo, affected, projects=projects
         )
+        for pid in affected:
+            await sync_project_billable_rates_to_assigned_users(session, pid)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     await session.commit()

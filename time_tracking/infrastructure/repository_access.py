@@ -16,6 +16,32 @@ class UserProjectAccessRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def grant_access_if_absent(
+        self,
+        auth_user_id: int,
+        project_id: str,
+        *,
+        granted_by_auth_user_id: int | None,
+        projects: ClientProjectRepository,
+    ) -> None:
+        """Добавляет строку доступа, если её ещё нет. Проект должен существовать."""
+        pid = (project_id or "").strip()
+        if not pid:
+            raise ValueError("Пустой идентификатор проекта")
+        if await projects.get_by_id_global(pid) is None:
+            raise ValueError(f"Проект не найден: {pid}")
+        if await self.has_access(auth_user_id, pid):
+            return
+        self._session.add(
+            TimeTrackingUserProjectAccessModel(
+                id=str(uuid.uuid4()),
+                auth_user_id=auth_user_id,
+                project_id=pid,
+                granted_by_auth_user_id=granted_by_auth_user_id,
+                created_at=_now_utc(),
+            )
+        )
+
     async def has_access(self, auth_user_id: int, project_id: str) -> bool:
         r = await self._session.execute(
             select(TimeTrackingUserProjectAccessModel.id).where(
