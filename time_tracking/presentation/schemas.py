@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Self
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthResponse(BaseModel):
@@ -57,14 +57,8 @@ class UserUpsertBody(BaseModel):
         alias="weeklyCapacityHours",
         description="Норма часов в неделю; по умолчанию 35 при создании",
     )
-
-    @model_validator(mode="after")
-    def position_required_for_tt_role(self) -> Self:
-        r = (self.role or "").strip()
-        if r in ("user", "manager") and not (self.position or "").strip():
-            raise ValueError("Для роли user/manager в учёте времени укажите непустую должность (position).")
-        return self
-
+    # Должность (position) для ролей user/manager задаётся в auth; здесь не валидируем — иначе 422 при
+    # POST /users без position (синхронизация, миграции, старые клиенты).
 
 class RateKind(str, Enum):
     billable = "billable"
