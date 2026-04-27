@@ -59,8 +59,7 @@ Authorization: Bearer <access_token>
 - в **должности** (TT или auth) есть «партн…» / `partner` (без учёта регистра), **или**
 - **орг-роль** в auth (поле `role` в ответе `/users` auth) указывает на партнёра по тем же подстрокам.
 
-Подробности по сопутствующим полям и 400/ошибкам:  
-`time_tracking/docs/FRONTEND_PROJECT_ACCESS_PARTNER.md` и `docs/FRONTEND.md`.
+Подробности по сопутствующим полям и 400/ошибкам смотрите в коде: `time_tracking/application/project_partner_requirement.py`, `time_tracking/presentation/routes/project_access.py`, схемы в `time_tracking/presentation/schemas.py`.
 
 ---
 
@@ -73,15 +72,61 @@ Authorization: Bearer <access_token>
 
 ## 7. Где в репозитории искать детали
 
-| Документ | Содержание |
-|----------|------------|
-| `docs/FRONTEND.md` | Общий обзор API, ссылки |
-| `time_tracking/docs/FRONTEND_PROJECT_ACCESS_PARTNER.md` | Партнёр, 400, PUT/DELETE |
-| `time_tracking/docs/FRONTEND_PROJECT_BILLABLE_RATE.md` | Ставка «по проекту» |
-| `time_tracking/docs/FRONTEND_PROJECT_BUDGET.md` | Бюджет проектов |
-| `time_tracking/docs/FRONTEND_TIME_REPORT_PREVIEW.md` | Предпросмотр отчёта «Время», time-entries, отчёт JSON |
-| `time_tracking/docs/FRONTEND_TIME_ENTRY_VOID.md` | Снятие учёта менеджером: void, 200/204, `voidKind` |
-| `gateway/presentation/routes/time_tracking_routes.py` | Прокси к TT |
+| Место | Содержание |
+|-------|------------|
+| `gateway/presentation/routes/time_tracking_routes.py` | Прокси к TT, тела запросов |
+| `time_tracking/presentation/schemas.py` | Схемы API (camelCase, поля проектов и time-entries) |
+| `time_tracking/presentation/routes/time_entries.py` | Записи времени: GET/POST/PATCH, DELETE (свой → 204, чужой → void и **200**) |
+| `time_tracking/application/services/reports/time_report_service.py` | Отчёт по времени, поля строк, `voidedTimeEntries` |
+
+**Отчёт «Время» и снятые с учёта строки:** ответ `GET /time-tracking/reports/time/{group_by}` дополнительно содержит **`voidedTimeEntries`** — список записей, снятых менеджером за выбранный период и фильтры (в **`results`** по-прежнему только учтённые часы; **`meta.voided_time_entries_count`** — сколько void-строк). Каждая такая запись в том же формате, что строка отчёта, плюс **`isVoided`**, **`voidedAt`**, **`voidedByAuthUserId`**, **`voidedByName`**, **`voidKind`**. Сотруднику показывайте `voidedTimeEntries` рядом с отчётом или в списке «снято с учёта».
+
+---
+
+## 8. Записи времени в табеле: `TimeEntryOut`, void и `DELETE`
+
+Базовый путь: **`GET/POST/PATCH/DELETE {API_BASE}/time-tracking/users/{authUserId}/time-entries`** (и `/{entryId}` для PATCH/DELETE). Схема ответа/модели: `TimeEntryOut` в `time_tracking/presentation/schemas.py` (в JSON — **camelCase**).
+
+### 8.1 Поля «снято с учёта» в списке и в карточке записи
+
+`GET /users/{authUserId}/time-entries?from=…&to=…` возвращает **и обычные, и снятые с учёта** записи попадания в диапазон дат: **void-строки не выкидываются** из списка, чтобы сотрудник видел историю.
+
+Полезные поля (если запись void):
+
+| JSON (camelCase) | Смысл |
+|------------------|--------|
+| `voidedAt` | Когда сняли с учёта (`null` — запись живая) |
+| `voidKind` | `rejected` — не принято; `reallocated` — перенос / перераспределение (маркер для UI) |
+| `voidedByAuthUserId`, при необходимости отображаемое имя из профиля | Кто снял (менеджер/офис) |
+| `isVoided` | вычисляемое: `voidedAt != null` |
+
+Часы в полях `hours` / `durationSeconds` у void-строки **как в БД** (историческая длительность), но **в загрузке, итогах дня/недели/месяца и в отчётах** такие часы **не должны** попадать в «учтённые» суммы — так же, как в **`results`** отчёта (см. §7). Иначе календарь и «норма» будут расходиться с бэкендом.
+
+### 8.2 `DELETE …/time-entries/{entryId}`: два сценария
+
+| Кто вызывает | Тело запроса | Ответ | Поведение |
+|----------------|-------------|--------|-----------|
+| **Владелец** (JWT `id` = `authUserId`) | пусто | **204 No Content** | Запись **удалена**; повторный GET её не отдаст. |
+| **Не владелец** (менеджер/роль, разрешённая на write) | опционально JSON `{"voidKind": "rejected" \| "reallocated"}` (по умолчанию `rejected`) | **200 OK** + тело **`TimeEntryOut`** | **Снятие с учёта**: строка **остаётся** в БД и в GET-списке, заполняются `voidedAt`, `voidKind`, и т.д. |
+
+- Тело `DELETE` для чужой записи **опционально**; если запрос **без** тела, на бэке берётся `voidKind: "rejected"` (см. `TimeEntryDeleteBody` в `schemas.py`). Для сценария «перенос» передайте явно `{"voidKind": "reallocated"}`.
+- **PATCH** по уже void-записи: **400** («не может быть изменена»). **Повторный void** — **400** («уже снята»).
+
+### 8.3 Связь с отчётом
+
+Те же void-строки в отчёте агрегируются отдельно: см. **`voidedTimeEntries`** в §7. Табель (`GET time-entries`) и отчёт должны **одинаково** трактовать «не учитывать часы void в итогах» и при необходимости **подсвечивать** причину (`voidKind`).
+
+### 8.4 Реализация-референс (веб-клиент `tickets-front`)
+
+В проекте фронта уже учтено:
+
+- нормализация полей void из API (`voidedAt` → `isVoided` / `voidKind` для UI);
+- **недельный** список записей: строки void с визуальной дифференциацией (**красный** — `rejected`, **оранжевый** — `reallocated`), без редактирования/таймера/повторного удаления;
+- **итоги** за день/неделю/месяц и «целевые» часы **без** void-строк;
+- **календарь (месяц)**: в ячейке дня показывается сумма **только учтённых** часов; если в дне есть только void (в сумме 0), — **маркер** (и подсказка), чтобы день не выглядел «пустым без причины»;
+- после **своего** успешного удаления (**204**): краткое **сообщение** «запись удалена», т.к. запись исчезает и визуально легко перепутать с «ничего не произошло».
+
+Код: `src/entities/time-tracking/api.ts` (типы и `normalizeTimeEntryRow`), `src/pages/time-tracking/ui/TimesheetPanel.tsx` (табель и календарь), превью отчёта — `src/pages/report-preview/`.
 
 ---
 

@@ -112,6 +112,43 @@ def _base_entry_conditions(
     return cond
 
 
+def _voided_entry_conditions(
+    date_from: date,
+    date_to: date,
+    user_ids: list[int] | None,
+    project_ids: list[str] | None,
+    client_ids: list[str] | None,
+    include_fixed_fee: bool,
+) -> list:
+    """Те же границы, что и у активных записей, но только строки, снятые менеджером (void)."""
+    cond: list = [
+        TimeEntryModel.work_date >= date_from,
+        TimeEntryModel.work_date <= date_to,
+        TimeEntryModel.voided_at.isnot(None),
+    ]
+    if user_ids:
+        cond.append(TimeEntryModel.auth_user_id.in_(user_ids))
+    if project_ids:
+        cond.append(TimeEntryModel.project_id.in_(project_ids))
+    if client_ids:
+        cond.append(
+            TimeEntryModel.project_id.in_(
+                select(TimeManagerClientProjectModel.id).where(
+                    TimeManagerClientProjectModel.client_id.in_(client_ids)
+                )
+            )
+        )
+    if not include_fixed_fee:
+        cond.append(
+            TimeEntryModel.project_id.notin_(
+                select(TimeManagerClientProjectModel.id).where(
+                    TimeManagerClientProjectModel.project_type == "fixed_fee"
+                )
+            )
+        )
+    return cond
+
+
 # ---------------------------------------------------------------------------
 # Rate resolution for billable amount
 # ---------------------------------------------------------------------------

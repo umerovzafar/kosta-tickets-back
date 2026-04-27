@@ -30,6 +30,7 @@ from application.entry_pricing import (
 )
 from application.report_builder import (
     _base_entry_conditions,
+    _voided_entry_conditions,
     _d,
     _load_user_cost_rates,
     _load_clients_map,
@@ -87,6 +88,11 @@ TIME_REPORT_FLAT_COLUMNS: tuple[str, ...] = (
     "source_entry_count",
     "report_group_by",
     "report_group_id",
+    "is_voided",
+    "voided_at",
+    "voided_by_auth_user_id",
+    "voided_by_name",
+    "void_kind",
 )
 
 
@@ -135,6 +141,9 @@ def _time_entry_line_snake(
     wk_ok = (uid, e.work_date) in week_submitted
     desc = (e.description or "").strip()
     ext = (e.external_reference_url or "").strip() or None
+    is_voided = e.voided_at is not None
+    voider = users_map.get(e.voided_by_auth_user_id) if e.voided_by_auth_user_id else None
+    voider_name = (voider.display_name or voider.email) if voider else None
 
     return {
         "time_entry_id": e.id,
@@ -166,6 +175,11 @@ def _time_entry_line_snake(
         "invoice_id": inv.get("invoice_id"),
         "invoice_number": inv.get("invoice_number"),
         "source_entry_count": 1,
+        "is_voided": is_voided,
+        "voided_at": e.voided_at.isoformat() if e.voided_at else None,
+        "voided_by_auth_user_id": e.voided_by_auth_user_id,
+        "voided_by_name": voider_name,
+        "void_kind": e.void_kind,
     }
 
 
@@ -293,6 +307,11 @@ def _aggregate_entries_to_snake_line(
         "invoice_id": None,
         "invoice_number": None,
         "source_entry_count": n,
+        "is_voided": False,
+        "voided_at": None,
+        "voided_by_auth_user_id": None,
+        "voided_by_name": None,
+        "void_kind": None,
     }
 
 
@@ -328,6 +347,11 @@ def _line_snake_to_api_json(line: dict[str, Any]) -> dict[str, Any]:
         "invoiceId": line.get("invoice_id"),
         "invoiceNumber": line.get("invoice_number"),
         "sourceEntryCount": line.get("source_entry_count", 1),
+        "isVoided": line.get("is_voided", False),
+        "voidedAt": line.get("voided_at"),
+        "voidedByAuthUserId": line.get("voided_by_auth_user_id"),
+        "voidedByName": line.get("voided_by_name"),
+        "voidKind": line.get("void_kind"),
     }
     # обратная совместимость с прежними вложенными `entries`
     eid = line.get("time_entry_id")
@@ -343,6 +367,8 @@ def _line_snake_to_api_json(line: dict[str, Any]) -> dict[str, Any]:
     out["task_id"] = line["task_id"]
     out["task_name"] = line["task_name"]
     out["description"] = line["note"]
+    out["is_voided"] = line.get("is_voided", False)
+    out["voided_at"] = line.get("voided_at")
     return out
 
 
@@ -372,12 +398,24 @@ async def get_time_report(
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
+    vcond = _voided_entry_conditions(
+        date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee
+    )
+    if is_billable is not None:
+        vcond.append(TimeEntryModel.is_billable.is_(is_billable))
+    if task_ids:
+        vcond.append(TimeEntryModel.task_id.in_(task_ids))
+    voided_entries = list(
+        (await session.execute(select(TimeEntryModel).where(and_(*vcond)))).scalars().all()
+    )
+
     users_map = await _load_users_map(session)
     projects_map = await _load_projects_map(session)
     clients_map = await _load_clients_map(session)
     tasks_map = await _load_tasks_map(session)
-    uids = {e.auth_user_id for e in entries}
-    inv_map = await invoice_details_for_time_entries(session, [e.id for e in entries])
+    uids = {e.auth_user_id for e in entries} | {e.auth_user_id for e in voided_entries}
+    all_entry_ids = [e.id for e in entries] + [e.id for e in voided_entries]
+    inv_map = await invoice_details_for_time_entries(session, all_entry_ids)
     week_set = await load_week_submitted_user_dates(session, uids, date_from, date_to)
     rates_map = await _load_user_rates(session, list(uids)) if uids else {}
     cost_rates_map = await _load_user_cost_rates(session, list(uids)) if uids else {}
@@ -481,7 +519,13 @@ async def get_time_report(
     start = (page - 1) * per_page
     results = all_rows[start : start + per_page]
 
-    return build_response(
+    voided_api_lines: list[dict[str, Any]] = []
+    if voided_entries:
+        for e in sorted(voided_entries, key=lambda x: (x.work_date, x.created_at, x.id)):
+            sline = _time_entry_line_snake(e, **line_ctx)
+            voided_api_lines.append(_line_snake_to_api_json(sline))
+
+    out = build_response(
         results=results,
         total_entries=total_entries_count,
         page=page,
@@ -491,6 +535,13 @@ async def get_time_report(
         date_from=date_from,
         date_to=date_to,
     )
+    if voided_api_lines:
+        out["voidedTimeEntries"] = voided_api_lines
+        out["meta"] = {
+            **out["meta"],
+            "voided_time_entries_count": len(voided_api_lines),
+        }
+    return out
 
 
 async def get_time_report_all_rows(
@@ -527,12 +578,24 @@ async def get_time_report_flat_entries(
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
+    vcond = _voided_entry_conditions(
+        date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee
+    )
+    if is_billable is not None:
+        vcond.append(TimeEntryModel.is_billable.is_(is_billable))
+    if task_ids:
+        vcond.append(TimeEntryModel.task_id.in_(task_ids))
+    voided_entries = list(
+        (await session.execute(select(TimeEntryModel).where(and_(*vcond)))).scalars().all()
+    )
+
     users_map = await _load_users_map(session)
     projects_map = await _load_projects_map(session)
     clients_map = await _load_clients_map(session)
     tasks_map = await _load_tasks_map(session)
-    uids = {e.auth_user_id for e in entries}
-    inv_map = await invoice_details_for_time_entries(session, [e.id for e in entries])
+    uids = {e.auth_user_id for e in entries} | {e.auth_user_id for e in voided_entries}
+    all_entry_ids = [e.id for e in entries] + [e.id for e in voided_entries]
+    inv_map = await invoice_details_for_time_entries(session, all_entry_ids)
     week_set = await load_week_submitted_user_dates(session, uids, date_from, date_to)
     rates_map = await _load_user_rates(session, list(uids)) if uids else {}
     cost_rates_map = await _load_user_cost_rates(session, list(uids)) if uids else {}
@@ -561,6 +624,15 @@ async def get_time_report_flat_entries(
                 sn["report_group_id"] = str(g) if g is not None else None
             sn["report_group_by"] = group_by
             flat2.append(sn)
+        for e in voided_entries:
+            sn = _time_entry_line_snake(e, **line_ctx)
+            g = _get_group_id(e, "clients", projects_map)
+            if isinstance(g, tuple) and len(g) == 2:
+                sn["report_group_id"] = f"{g[0]}|{g[1]}"
+            else:
+                sn["report_group_id"] = str(g) if g is not None else None
+            sn["report_group_by"] = group_by
+            flat2.append(sn)
         flat2.sort(
             key=lambda r: (
                 (r.get("client_name") or "") if isinstance(r.get("client_name"), str) else "",
@@ -572,6 +644,16 @@ async def get_time_report_flat_entries(
 
     flat: list[dict[str, Any]] = []
     for e in entries:
+        sline = _time_entry_line_snake(e, **line_ctx)
+        g = _get_group_id(e, group_by, projects_map)
+        if isinstance(g, tuple) and len(g) == 2:
+            a, b = g
+            sline["report_group_id"] = f"{a}|{b}"
+        else:
+            sline["report_group_id"] = str(g) if g is not None else None
+        sline["report_group_by"] = group_by
+        flat.append(sline)
+    for e in voided_entries:
         sline = _time_entry_line_snake(e, **line_ctx)
         g = _get_group_id(e, group_by, projects_map)
         if isinstance(g, tuple) and len(g) == 2:
