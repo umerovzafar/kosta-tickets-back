@@ -94,7 +94,7 @@ async def time_entries_patch_gateway(auth_user_id: int, entry_id: str, body: Tim
     return r.json()
 
 
-async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> Any:
+async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> None:
     base = _base()
     r = await send_upstream_request(
         "DELETE",
@@ -105,6 +105,8 @@ async def time_entries_delete_gateway(auth_user_id: int, entry_id: str) -> Any:
         unavailable_detail="Time tracking service unavailable",
     )
     raise_for_upstream_status(r, "Time tracking service error")
+    if r.status_code == 204 or not (r.text or "").strip():
+        return
     return r.json()
 
 

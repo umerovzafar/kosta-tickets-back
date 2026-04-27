@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal, Optional
 
 import httpx
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
 from starlette.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -469,13 +469,16 @@ async def proxy_patch_time_entry(
     return await time_entries_patch_gateway(auth_user_id, entry_id, body)
 
 
-@router.delete("/users/{auth_user_id}/time-entries/{entry_id}")
+@router.delete(
+    "/users/{auth_user_id}/time-entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def proxy_delete_time_entry(
     auth_user_id: int,
     entry_id: str,
     _: dict = Depends(require_time_entry_write),
-):
-    return await time_entries_delete_gateway(auth_user_id, entry_id)
+) -> None:
+    await time_entries_delete_gateway(auth_user_id, entry_id)
 
 
 @router.get("/users/{auth_user_id}/project-access")

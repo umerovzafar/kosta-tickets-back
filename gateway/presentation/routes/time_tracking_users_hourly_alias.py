@@ -3,7 +3,7 @@
 /api/v1/time-tracking/users/... (нужно, если nginx проксирует только /api/v1/users).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from presentation.routes.time_tracking_hourly_proxy import (
     HourlyRateCreateBody,
@@ -112,13 +112,16 @@ async def patch_time_entry_under_users(
     return await time_entries_patch_gateway(auth_user_id, entry_id, body)
 
 
-@router.delete("/{auth_user_id}/time-entries/{entry_id}")
+@router.delete(
+    "/{auth_user_id}/time-entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_time_entry_under_users(
     auth_user_id: int,
     entry_id: str,
     _: dict = Depends(require_time_entry_write),
-):
-    return await time_entries_delete_gateway(auth_user_id, entry_id)
+) -> None:
+    await time_entries_delete_gateway(auth_user_id, entry_id)
 
 
 @router.get("/{auth_user_id}/project-access")

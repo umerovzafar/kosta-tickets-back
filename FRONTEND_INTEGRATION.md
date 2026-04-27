@@ -79,6 +79,7 @@ Authorization: Bearer <access_token>
 | `time_tracking/docs/FRONTEND_PROJECT_ACCESS_PARTNER.md` | Партнёр, 400, PUT/DELETE |
 | `time_tracking/docs/FRONTEND_PROJECT_BILLABLE_RATE.md` | Ставка «по проекту» |
 | `time_tracking/docs/FRONTEND_PROJECT_BUDGET.md` | Бюджет проектов |
+| `time_tracking/docs/FRONTEND_TIME_REPORT_PREVIEW.md` | Предпросмотр отчёта «Время», time-entries, DELETE 204, отчёт JSON |
 | `gateway/presentation/routes/time_tracking_routes.py` | Прокси к TT |
 
 ---

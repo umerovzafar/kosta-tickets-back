@@ -3,7 +3,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import (
@@ -179,18 +179,30 @@ async def patch_time_entry(
             detail="Целевой день в закрытом периоде. Перенос запрещён.",
         )
 
+    row_norm_project_id = _normalize_project_id(
+        str(row.project_id) if row.project_id is not None else None
+    )
+    project_changed_clears_task = False
     if "project_id" in patch:
         project_id = await _validate_project_if_set(session, patch.get("project_id"))
         patch["project_id"] = project_id
         await _require_project_access_if_set(session, auth_user_id, project_id)
+        new_norm = _normalize_project_id(
+            str(project_id) if project_id is not None else None
+        )
+        if new_norm != row_norm_project_id and "task_id" not in patch:
+            project_changed_clears_task = True
 
     eff_proj = patch["project_id"] if "project_id" in patch else row.project_id
-    eff_task = patch["task_id"] if "task_id" in patch else row.task_id
+    if project_changed_clears_task:
+        eff_task: str | None = None
+    else:
+        eff_task = patch["task_id"] if "task_id" in patch else row.task_id
     tid, bb = await resolve_time_entry_task_for_project(session, eff_proj, eff_task)
     if tid is not None:
         patch["task_id"] = tid
         patch["is_billable"] = bb
-    elif "task_id" in patch:
+    elif "task_id" in patch or project_changed_clears_task:
         patch["task_id"] = None
 
     try:
@@ -206,13 +218,16 @@ async def patch_time_entry(
     return TimeEntryOut.model_validate(row)
 
 
-@router.delete("/{auth_user_id}/time-entries/{entry_id}")
+@router.delete(
+    "/{auth_user_id}/time-entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_time_entry(
     auth_user_id: int,
     entry_id: str,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
-) -> dict:
+) -> None:
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = TimeEntryRepository(session)
@@ -230,4 +245,3 @@ async def delete_time_entry(
     if not ok:
         raise HTTPException(status_code=404, detail="Запись не найдена")
     await session.commit()
-    return {"ok": True}
