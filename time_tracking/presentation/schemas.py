@@ -21,8 +21,14 @@ class UserResponse(BaseModel):
     email: str
     display_name: Optional[str] = None
     picture: Optional[str] = None
-    position: Optional[str] = None  # должность (auth), для отчётов
-    role: str = ""
+    position: Optional[str] = Field(
+        None,
+        description="Должность (для подписи в UI каталога TT). Подставляется из auth, если в БД TT пусто.",
+    )
+    role: str = Field(
+        default="",
+        description="Роль в модуле TT (user/manager) в ответах справочника не заполняется; для UI используйте position. Права текущего пользователя — из JWT (timeTrackingRole).",
+    )
     is_blocked: bool = False
     is_archived: bool = False
     weekly_capacity_hours: Decimal = Field(

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import ensure_time_entry_subject_allowed
+from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from application.project_access_rates import validate_hourly_rates_for_project_access
 from infrastructure.database import get_session
 from infrastructure.repositories import (
@@ -51,11 +52,14 @@ async def put_project_access(
     repo = UserProjectAccessRepository(session)
     projects = ClientProjectRepository(session)
     try:
-        await repo.replace_all(
+        affected = await repo.replace_all(
             auth_user_id,
             list(body.project_ids),
             granted_by_auth_user_id=body.granted_by_auth_user_id,
             projects=projects,
+        )
+        await ensure_projects_have_partner_assignee(
+            session, repo, affected, projects=projects
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

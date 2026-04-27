@@ -57,7 +57,9 @@ class UserProjectAccessRepository:
         *,
         granted_by_auth_user_id: int | None,
         projects: ClientProjectRepository,
-    ) -> None:
+    ) -> set[str]:
+        """Возвращает объединение старых и новых id проектов (для проверок после flush)."""
+        old_pids = await self.list_project_ids(auth_user_id)
         seen: set[str] = set()
         normalized: list[str] = []
         for raw in project_ids:
@@ -85,3 +87,5 @@ class UserProjectAccessRepository:
                     created_at=now,
                 )
             )
+        await self._session.flush()
+        return set(old_pids) | set(normalized)

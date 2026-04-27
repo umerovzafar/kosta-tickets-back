@@ -16,8 +16,13 @@ from application.access_control import (
     ensure_upsert_user_allowed,
     ensure_weekly_capacity_patch_allowed,
 )
+from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from infrastructure.database import get_session
-from infrastructure.repositories import TimeTrackingUserRepository, UserProjectAccessRepository
+from infrastructure.repositories import (
+    ClientProjectRepository,
+    TimeTrackingUserRepository,
+    UserProjectAccessRepository,
+)
 from presentation.deps import require_bearer_user
 from presentation.schemas import UserResponse, UserUpsertBody, WeeklyCapacityPatchBody
 
@@ -34,6 +39,27 @@ def _position_merged(row_pos: str | None, auth_map: dict[int, str | None], auth_
     return None
 
 
+def _user_response_directory(
+    row,
+    *,
+    position: str | None,
+) -> UserResponse:
+    """Справочник TT: должность в `position`; поле `role` не заполняем (пустая строка) — в UI показывать должности, не роль модуля."""
+    return UserResponse(
+        id=row.auth_user_id,
+        email=row.email,
+        display_name=row.display_name,
+        picture=row.picture,
+        position=position,
+        role="",
+        is_blocked=row.is_blocked,
+        is_archived=row.is_archived,
+        weekly_capacity_hours=row.weekly_capacity_hours,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 @router.get("", response_model=list[UserResponse], summary="Список пользователей")
 async def list_users(
     session: AsyncSession = Depends(get_session),
@@ -46,18 +72,9 @@ async def list_users(
     rows = await repo.list_users()
     pos_map = await fetch_auth_user_positions_by_id(authorization or "")
     return [
-        UserResponse(
-            id=row.auth_user_id,
-            email=row.email,
-            display_name=row.display_name,
-            picture=row.picture,
+        _user_response_directory(
+            row,
             position=_position_merged(row.position, pos_map, row.auth_user_id),
-            role=row.role,
-            is_blocked=row.is_blocked,
-            is_archived=row.is_archived,
-            weekly_capacity_hours=row.weekly_capacity_hours,
-            created_at=row.created_at,
-            updated_at=row.updated_at,
         )
         for row in rows
     ]
@@ -86,18 +103,9 @@ async def list_users_in_manager_scope(
         if row.auth_user_id not in scope_ids:
             continue
         out.append(
-            UserResponse(
-                id=row.auth_user_id,
-                email=row.email,
-                display_name=row.display_name,
-                picture=row.picture,
+            _user_response_directory(
+                row,
                 position=_position_merged(row.position, pos_map, row.auth_user_id),
-                role=row.role,
-                is_blocked=row.is_blocked,
-                is_archived=row.is_archived,
-                weekly_capacity_hours=row.weekly_capacity_hours,
-                created_at=row.created_at,
-                updated_at=row.updated_at,
             )
         )
     return out
@@ -123,19 +131,7 @@ async def get_user(
         pos = ap
     else:
         pos = None
-    return UserResponse(
-        id=row.auth_user_id,
-        email=row.email,
-        display_name=row.display_name,
-        picture=row.picture,
-        position=pos,
-        role=row.role,
-        is_blocked=row.is_blocked,
-        is_archived=row.is_archived,
-        weekly_capacity_hours=row.weekly_capacity_hours,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+    return _user_response_directory(row, position=pos)
 
 
 @router.patch(
@@ -148,6 +144,7 @@ async def patch_weekly_capacity(
     body: WeeklyCapacityPatchBody,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> UserResponse:
     await ensure_weekly_capacity_patch_allowed(viewer, auth_user_id)
     repo = TimeTrackingUserRepository(session)
@@ -155,19 +152,15 @@ async def patch_weekly_capacity(
     if not row:
         raise HTTPException(status_code=404, detail="User not in time tracking")
     await session.commit()
-    return UserResponse(
-        id=row.auth_user_id,
-        email=row.email,
-        display_name=row.display_name,
-        picture=row.picture,
-        position=row.position,
-        role=row.role,
-        is_blocked=row.is_blocked,
-        is_archived=row.is_archived,
-        weekly_capacity_hours=row.weekly_capacity_hours,
-        created_at=row.created_at,
-        updated_at=row.updated_at,
-    )
+    ap = await fetch_auth_user_position(authorization or "", auth_user_id)
+    pos = row.position
+    if pos is not None and str(pos).strip():
+        pos = str(pos).strip()
+    elif ap is not None:
+        pos = ap
+    else:
+        pos = None
+    return _user_response_directory(row, position=pos)
 
 
 @router.post("", status_code=200, summary="Создать/обновить пользователя (синхронизация)")
@@ -223,7 +216,21 @@ async def delete_user(
 ) -> dict:
     """Удаляет пользователя из БД time_tracking по auth_user_id."""
     ensure_delete_tt_user_allowed(viewer)
+    par = UserProjectAccessRepository(session)
+    cpr = ClientProjectRepository(session)
+    affected_before = set(await par.list_project_ids(auth_user_id))
     repo = TimeTrackingUserRepository(session)
     deleted = await repo.delete_by_auth_user_id(auth_user_id)
+    if not deleted:
+        await session.rollback()
+        return {"ok": True, "deleted": False}
+    await session.flush()
+    try:
+        await ensure_projects_have_partner_assignee(
+            session, par, affected_before, projects=cpr
+        )
+    except ValueError as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await session.commit()
-    return {"ok": True, "deleted": deleted}
+    return {"ok": True, "deleted": True}
