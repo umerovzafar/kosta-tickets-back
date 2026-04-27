@@ -1,6 +1,6 @@
 """Доступ пользователей учёта времени к проектам (назначение менеджером)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.access_control import ensure_time_entry_subject_allowed
@@ -44,6 +44,7 @@ async def put_project_access(
     body: ProjectAccessPutBody,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> ProjectAccessOut:
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
@@ -60,7 +61,7 @@ async def put_project_access(
             projects=projects,
         )
         await ensure_projects_have_partner_assignee(
-            session, repo, affected, projects=projects
+            session, repo, affected, projects=projects, authorization=authorization
         )
         for pid in affected:
             await sync_project_billable_rates_to_assigned_users(session, pid)

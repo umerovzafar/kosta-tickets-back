@@ -5,6 +5,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.auth_user_directory import (
+    fetch_auth_user_partner_hints_by_id,
     fetch_auth_user_position,
     fetch_auth_user_positions_by_id,
 )
@@ -16,7 +17,10 @@ from application.access_control import (
     ensure_upsert_user_allowed,
     ensure_weekly_capacity_patch_allowed,
 )
-from application.project_partner_requirement import ensure_projects_have_partner_assignee
+from application.project_partner_requirement import (
+    ensure_projects_have_partner_assignee,
+    user_satisfies_partner_rule,
+)
 from infrastructure.database import get_session
 from infrastructure.repositories import (
     ClientProjectRepository,
@@ -78,6 +82,73 @@ async def list_users(
         )
         for row in rows
     ]
+
+
+@router.get(
+    "/partners",
+    response_model=list[UserResponse],
+    summary="Список пользователей — только партнёры (должность/роль org)",
+)
+async def list_partner_users(
+    session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> list[UserResponse]:
+    """
+    Справочник для UI: кого можно назначить «партнёром на проекте».
+    Условия совпадают с бэкенд-проверкой при сохранении доступа.
+    """
+    await ensure_can_list_all_tt_users(viewer)
+    repo = TimeTrackingUserRepository(session)
+    rows = await repo.list_users()
+    hints = await fetch_auth_user_partner_hints_by_id(authorization or "")
+    pos_map: dict[int, str | None] = {i: d.get("position") for i, d in hints.items()}
+    return [
+        _user_response_directory(
+            row,
+            position=_position_merged(row.position, pos_map, row.auth_user_id),
+        )
+        for row in rows
+        if user_satisfies_partner_rule(
+            row.position,
+            (hints.get(row.auth_user_id) or {}).get("position"),
+            (hints.get(row.auth_user_id) or {}).get("role"),
+        )
+    ]
+
+
+@router.get(
+    "/managed-scope/{manager_auth_user_id}/partners",
+    response_model=list[UserResponse],
+    summary="Партнёры в зоне видимости менеджера TT",
+)
+async def list_partner_users_in_manager_scope(
+    manager_auth_user_id: int,
+    session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> list[UserResponse]:
+    await ensure_managed_scope_allowed(viewer, manager_auth_user_id)
+    par = UserProjectAccessRepository(session)
+    ur = TimeTrackingUserRepository(session)
+    scope_ids = set(await par.list_peer_auth_user_ids_for_manager(manager_auth_user_id))
+    rows = await ur.list_users()
+    hints = await fetch_auth_user_partner_hints_by_id(authorization or "")
+    pos_map: dict[int, str | None] = {i: d.get("position") for i, d in hints.items()}
+    out: list[UserResponse] = []
+    for row in rows:
+        if row.auth_user_id not in scope_ids:
+            continue
+        h = hints.get(row.auth_user_id) or {}
+        if not user_satisfies_partner_rule(row.position, h.get("position"), h.get("role")):
+            continue
+        out.append(
+            _user_response_directory(
+                row,
+                position=_position_merged(row.position, pos_map, row.auth_user_id),
+            )
+        )
+    return out
 
 
 @router.get(
@@ -213,6 +284,7 @@ async def delete_user(
     auth_user_id: int,
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> dict:
     """Удаляет пользователя из БД time_tracking по auth_user_id."""
     ensure_delete_tt_user_allowed(viewer)
@@ -227,7 +299,11 @@ async def delete_user(
     await session.flush()
     try:
         await ensure_projects_have_partner_assignee(
-            session, par, affected_before, projects=cpr
+            session,
+            par,
+            affected_before,
+            projects=cpr,
+            authorization=authorization,
         )
     except ValueError as e:
         await session.rollback()

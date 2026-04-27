@@ -502,6 +502,16 @@ async def proxy_put_project_access(
     )
 
 
+@router.get("/users/partners")
+async def list_partner_users(user: dict = Depends(require_view_time_tracking_user_directory)):
+    """Партнёры для выбора на фронте (должность position и/или орг-роль)."""
+    role = (user.get("role") or "").strip()
+    if role in _VIEW_ROLES_TIME_ENTRIES:
+        return await _tt_json("GET", "/users/partners")
+    mid = _current_auth_user_id(user)
+    return await _tt_json("GET", f"/users/managed-scope/{mid}/partners")
+
+
 @router.get("/users")
 async def list_users(user: dict = Depends(require_view_time_tracking_user_directory)):
     role = (user.get("role") or "").strip()

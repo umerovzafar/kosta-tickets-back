@@ -16,7 +16,7 @@ from application.project_dashboard import build_client_project_dashboard
 from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from application.services.reports._base import _d
 from application.project_team_workload import compute_project_team_workload
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
@@ -391,6 +391,7 @@ async def create_client_project(
     client_id: str,
     body: TimeManagerClientProjectCreateBody,
     session: AsyncSession = Depends(get_session),
+    authorization: str | None = Header(None, alias="Authorization"),
 ):
     await _require_client_mutable(session, client_id)
     _validate_date_range(body.start_date, body.end_date)
@@ -462,7 +463,11 @@ async def create_client_project(
                 )
             await session.flush()
             await ensure_projects_have_partner_assignee(
-                session, par, {str(row.id)}, projects=repo
+                session,
+                par,
+                {str(row.id)},
+                projects=repo,
+                authorization=authorization,
             )
         await sync_project_billable_rates_to_assigned_users(session, str(row.id))
         await session.commit()
