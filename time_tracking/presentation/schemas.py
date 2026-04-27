@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Optional, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -57,6 +57,13 @@ class UserUpsertBody(BaseModel):
         alias="weeklyCapacityHours",
         description="Норма часов в неделю; по умолчанию 35 при создании",
     )
+
+    @model_validator(mode="after")
+    def position_required_for_tt_role(self) -> Self:
+        r = (self.role or "").strip()
+        if r in ("user", "manager") and not (self.position or "").strip():
+            raise ValueError("Для роли user/manager в учёте времени укажите непустую должность (position).")
+        return self
 
 
 class RateKind(str, Enum):

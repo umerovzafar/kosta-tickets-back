@@ -63,6 +63,10 @@ class TimeTrackingRoleRequest(BaseModel):
     """Роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей."""
 
     time_tracking_role: Optional[str] = None
+    position: Optional[str] = Field(
+        None,
+        description="При назначении user/manager — непустая должность в теле или уже в профиле.",
+    )
 
 
 class SetPositionRequest(BaseModel):

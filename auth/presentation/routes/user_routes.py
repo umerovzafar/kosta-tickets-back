@@ -262,9 +262,28 @@ async def set_time_tracking_role(
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
     """Назначить роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей. Главный администратор или Администратор."""
+    row = await user_repo.get_by_id(user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
     value = (body.time_tracking_role or "").strip() or None
     if value is not None and value not in ("user", "manager"):
         raise HTTPException(status_code=400, detail="time_tracking_role must be 'user', 'manager' or null")
+
+    if value in ("user", "manager"):
+        if body.position is not None:
+            pos_val = (body.position or "").strip() or None
+            pos_uc = SetPositionUseCase(user_repo)
+            row = await pos_uc.execute(user_id, pos_val)
+            if not row:
+                raise HTTPException(status_code=404, detail="User not found")
+        row = await user_repo.get_by_id(user_id)
+        if not row or not (row.position or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Для роли в учёте времени (user или manager) нужна непустая должность: укажите position в теле запроса либо задайте должность в профиле.",
+            )
+
     uc = SetTimeTrackingRoleUseCase(user_repo)
     user = await uc.execute(user_id, value)
     await session.commit()
@@ -282,7 +301,16 @@ async def set_position(
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
     """Установить должность пользователя. Главный администратор или Администратор."""
+    row = await user_repo.get_by_id(user_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
     value = (body.position or "").strip() or None
+    tt = (row.time_tracking_role or "").strip()
+    if value is None and tt in ("user", "manager"):
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя очистить должность, пока у пользователя роль в учёте времени (user или manager).",
+        )
     uc = SetPositionUseCase(user_repo)
     user = await uc.execute(user_id, value)
     await session.commit()

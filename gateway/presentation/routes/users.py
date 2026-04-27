@@ -316,6 +316,16 @@ async def patch_me_weekly_capacity(
                     headers=auth_headers,
                 )
             elif r.status_code == 404:
+                tt_role = (
+                    (user.get("time_tracking_role") or user.get("timeTrackingRole") or "") or ""
+                ).strip()
+                pos = user.get("position")
+                pos_s = str(pos).strip() if pos is not None and str(pos).strip() else None
+                if tt_role in ("user", "manager") and not pos_s:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Для нормы часов в учёте времени у сотрудника должна быть указана должность.",
+                    )
                 r2 = await client.post(
                     f"{base}/users",
                     json={
@@ -323,7 +333,8 @@ async def patch_me_weekly_capacity(
                         "email": user["email"],
                         "display_name": user.get("display_name"),
                         "picture": user.get("picture"),
-                        "role": user.get("role") or "",
+                        "position": pos_s,
+                        "role": tt_role,
                         "is_blocked": user.get("is_blocked", False),
                         "is_archived": user.get("is_archived", False),
                         "weekly_capacity_hours": hours,

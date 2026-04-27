@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class UserResponse(BaseModel):
@@ -51,6 +52,10 @@ class TimeTrackingRoleRequest(BaseModel):
     """Роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей."""
 
     time_tracking_role: Optional[str] = None  # "user" | "manager" | null
+    position: Optional[str] = Field(
+        None,
+        description="При назначении user/manager — непустая должность в теле или уже в профиле.",
+    )
 
 
 class SetPositionRequest(BaseModel):

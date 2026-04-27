@@ -370,6 +370,12 @@ def _self_time_tracking_user_upsert_payload(user: dict, body: UserUpsertBody) ->
     else:
         position = None
 
+    if tt_auth_role in {"user", "manager"} and not position:
+        raise HTTPException(
+            status_code=400,
+            detail="Для учёта времени у сотрудника должна быть указана должность. Обратитесь к администратору.",
+        )
+
     safe = UserUpsertBody(
         auth_user_id=my_id,
         email=email,
