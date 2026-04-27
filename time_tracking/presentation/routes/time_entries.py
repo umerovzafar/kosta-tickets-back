@@ -231,6 +231,7 @@ async def patch_time_entry(
 
 @router.delete(
     "/{auth_user_id}/time-entries/{entry_id}",
+    response_model=None,
     responses={
         204: {"description": "Собственная запись физически удалена"},
         200: {
@@ -246,7 +247,7 @@ async def delete_time_entry(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
     body: TimeEntryDeleteBody | None = Body(default=None),
-) -> TimeEntryOut | Response:
+):
     """Удаление владельцем — полная очистка (204). Удаление менеджером чужой записи — снятие с учёта (200)."""
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
