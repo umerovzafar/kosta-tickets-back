@@ -24,8 +24,18 @@ class TimeManagerClientProjectCreateBody(BaseModel):
     currency: ProjectCurrency = Field("USD", description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
-    budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
-    budget_hours: Optional[Decimal] = Field(None, ge=0, alias="budgetHours")
+    budget_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="budgetAmount",
+        description="Бюджет в валюте; для fixed_fee — сумма контракта. С budgetHours — пакет сумма+часы.",
+    )
+    budget_hours: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="budgetHours",
+        description="Лимит часов; с budgetAmount — оба лимита (дашборд hours_and_money).",
+    )
     budget_resets_every_month: bool = Field(False, alias="budgetResetsEveryMonth")
     budget_includes_expenses: bool = Field(False, alias="budgetIncludesExpenses")
     send_budget_alerts: bool = Field(False, alias="sendBudgetAlerts")
@@ -35,7 +45,12 @@ class TimeManagerClientProjectCreateBody(BaseModel):
         le=100,
         alias="budgetAlertThresholdPercent",
     )
-    fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    fixed_fee_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="fixedFeeAmount",
+        description="Устарело — задайте budgetAmount.",
+    )
     is_archived: bool = Field(False, alias="isArchived")
 
 
@@ -52,8 +67,18 @@ class TimeManagerClientProjectPatchBody(BaseModel):
     currency: Optional[ProjectCurrency] = Field(None, description="Валюта проекта")
     billable_rate_type: Optional[str] = Field(None, max_length=64, alias="billableRateType")
     budget_type: Optional[str] = Field(None, max_length=64, alias="budgetType")
-    budget_amount: Optional[Decimal] = Field(None, ge=0, alias="budgetAmount")
-    budget_hours: Optional[Decimal] = Field(None, ge=0, alias="budgetHours")
+    budget_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="budgetAmount",
+        description="Бюджет в валюте; с budgetHours — пакет сумма+часы.",
+    )
+    budget_hours: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="budgetHours",
+        description="Лимит часов; с budgetAmount — оба лимита.",
+    )
     budget_resets_every_month: Optional[bool] = Field(None, alias="budgetResetsEveryMonth")
     budget_includes_expenses: Optional[bool] = Field(None, alias="budgetIncludesExpenses")
     send_budget_alerts: Optional[bool] = Field(None, alias="sendBudgetAlerts")
@@ -63,5 +88,10 @@ class TimeManagerClientProjectPatchBody(BaseModel):
         le=100,
         alias="budgetAlertThresholdPercent",
     )
-    fixed_fee_amount: Optional[Decimal] = Field(None, ge=0, alias="fixedFeeAmount")
+    fixed_fee_amount: Optional[Decimal] = Field(
+        None,
+        ge=0,
+        alias="fixedFeeAmount",
+        description="Устарело — используйте budgetAmount.",
+    )
     is_archived: Optional[bool] = Field(None, alias="isArchived")

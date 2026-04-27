@@ -8,6 +8,7 @@ from typing import Literal
 
 from application.budget_mode import normalize_budget_type_for_persist
 from application.project_dashboard import build_client_project_dashboard
+from application.services.reports._base import _d
 from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +19,7 @@ from infrastructure.database import get_session
 from infrastructure.repositories import ClientProjectRepository
 from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
+    ProjectType,
     TeamWorkloadOut,
     TimeManagerClientProjectCodeHintOut,
     TimeManagerClientProjectCreateBody,
@@ -26,6 +28,20 @@ from presentation.schemas import (
 )
 
 router = APIRouter(prefix="/clients", tags=["client_projects"])
+
+
+def _positive_budget_amount(v) -> bool:
+    return v is not None and _d(v) > 0
+
+
+def _out_fixed_fee_amount_for_api(row) -> object:
+    """Сумма фикс-контракта: приоритет budgetAmount; иначе legacy fixed_fee_amount в БД."""
+    if getattr(row, "project_type", None) != "fixed_fee":
+        return row.fixed_fee_amount
+    if _positive_budget_amount(getattr(row, "budget_amount", None)):
+        return row.budget_amount
+    return row.fixed_fee_amount
+
 
 # --- Глобальный список проектов (все клиенты) для формы расходов ---
 
@@ -140,7 +156,7 @@ def _project_out(row, usage: int) -> TimeManagerClientProjectOut:
         budget_includes_expenses=row.budget_includes_expenses,
         send_budget_alerts=row.send_budget_alerts,
         budget_alert_threshold_percent=row.budget_alert_threshold_percent,
-        fixed_fee_amount=row.fixed_fee_amount,
+        fixed_fee_amount=_out_fixed_fee_amount_for_api(row),
         is_archived=row.is_archived,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -373,8 +389,22 @@ async def create_client_project(
             status_code=409,
             detail="Another project with this code already exists for this client",
         )
-    _bt_persist = normalize_budget_type_for_persist(body.budget_hours, body.budget_amount)
+    budget_amount = body.budget_amount
+    if body.project_type == ProjectType.fixed_fee:
+        if _positive_budget_amount(body.fixed_fee_amount) and not _positive_budget_amount(budget_amount):
+            budget_amount = body.fixed_fee_amount
+        if not _positive_budget_amount(budget_amount):
+            raise HTTPException(
+                status_code=400,
+                detail="Для фикс-проекта задайте сумму в поле бюджета (budgetAmount); при пакете «сумма + часы» добавьте лимит часов (budgetHours).",
+            )
+    _bt_persist = normalize_budget_type_for_persist(body.budget_hours, budget_amount)
     _budget_type_create = _bt_persist if _bt_persist is not None else body.budget_type
+    fixed_fee_stored = (
+        budget_amount
+        if body.project_type == ProjectType.fixed_fee and _positive_budget_amount(budget_amount)
+        else body.fixed_fee_amount
+    )
     try:
         row = await repo.create(
             client_id=client_id,
@@ -388,13 +418,13 @@ async def create_client_project(
             currency=body.currency.value if body.currency else "USD",
             billable_rate_type=body.billable_rate_type,
             budget_type=_budget_type_create,
-            budget_amount=body.budget_amount,
+            budget_amount=budget_amount,
             budget_hours=body.budget_hours,
             budget_resets_every_month=body.budget_resets_every_month,
             budget_includes_expenses=body.budget_includes_expenses,
             send_budget_alerts=body.send_budget_alerts,
             budget_alert_threshold_percent=body.budget_alert_threshold_percent,
-            fixed_fee_amount=body.fixed_fee_amount,
+            fixed_fee_amount=fixed_fee_stored,
             is_archived=body.is_archived,
         )
         await session.commit()
@@ -453,9 +483,36 @@ async def patch_client_project(
     if "is_archived" in patch and patch["is_archived"] is not None:
         patch["is_archived"] = bool(patch["is_archived"])
 
-    if any(k in patch for k in ("budget_hours", "budget_amount", "budget_type")):
+    if any(
+        k in patch
+        for k in (
+            "budget_hours",
+            "budget_amount",
+            "budget_type",
+            "project_type",
+            "fixed_fee_amount",
+        )
+    ):
         m_h = patch["budget_hours"] if "budget_hours" in patch else row.budget_hours
         m_a = patch["budget_amount"] if "budget_amount" in patch else row.budget_amount
+        eff_pt = patch["project_type"] if "project_type" in patch else row.project_type
+        if eff_pt == "fixed_fee":
+            if "fixed_fee_amount" in patch and patch["fixed_fee_amount"] is not None:
+                ffa = patch["fixed_fee_amount"]
+                if not _positive_budget_amount(m_a) and _positive_budget_amount(ffa):
+                    m_a = ffa
+                    patch["budget_amount"] = m_a
+            if not _positive_budget_amount(m_a) and _positive_budget_amount(
+                getattr(row, "fixed_fee_amount", None)
+            ):
+                m_a = row.fixed_fee_amount
+                patch["budget_amount"] = m_a
+            if not _positive_budget_amount(m_a):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Для фикс-проекта укажите сумму в budgetAmount (бюджет).",
+                )
+            patch["fixed_fee_amount"] = m_a
         nt = normalize_budget_type_for_persist(m_h, m_a)
         patch["budget_type"] = nt
 
