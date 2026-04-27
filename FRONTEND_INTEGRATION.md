@@ -79,7 +79,18 @@ Authorization: Bearer <access_token>
 | `time_tracking/presentation/routes/time_entries.py` | Записи времени: GET/POST/PATCH, DELETE (свой → 204, чужой → void и **200**) |
 | `time_tracking/application/services/reports/time_report_service.py` | Отчёт по времени, поля строк, `voidedTimeEntries` |
 
-**Отчёт «Время» и снятые с учёта строки:** ответ `GET /time-tracking/reports/time/{group_by}` дополнительно содержит **`voidedTimeEntries`** — список записей, снятых менеджером за выбранный период и фильтры (в **`results`** по-прежнему только учтённые часы; **`meta.voided_time_entries_count`** — сколько void-строк). Каждая такая запись в том же формате, что строка отчёта, плюс **`isVoided`**, **`voidedAt`**, **`voidedByAuthUserId`**, **`voidedByName`**, **`voidKind`**. Сотруднику показывайте `voidedTimeEntries` рядом с отчётом или в списке «снято с учёта».
+**Отчёт «Время» (`GET /time-tracking/reports/time/{group_by}`)** — в **`results`** попадают только **агрегаты и детальные строки по учтённым** записям (void **не** входит в эти суммы). Отдельно бэкенд может положить в **корень ответа** (рядом с `results`, `meta`, `pagination`) массив **`voidedTimeEntries`**: это **дополнительные** строки — все снятые с учёта записи, попавшие под те же период и фильтры. В **`meta`** при их наличии добавляется **`voided_time_entries_count`** — число таких строк.
+
+### 7.1 «Добавление» void-строк в таблицу отчёта на фронте
+
+Это **не** отдельный POST: данные уже в ответе GET. Задача клиента — **включить** `voidedTimeEntries` в UI:
+
+1. **Парсинг:** читайте **`voidedTimeEntries`** из JSON ответа (если ключа нет или массив пустой — снятых за период не было или сервер не отдал блок).
+2. **Формат строк:** плоский массив объектов в том же стиле, что и элементы `users[].entries` / `projectBreakdown` (плюс поля void: **`isVoided`**, **`voidedAt`**, **`voidedByAuthUserId`**, **`voidedByName`**, **`voidKind`** — см. `_line_snake_to_api_json` / `time_report_service.py`).
+3. **Слияние с таблицей:** преобразуйте каждый элемент в строку своей «эксельной»/табличной модели и **добавьте** к строкам, построенным из `results` (или выведите отдельным блоком «Снято с учёта»). **Не** прибавляйте часы из `voidedTimeEntries` к тем же итогам, что считаются только по учтённым записям — иначе расхождение с бэкендом.
+4. **Подсветка:** по `voidKind` (`rejected` / `reallocated`) различайте причину на UI (см. §8 и §9).
+
+Реализация `tickets-front`: при необходимости доработать загрузчик отчёта так, чтобы **`voidedTimeEntries`** подмешивались в `flattenTimeReportToExcelRows` (или аналог); сейчас основной поток строит строки из `results` — void из отчёта нужно **явно** объединить с ними, если требуется полная картина в одной таблице.
 
 ---
 

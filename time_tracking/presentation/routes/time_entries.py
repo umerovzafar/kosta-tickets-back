@@ -118,6 +118,9 @@ async def create_time_entry(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> TimeEntryOut:
+    """Создание записи для **auth_user_id** (сотрудник). Менеджер/офис: тот же POST с id сотрудника из
+    `GET /projects/{projectId}/time-tracking-assignees`, тело — workDate, durationSeconds, projectId, taskId, …
+    """
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     await _raise_if_work_date_is_closed(

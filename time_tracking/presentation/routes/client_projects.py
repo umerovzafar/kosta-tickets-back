@@ -15,6 +15,7 @@ from application.project_billable_rate_sync import (
 from application.project_dashboard import build_client_project_dashboard
 from application.project_partner_requirement import ensure_projects_have_partner_assignee
 from application.services.reports._base import _d
+from application.access_control import ensure_can_list_project_assignees
 from application.project_team_workload import compute_project_team_workload
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +28,7 @@ from infrastructure.repositories import (
     TimeTrackingUserRepository,
     UserProjectAccessRepository,
 )
+from presentation.deps import require_bearer_user
 from presentation.routes.client_access import ensure_client_not_archived, get_client_or_404
 from presentation.schemas import (
     ProjectType,
@@ -35,6 +37,8 @@ from presentation.schemas import (
     TimeManagerClientProjectCreateBody,
     TimeManagerClientProjectOut,
     TimeManagerClientProjectPatchBody,
+    ProjectTimeTrackingAssigneesListOut,
+    ProjectTimeTrackingAssigneeOut,
 )
 
 router = APIRouter(prefix="/clients", tags=["client_projects"])
@@ -93,6 +97,48 @@ async def list_all_projects_for_expenses(
     if limit is None:
         return items
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@_global_projects_router.get(
+    "/projects/{project_id}/time-tracking-assignees",
+    response_model=ProjectTimeTrackingAssigneesListOut,
+    summary="Сотрудники с доступом к проекту (селектор при добавлении списаний)",
+)
+async def list_time_tracking_assignees_for_project(
+    project_id: str,
+    session: AsyncSession = Depends(get_session),
+    viewer: dict = Depends(require_bearer_user),
+) -> ProjectTimeTrackingAssigneesListOut:
+    """Список auth user id, которым выдан доступ к проекту; для UI выбора сотрудника при создании записи времени."""
+    await ensure_can_list_project_assignees(session, viewer, project_id)
+    par = UserProjectAccessRepository(session)
+    uids = await par.list_auth_user_ids_for_project(project_id.strip())
+    ur = TimeTrackingUserRepository(session)
+    rows = await ur.list_by_auth_user_ids(uids)
+    by_uid = {r.auth_user_id: r for r in rows}
+
+    def _label_lower(uid: int) -> str:
+        u = by_uid.get(uid)
+        if u is None:
+            return str(uid)
+        return (u.display_name or u.email or str(uid)).lower()
+
+    items: list[ProjectTimeTrackingAssigneeOut] = []
+    for uid in sorted(set(uids), key=_label_lower):
+        u = by_uid.get(uid)
+        if u is None:
+            continue
+        items.append(
+            ProjectTimeTrackingAssigneeOut(
+                auth_user_id=u.auth_user_id,
+                display_name=u.display_name,
+                email=u.email,
+                position=(u.position or "").strip() or None,
+                is_archived=bool(u.is_archived),
+                is_blocked=bool(u.is_blocked),
+            )
+        )
+    return ProjectTimeTrackingAssigneesListOut(assignees=items)
 
 
 @_global_projects_router.get("/projects/{project_id}/expense-categories")

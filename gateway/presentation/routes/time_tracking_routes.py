@@ -790,6 +790,15 @@ async def list_expense_categories_for_project(
     )
 
 
+@router.get("/projects/{project_id}/time-tracking-assignees")
+async def list_time_tracking_assignees_for_project(
+    project_id: str,
+    _: dict = Depends(get_current_user),
+):
+    """Сотрудники с доступом к проекту — выбор исполнителя при добавлении строки времени (менеджер/отчёт)."""
+    return await _tt_json("GET", f"/projects/{project_id}/time-tracking-assignees")
+
+
 @router.get("/clients/{client_id}/projects")
 async def list_client_projects(
     client_id: str,

@@ -24,6 +24,16 @@ class TimeTrackingUserRepository:
         )
         return r.scalars().one_or_none()
 
+    async def list_by_auth_user_ids(self, auth_user_ids: list[int]) -> list[TimeTrackingUserModel]:
+        if not auth_user_ids:
+            return []
+        r = await self._session.execute(
+            select(TimeTrackingUserModel).where(
+                TimeTrackingUserModel.auth_user_id.in_(auth_user_ids)
+            )
+        )
+        return list(r.scalars().all())
+
     async def upsert_user(
         self,
         *,

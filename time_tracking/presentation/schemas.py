@@ -247,6 +247,25 @@ class TimeEntryDeleteBody(BaseModel):
     )
 
 
+class ProjectTimeTrackingAssigneeOut(BaseModel):
+    """Сотрудник с доступом к проекту для списания времени (селектор «на кого поставить часы»)."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    auth_user_id: int = Field(..., alias="authUserId")
+    display_name: Optional[str] = Field(None, alias="displayName")
+    email: str
+    position: Optional[str] = None
+    is_archived: bool = Field(False, alias="isArchived")
+    is_blocked: bool = Field(False, alias="isBlocked")
+
+
+class ProjectTimeTrackingAssigneesListOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    assignees: list[ProjectTimeTrackingAssigneeOut]
+
+
 class ProjectAccessOut(BaseModel):
     """Список id проектов, доступных пользователю для списания времени."""
 

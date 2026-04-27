@@ -5,7 +5,11 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from infrastructure.repositories import TimeTrackingUserRepository, UserProjectAccessRepository
+from infrastructure.repositories import (
+    ClientProjectRepository,
+    TimeTrackingUserRepository,
+    UserProjectAccessRepository,
+)
 
 # Организационные роли (auth users.role)
 _VIEW_ROLES_TIME_ENTRIES = frozenset(
@@ -163,3 +167,36 @@ def ensure_delete_tt_user_allowed(viewer: dict) -> None:
     if _org_role(viewer) in _MANAGE_ROLES_TIME_ENTRIES:
         return
     raise HTTPException(status_code=403, detail="Удаление из учёта времени — только для администраторов")
+
+
+async def ensure_can_list_project_assignees(
+    session: AsyncSession,
+    viewer: dict,
+    project_id: str,
+) -> None:
+    """Кто может запросить список сотрудников с доступом к проекту (селектор при добавлении часов)."""
+    pid = (project_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="Пустой идентификатор проекта")
+    cpr = ClientProjectRepository(session)
+    if await cpr.get_by_id_global(pid) is None:
+        raise HTTPException(status_code=404, detail="Проект не найден")
+    role = _org_role(viewer)
+    if role in _VIEW_ROLES_TIME_ENTRIES:
+        return
+    par = UserProjectAccessRepository(session)
+    viewer_id = _viewer_id(viewer)
+    if await par.has_access(viewer_id, pid):
+        return
+    ur = TimeTrackingUserRepository(session)
+    row = await ur.get_by_auth_user_id(viewer_id)
+    tt_role = (row.role or "").strip() if row else ""
+    if tt_role == "manager":
+        assignee_ids = await par.list_auth_user_ids_for_project(pid)
+        peers = set(await par.list_peer_auth_user_ids_for_manager(viewer_id))
+        if any(uid in peers for uid in assignee_ids):
+            return
+    raise HTTPException(
+        status_code=403,
+        detail="Нет прав на просмотр списка назначенных на проект (нужен доступ к проекту или роль офиса)",
+    )
