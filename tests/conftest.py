@@ -1,4 +1,4 @@
-"""Общие фикстуры и настройки для тестов."""
+
 
 import os
 from unittest.mock import patch
@@ -10,7 +10,7 @@ from service_path import ensure_service_in_path as _ensure_service_in_path
 
 
 def pytest_configure(config):
-    """Установка переменных окружения до импорта приложений."""
+
     os.environ.setdefault("JWT_SECRET", "test-jwt-secret-min-32-characters-long")
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/test")
     os.environ.setdefault("TICKETS_SERVICE_URL", "http://tickets:1235")
@@ -37,7 +37,7 @@ def anyio_backend():
 
 @pytest.fixture
 async def gateway_client():
-    """Клиент для тестирования Gateway API."""
+
     _ensure_service_in_path("gateway")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -47,7 +47,7 @@ async def gateway_client():
 
 @pytest.fixture
 async def auth_client():
-    """Клиент для тестирования Auth API."""
+
     _ensure_service_in_path("auth")
     with patch("infrastructure.config.validate_production_secrets", lambda x: None):
         from presentation.api import app
@@ -58,7 +58,7 @@ async def auth_client():
 
 @pytest.fixture
 async def tickets_client():
-    """Клиент для тестирования Tickets API."""
+
     _ensure_service_in_path("tickets")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -68,7 +68,7 @@ async def tickets_client():
 
 @pytest.fixture
 async def notifications_client():
-    """Клиент для тестирования Notifications API."""
+
     _ensure_service_in_path("notifications")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -78,7 +78,7 @@ async def notifications_client():
 
 @pytest.fixture
 async def inventory_client():
-    """Клиент для тестирования Inventory API."""
+
     _ensure_service_in_path("inventory")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -88,7 +88,7 @@ async def inventory_client():
 
 @pytest.fixture
 async def attendance_client():
-    """Клиент для тестирования Attendance API."""
+
     _ensure_service_in_path("attendance")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -98,7 +98,7 @@ async def attendance_client():
 
 @pytest.fixture
 async def time_tracking_client():
-    """Клиент для тестирования Time Tracking API."""
+
     _ensure_service_in_path("time_tracking")
     from presentation.api import app
     transport = ASGITransport(app=app)
@@ -108,7 +108,7 @@ async def time_tracking_client():
 
 @pytest.fixture
 async def todos_client():
-    """Клиент для тестирования Todos API."""
+
     _ensure_service_in_path("todos")
     from presentation.api import app
     transport = ASGITransport(app=app)

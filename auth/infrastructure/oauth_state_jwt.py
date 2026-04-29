@@ -1,4 +1,4 @@
-"""Подписанный параметр state для Azure OAuth: работает при любом redirect_uri (auth или gateway), без cookie."""
+
 
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional

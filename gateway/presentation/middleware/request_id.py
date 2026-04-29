@@ -1,4 +1,4 @@
-"""X-Request-ID / correlation id для логов и отладки."""
+
 
 from __future__ import annotations
 

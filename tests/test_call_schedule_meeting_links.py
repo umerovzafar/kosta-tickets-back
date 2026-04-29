@@ -1,4 +1,4 @@
-"""Логика ссылок на встречу (без Microsoft Graph)."""
+
 
 import pytest
 
@@ -6,13 +6,13 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("call_schedule")
 
-from infrastructure.meeting_links import (  # noqa: E402
+from infrastructure.meeting_links import (
     classify_meeting_url,
     event_body_text,
     event_meeting_urls_from_body_object,
     extract_https_urls,
 )
-from infrastructure.graph_mailbox import _enrich_event_with_join_url  # noqa: E402
+from infrastructure.graph_mailbox import _enrich_event_with_join_url
 
 
 def test_classify_meeting_url() -> None:
@@ -31,7 +31,7 @@ def test_extract_from_html_body() -> None:
             "content": '<a href="https://zoom.us/j/999">join</a>',
         }
     }
-    assert event_body_text(ev) == " join "  # без href URL пропал бы из плоского текста
+    assert event_body_text(ev) == " join "
     assert event_meeting_urls_from_body_object(ev) == ["https://zoom.us/j/999"]
 
 
@@ -51,7 +51,7 @@ def test_enrich_meeting_join_and_links() -> None:
 
 
 def test_enrich_prefer_zoom_join_when_both_with_teams() -> None:
-    """С Zoom в теле и Teams: по умолчанию кнопка Join — Zoom (см. CALL_SCHEDULE_PREFER_ZOOM_JOIN_OVER_TEAMS)."""
+
     ev = {
         "onlineMeeting": {
             "joinUrl": "https://teams.microsoft.com/l/meetup-join/xx",

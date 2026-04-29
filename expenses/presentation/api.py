@@ -8,13 +8,13 @@ from sqlalchemy import text
 
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, async_session_factory, engine
-from infrastructure import models  # noqa: F401
+from infrastructure import models
 from infrastructure.repositories import seed_reference_data
 from presentation.routes import admin_db, expense_email_action, expenses, health, reference
 
 _log = logging.getLogger("expenses.startup")
 
-# В Docker Swarm / Portainer depends_on не гарантирует порядок старта — ждём БД
+
 _STARTUP_RETRIES = 30
 _STARTUP_DELAY_SEC = 2.0
 
@@ -22,11 +22,7 @@ _LEGACY_INT_PK = frozenset({"integer", "bigint", "smallint"})
 
 
 async def _drop_legacy_integer_expense_tables(conn) -> None:
-    """
-    Старые БД могли создать expense_requests.id как INTEGER; текущая схема — VARCHAR(40) для KL-id.
-    Тогда CREATE TABLE для дочерних таблиц падает с DatatypeMismatchError.
-    Удаляем только таблицы модуля расходов (данные заявок теряются).
-    """
+
     result = await conn.execute(
         text(
             """
@@ -66,7 +62,7 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 await _drop_legacy_integer_expense_tables(conn)
                 await conn.run_sync(Base.metadata.create_all)
-                # create_all не добавляет колонки к уже существующим таблицам — иначе 500 на SELECT
+
                 for ddl in (
                     "ALTER TABLE expense_requests ADD COLUMN IF NOT EXISTS payment_deadline DATE",
                     "ALTER TABLE expense_requests ADD COLUMN IF NOT EXISTS paid_by_user_id INTEGER",

@@ -92,7 +92,7 @@ async def update_notification(
     repo: NotificationRepository = Depends(get_repo),
     session: AsyncSession = Depends(get_session),
 ):
-    """Обновить уведомление."""
+
     uc = UpdateNotificationUseCase(repo)
     n = await uc.execute(
         notification_uuid=notification_uuid,

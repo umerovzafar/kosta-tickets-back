@@ -11,7 +11,7 @@ class Role(str, Enum):
 
 
 class TimeTrackingRole(str, Enum):
-    """Роль пользователя в модуле учёта времени."""
 
-    USER = "user"  # ведение учёта времени
-    MANAGER = "manager"  # управление списком пользователей и доступом
+
+    USER = "user"
+    MANAGER = "manager"

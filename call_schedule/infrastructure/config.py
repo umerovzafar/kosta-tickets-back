@@ -1,4 +1,4 @@
-"""Конфиг: Microsoft Graph (client credentials) + почтовый ящик, без БД."""
+
 
 from functools import lru_cache
 
@@ -9,27 +9,27 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     service_name: str = "call_schedule"
     auth_service_url: str = "http://auth:1236"
-    # Имя HttpOnly-cookie с access token (как на gateway) — если нет Authorization, берём токен из cookie
+
     auth_session_cookie_name: str = Field(default="kl_access_token")
 
-    # Shared mailbox (UPN) — календари и события этого ящика
+
     call_schedule_mailbox: str = "info@kostalegal.com"
 
-    # Azure: общие переменные (как в todos) — client credentials + Application Calendars.* в том же app registration
+
     microsoft_tenant_id: str = ""
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
 
-    # Опционально: отдельная регистрация только с application permissions, если не смешиваете с delegated в одной app
+
     call_schedule_microsoft_tenant_id: str = ""
     call_schedule_microsoft_client_id: str = ""
     call_schedule_microsoft_client_secret: str = ""
 
-    # Создание встречи как онлайн (Teams) — в ответе появляется onlineMeeting.joinUrl; отключить: false
+
     call_schedule_create_as_teams_meeting: bool = True
-    # Провайдер ящика/организации: teamsForBusiness | skypeForBusiness (см. allowedOnlineMeetingProviders календаря)
+
     call_schedule_online_meeting_provider: str = "teamsForBusiness"
-    # Если в событии и Teams, и ссылка Zoom (часто Zoom вставлен в тело) — use Zoom для `meetingJoinUrl`
+
     call_schedule_prefer_zoom_join_over_teams: bool = True
 
     @field_validator("auth_service_url", mode="before")
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         return (v or "").strip() if v is not None else ""
 
     def graph_client_credentials(self) -> tuple[str, str, str]:
-        """Tenant id, client id, secret для client credentials к Graph."""
+
         if self.call_schedule_microsoft_client_id:
             return (
                 self.call_schedule_microsoft_tenant_id or self.microsoft_tenant_id,

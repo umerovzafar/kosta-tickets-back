@@ -1,4 +1,4 @@
-"""Правила доступа к данным других пользователей (согласовано с gateway time_tracking_routes)."""
+
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from infrastructure.repositories import (
     UserProjectAccessRepository,
 )
 
-# Организационные роли (auth users.role)
+
 _VIEW_ROLES_TIME_ENTRIES = frozenset(
     {
         "Главный администратор",
@@ -28,11 +28,7 @@ async def viewer_can_bypass_work_week_submission_lock(
     session: AsyncSession,
     viewer: dict,
 ) -> bool:
-    """Закрытая отчётная неделя (сдача / сб 9:00): правки разрешены менеджеру TT и орг-админам.
 
-    Обычные пользователи не обходят блок — только роль ``manager`` в ``time_tracking_users``
-    (менеджер учёта времени) и роли с полным доступом к чужим записям (партнёр/админ).
-    """
     if _org_role(viewer) in _MANAGE_ROLES_TIME_ENTRIES:
         return True
     ur = TimeTrackingUserRepository(session)
@@ -58,7 +54,7 @@ async def ensure_time_entry_subject_allowed(
     *,
     write: bool,
 ) -> None:
-    """Можно ли читать/менять записи времени для target_auth_user_id."""
+
     if _viewer_id(viewer) == target_auth_user_id:
         return
     role = _org_role(viewer)
@@ -101,7 +97,7 @@ async def ensure_can_read_tt_user_row(
     viewer: dict,
     target_auth_user_id: int,
 ) -> None:
-    """Доступ к GET /users/{id} (роль TT, email и т.д.)."""
+
     if _viewer_id(viewer) == target_auth_user_id:
         return
     role = _org_role(viewer)
@@ -120,7 +116,7 @@ async def ensure_can_read_tt_user_row(
 
 
 async def ensure_can_list_all_tt_users(viewer: dict) -> None:
-    """GET /users — полный список (только офис/админ; менеджеры используют /users/managed-scope/{id})."""
+
     role = _org_role(viewer)
     if role in _VIEW_ROLES_TIME_ENTRIES:
         return
@@ -131,7 +127,7 @@ async def ensure_can_list_all_tt_users(viewer: dict) -> None:
 
 
 async def ensure_managed_scope_allowed(viewer: dict, manager_auth_user_id: int) -> None:
-    """GET /users/managed-scope/{manager_auth_user_id}."""
+
     if _viewer_id(viewer) == manager_auth_user_id:
         return
     if _org_role(viewer) in _VIEW_ROLES_TIME_ENTRIES:
@@ -140,7 +136,7 @@ async def ensure_managed_scope_allowed(viewer: dict, manager_auth_user_id: int) 
 
 
 async def ensure_weekly_capacity_patch_allowed(viewer: dict, target_auth_user_id: int) -> None:
-    """PATCH /users/{id}/weekly-capacity-hours."""
+
     if _viewer_id(viewer) == target_auth_user_id:
         return
     if _org_role(viewer) in _MANAGE_ROLES_TIME_ENTRIES:
@@ -152,7 +148,7 @@ async def ensure_weekly_capacity_patch_allowed(viewer: dict, target_auth_user_id
 
 
 def ensure_upsert_user_allowed(viewer: dict, body_auth_user_id: int) -> None:
-    """POST /users — синхронизация профиля."""
+
     if _viewer_id(viewer) == body_auth_user_id:
         return
     if _org_role(viewer) in _MANAGE_ROLES_TIME_ENTRIES:
@@ -174,7 +170,7 @@ async def ensure_can_list_project_assignees(
     viewer: dict,
     project_id: str,
 ) -> None:
-    """Кто может запросить список сотрудников с доступом к проекту (селектор при добавлении часов)."""
+
     pid = (project_id or "").strip()
     if not pid:
         raise HTTPException(status_code=400, detail="Пустой идентификатор проекта")

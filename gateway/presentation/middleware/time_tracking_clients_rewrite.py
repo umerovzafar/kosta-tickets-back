@@ -1,4 +1,4 @@
-"""Нормализация путей API учёта времени под префикс роутера gateway `/api/v1/time-tracking`."""
+
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -13,11 +13,7 @@ def _set_path(request: Request, new_path: str) -> None:
 
 
 class TimeTrackingClientsPathRewriteMiddleware(BaseHTTPMiddleware):
-    """Переписывает устаревшие/альтернативные префиксы на `/api/v1/time-tracking/...`.
 
-    - `/api/v1/clients/...` — если nginx отдаёт без префикса time-tracking.
-    - `/api/v1/time_tracking/...` — если фронт использует snake_case вместо дефиса.
-    """
 
     async def dispatch(self, request: Request, call_next) -> Response:
         path = request.scope.get("path") or ""

@@ -1,4 +1,4 @@
-"""Тела запросов клиентов time manager (дублируют time_tracking для валидации в gateway)."""
+
 
 from decimal import Decimal
 from typing import Optional

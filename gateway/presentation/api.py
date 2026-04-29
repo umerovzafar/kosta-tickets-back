@@ -66,10 +66,10 @@ def _cors_origins() -> list[str]:
         "http://127.0.0.1:5173",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
-        # admin-panel: см. docker-compose ADMIN_PANEL_PORT=8081
+
         "http://localhost:8081",
         "http://127.0.0.1:8081",
-        # Live Server / dev
+
         "http://localhost:5500",
         "http://127.0.0.1:5500",
     ]
@@ -78,11 +78,9 @@ def _cors_origins() -> list[str]:
             origins.append(o)
     if not origins:
         origins = defaults + ["null"]
-    return list(dict.fromkeys(origins))  # без дубликатов
+    return list(dict.fromkeys(origins))
 
 
-# Админка на :8080, gateway на :1234 — разный origin; явный ADMIN_FRONTEND_URL не всегда задают.
-# Разрешаем частные сети (RFC1918) по http/https с любым портом.
 _CORS_PRIVATE_ORIGIN_REGEX = (
     r"^https?://("
     r"localhost|127\.0\.0\.1|"
@@ -96,7 +94,7 @@ origins = _cors_origins()
 _settings = get_settings()
 _cors_regex = _CORS_PRIVATE_ORIGIN_REGEX if _settings.cors_allow_private_network else None
 
-# Первым у приложения: нормализация /api/v1/clients/... и /api/v1/time_tracking/... → /api/v1/time-tracking/...
+
 app.add_middleware(TimeTrackingClientsPathRewriteMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -110,7 +108,7 @@ app.add_middleware(
 )
 app.add_middleware(SqlInjectionGuardMiddleware)
 app.add_middleware(IncomingAuthorizationMiddleware)
-# Внешний слой: correlation id (должен быть последним add_middleware = первым в цепочке)
+
 app.add_middleware(RequestIdMiddleware)
 app.include_router(spa_auth_callback.router)
 app.include_router(ops.router)
@@ -128,7 +126,7 @@ app.include_router(roles.router)
 app.include_router(todos_routes.router)
 app.include_router(call_schedule_routes.router)
 app.include_router(media.router)
-app.include_router(attendance_routes.router_compat)  # /hikvision/attendance — до attendance
+app.include_router(attendance_routes.router_compat)
 app.include_router(attendance_routes.router)
 app.include_router(vacation_routes.router)
 app.include_router(time_tracking_routes.router)

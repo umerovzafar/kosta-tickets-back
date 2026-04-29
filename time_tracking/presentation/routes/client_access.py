@@ -1,4 +1,4 @@
-"""Проверка существования клиента и блокировка мутаций для архивного клиента."""
+
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

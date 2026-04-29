@@ -1,4 +1,3 @@
-"""Синхронный URL для psycopg2 (скрипты импорта, threadpool в API)."""
 
 
 def sync_engine_url(database_url: str) -> str:

@@ -1,4 +1,4 @@
-"""Автосдача прошлой отчётной недели (сб..пт) и блокировка правок после сб 9:00 (WEEKLY_SUBMIT_TZ)."""
+
 
 from __future__ import annotations
 
@@ -33,13 +33,7 @@ async def is_work_date_locked_for_user(
 
 
 async def run_weekly_auto_submit(session: AsyncSession) -> int:
-    """Создаёт записи сдачи за **предыдущую** отчётную неделю (сб..пт), закрываемую в субботу 9:00.
 
-    Celery: якорь = сегодня (в т.з.); при запуске в субботу 9:00 в Asia/Tashkent
-    сдаётся последний полный блок сб–пт.
-
-    Возвращает число **новых** записей.
-    """
     anchor = local_today(_submit_tz())
     w0, w1 = previous_closed_saturday_fri_for_anchor(anchor)
     ur = TimeTrackingUserRepository(session)
@@ -71,7 +65,7 @@ async def run_weekly_auto_submit(session: AsyncSession) -> int:
 
 
 def run_weekly_auto_submit_sync() -> int:
-    """Точка входа Celery (синхронно)."""
+
     import asyncio
 
     from infrastructure.database import async_session_factory

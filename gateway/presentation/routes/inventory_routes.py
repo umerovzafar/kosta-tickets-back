@@ -73,7 +73,6 @@ async def _proxy_delete(path: str, user: dict = Depends(require_write_role)):
     return r.json()
 
 
-
 @router.get("/categories")
 async def list_categories(user: dict = Depends(get_current_user)):
     return await _proxy_get("/categories")
@@ -108,7 +107,6 @@ async def update_category(category_id: int, body: dict, user: dict = Depends(req
 @router.delete("/categories/{category_id}", status_code=204)
 async def delete_category(category_id: int, user: dict = Depends(require_write_role)):
     await _proxy_delete(f"/categories/{category_id}")
-
 
 
 @router.get("/items/statuses")

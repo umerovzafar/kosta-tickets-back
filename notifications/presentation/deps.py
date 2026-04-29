@@ -1,4 +1,4 @@
-"""Проверка JWT через auth-сервис (как в expenses / time_tracking)."""
+
 
 from __future__ import annotations
 

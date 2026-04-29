@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, engine
-from infrastructure import models  # noqa: F401 — регистрация таблиц в metadata
+from infrastructure import models
 from infrastructure.schema_readiness import mark_schema_ready
 from presentation.middleware.schema_readiness import SchemaReadinessMiddleware
 from presentation.routes.health import router as health_router
@@ -26,7 +26,7 @@ def _is_database_missing_error(exc: BaseException) -> bool:
 
 
 async def _ensure_schema_with_retries() -> None:
-    """Создание таблиц; ретраи не блокируют bind uvicorn (иначе healthcheck и балансировщик видят Connection refused)."""
+
     last_exc: Exception | None = None
     for attempt in range(1, _STARTUP_RETRIES + 1):
         try:
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     if engine is None:
         yield
         return
-    # Фоновая инициализация: uvicorn сразу слушает порт — /health отвечает (503 пока БД недоступна), без Connection refused в healthcheck.
+
     task = asyncio.create_task(_ensure_schema_with_retries())
     task.add_done_callback(_schema_task_done)
     try:
@@ -100,7 +100,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SqlInjectionGuardMiddleware)
-# Пока схема не создана, /schedule/* не должны бить в пустую БД (иначе 500). /health без изменений.
+
 app.add_middleware(SchemaReadinessMiddleware)
 app.include_router(health_router)
 app.include_router(schedule_router)

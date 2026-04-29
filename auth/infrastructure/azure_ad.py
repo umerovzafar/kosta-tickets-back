@@ -5,8 +5,7 @@ import msal
 
 from infrastructure.config import get_settings
 
-# email — claim в ID-токене; User.Read — Microsoft Graph (фото профиля в AAD).
-# openid и profile добавляются MSAL автоматически, указывать их явно нельзя.
+
 AZURE_LOGIN_SCOPES = ["email", "User.Read"]
 
 
@@ -51,10 +50,7 @@ def acquire_token_by_code(code: str) -> Optional[dict]:
 
 
 async def fetch_graph_profile_photo_download_url(access_token: str) -> Optional[str]:
-    """
-    Возвращает временный URL картинки из Graph (поле @microsoft.graph.downloadUrl).
-    Для учётных записей без фото в Azure — 404, возвращаем None.
-    """
+
     if not (access_token or "").strip():
         return None
     try:
@@ -78,7 +74,7 @@ async def fetch_graph_profile_photo_download_url(access_token: str) -> Optional[
 
 
 async def resolve_profile_picture_from_tokens(tokens: dict, claims: dict) -> Optional[str]:
-    """Сначала picture из ID-токена; если нет — фото через Graph по access_token."""
+
     pic = claims.get("picture")
     if isinstance(pic, str) and pic.strip():
         return pic.strip()

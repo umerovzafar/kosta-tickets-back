@@ -1,4 +1,4 @@
-"""Почасовые ставки пользователя по умолчанию (billable / cost)."""
+
 
 from enum import Enum
 

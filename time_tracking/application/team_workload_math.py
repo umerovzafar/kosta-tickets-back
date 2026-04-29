@@ -1,4 +1,4 @@
-"""Ёмкость за произвольный период: weekly_capacity × (дней / 7)."""
+
 
 from datetime import date
 from decimal import Decimal

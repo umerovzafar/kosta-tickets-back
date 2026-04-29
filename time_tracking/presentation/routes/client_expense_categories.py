@@ -1,4 +1,4 @@
-"""Категории расходов клиента time manager."""
+
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError

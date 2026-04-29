@@ -1,4 +1,4 @@
-"""Pydantic-схемы для модуля отчётов time_tracking."""
+
 
 from __future__ import annotations
 
@@ -6,10 +6,6 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-# ---------------------------------------------------------------------------
-# Enums / группировки
-# ---------------------------------------------------------------------------
 
 from enum import Enum
 
@@ -31,11 +27,6 @@ class ExportFormat(str, Enum):
     xlsx = "xlsx"
 
 
-# ---------------------------------------------------------------------------
-# Стандартный ответ ТЗ: {results, pagination, meta}
-# ---------------------------------------------------------------------------
-
-
 class PaginationOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -53,11 +44,6 @@ class ReportResponseOut(BaseModel):
     results: list[dict[str, Any]]
     pagination: PaginationOut
     meta: dict[str, Any]
-
-
-# ---------------------------------------------------------------------------
-# Meta / users-for-filter
-# ---------------------------------------------------------------------------
 
 
 class ReportMetaOut(BaseModel):

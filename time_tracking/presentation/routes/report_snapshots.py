@@ -1,7 +1,4 @@
-"""Снимки отчётов (report snapshots): список, чтение, правки строк (overrides).
 
-Редактирование не затрагивает id строки/снимка и ссылочные поля; код проекта менять нельзя.
-"""
 
 from __future__ import annotations
 
@@ -35,7 +32,7 @@ def _json_obj(raw: str | None) -> dict[str, Any]:
 
 
 class SnapshotRowPatchBody(BaseModel):
-    """Частичные правки отображаемых полей строки (после merge с `data` → `effective`)."""
+
 
     model_config = {"populate_by_name": True}
 
@@ -67,7 +64,7 @@ async def list_report_snapshots(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> list[dict[str, Any]]:
-    """Снимки, созданные текущим пользователем (кратко, с числом строк)."""
+
     uid = int(viewer["id"])
     repo = ReportSnapshotRepository(session)
     rows = await repo.list_for_user(uid)
@@ -95,7 +92,7 @@ async def get_report_snapshot(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> dict[str, Any]:
-    """Один снимок со строками; только владелец. У каждой строки: data, overrides, effective."""
+
     uid = int(viewer["id"])
     repo = ReportSnapshotRepository(session)
     snap = await repo.get_by_id(snapshot_id, load_rows=True)
@@ -125,7 +122,7 @@ async def patch_report_snapshot_row(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> dict[str, Any]:
-    """Сохранить overrides для строки снимка (только разрешённые поля). `projectCode` / id / ключи сущностей — нельзя."""
+
     uid = int(viewer["id"])
     repo = ReportSnapshotRepository(session)
     snap = await repo.get_by_id(snapshot_id, load_rows=False)

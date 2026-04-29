@@ -1,4 +1,4 @@
-"""Модели БД time_tracking."""
+
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -22,7 +22,7 @@ from infrastructure.database import Base
 
 
 class TimeTrackingUserModel(Base):
-    """Пользователь с доступом к учёту времени (копия/синхрон с auth для раздела time_tracking)."""
+
 
     __tablename__ = "time_tracking_users"
 
@@ -31,7 +31,7 @@ class TimeTrackingUserModel(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     picture: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Должность (как в auth.users.position); для отчётов, не путать с role (роль в модуле TT).
+
     position: Mapped[str | None] = mapped_column(String(256), nullable=True)
     role: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -42,14 +42,14 @@ class TimeTrackingUserModel(Base):
         default=Decimal("35"),
         server_default=text("35"),
     )
-    # Начальник для уведомлений о недельной отчётности (auth user id; без FK — пользователь в users_db).
+
     reports_to_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UserHourlyRateModel(Base):
-    """Почасовая ставка пользователя по умолчанию: оплачиваемая (billable) или себестоимость (cost)."""
+
 
     __tablename__ = "time_tracking_user_hourly_rates"
     __table_args__ = (
@@ -78,7 +78,7 @@ class UserHourlyRateModel(Base):
 
 
 class TimeEntryModel(Base):
-    """Факт списания времени (загрузка команды: billable / non-billable)."""
+
 
     __tablename__ = "time_tracking_entries"
     __table_args__ = (
@@ -93,12 +93,12 @@ class TimeEntryModel(Base):
         nullable=False,
     )
     work_date: Mapped[date] = mapped_column(Date, nullable=False)
-    # Источник истины — целое число секунд, ВСЕГДА кратное 60 (квантование до целых минут на входе).
-    # Устраняет «1 секунду» на round-trip hours↔H:M:S и даёт предсказуемый минутный учёт.
+
+
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Часы = duration_seconds / 3600, quantize(0.000001, HALF_UP). Используются везде: отчёты/счета/деньги.
+
     hours: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
-    # Устаревшее поле (осталось ради совместимости схемы). Всегда равно hours — никакого доп. округления нет.
+
     rounded_hours: Mapped[Decimal] = mapped_column(Numeric(16, 6), nullable=False)
     is_billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     project_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
@@ -109,7 +109,7 @@ class TimeEntryModel(Base):
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_reference_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Снятие с учёта менеджером: запись не удаляется из БД, в отчётах/суммах не участвует.
+
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     voided_by_auth_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     void_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -118,7 +118,7 @@ class TimeEntryModel(Base):
 
 
 class TimeManagerClientModel(Base):
-    """Клиент для time manager: биллинг, валюта, срок оплаты, налоги, скидка."""
+
 
     __tablename__ = "time_tracking_clients"
     __table_args__ = (Index("ix_tt_clients_name", "name"),)
@@ -149,7 +149,7 @@ class TimeManagerClientModel(Base):
 
 
 class TimeManagerClientContactModel(Base):
-    """Дополнительное контактное лицо клиента."""
+
 
     __tablename__ = "time_tracking_client_contacts"
     __table_args__ = (Index("ix_tt_client_contacts_client", "client_id"),)
@@ -173,7 +173,7 @@ class TimeManagerClientContactModel(Base):
 
 
 class TimeManagerClientTaskModel(Base):
-    """Задача, привязанная к клиенту time manager (отдельный набор задач на каждого клиента)."""
+
 
     __tablename__ = "time_tracking_client_tasks"
     __table_args__ = (Index("ix_tt_client_tasks_client", "client_id"),)
@@ -194,7 +194,7 @@ class TimeManagerClientTaskModel(Base):
 
 
 class TimeManagerClientExpenseCategoryModel(Base):
-    """Категория расхода по клиенту time manager (справочник для счетов и форм)."""
+
 
     __tablename__ = "time_tracking_client_expense_categories"
     __table_args__ = (Index("ix_tt_client_exp_cat_client", "client_id"),)
@@ -214,7 +214,7 @@ class TimeManagerClientExpenseCategoryModel(Base):
 
 
 class TimeManagerClientProjectModel(Base):
-    """Проект time manager, привязанный к клиенту (справочник для записей времени и отчётов)."""
+
 
     __tablename__ = "time_tracking_client_projects"
     __table_args__ = (Index("ix_tt_client_projects_client", "client_id"),)
@@ -257,7 +257,7 @@ class TimeManagerClientProjectModel(Base):
 
 
 class TimeTrackingUserProjectAccessModel(Base):
-    """Какие проекты доступны пользователю для списания времени (назначает менеджер учёта времени)."""
+
 
     __tablename__ = "time_tracking_user_project_access"
     __table_args__ = (
@@ -282,7 +282,7 @@ class TimeTrackingUserProjectAccessModel(Base):
 
 
 class WeeklyTimeSubmissionModel(Base):
-    """Авто-/ручняя фиксация календарной ISO-недели: после статуса submitted дни закрыты для правок."""
+
 
     __tablename__ = "time_tracking_weekly_submissions"
     __table_args__ = (
@@ -298,7 +298,7 @@ class WeeklyTimeSubmissionModel(Base):
     )
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
     week_end: Mapped[date] = mapped_column(Date, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)  # submitted
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
     auto_submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

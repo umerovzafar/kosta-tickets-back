@@ -1,4 +1,4 @@
-"""Себестоимость и ставки (`application.entry_pricing`) + центы HALF_UP (`money_product_hours_rate`)."""
+
 
 from datetime import date
 from decimal import Decimal
@@ -10,8 +10,8 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from application import entry_pricing as ep  # noqa: E402
-from application.money_amounts import money_product_hours_rate  # noqa: E402
+from application import entry_pricing as ep
+from application.money_amounts import money_product_hours_rate
 
 
 def _rate(
@@ -57,8 +57,8 @@ def test_billable_rate_for_entry() -> None:
 @pytest.mark.parametrize(
     "hours,rate,expected",
     [
-        (Decimal("0.1"), Decimal("9.99"), Decimal("1.00")),  # 0.999 → 1.00
-        (Decimal("3"), Decimal("0.125"), Decimal("0.38")),  # 0.375 → 0.38
+        (Decimal("0.1"), Decimal("9.99"), Decimal("1.00")),
+        (Decimal("3"), Decimal("0.125"), Decimal("0.38")),
         (Decimal("0.33"), Decimal("10.00"), Decimal("3.30")),
     ],
 )

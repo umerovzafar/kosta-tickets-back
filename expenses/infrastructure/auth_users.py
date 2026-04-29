@@ -1,4 +1,4 @@
-"""Загрузка профилей пользователей из auth для отображения автора заявки."""
+
 
 from __future__ import annotations
 
@@ -28,11 +28,7 @@ async def fetch_user_by_id(
     *,
     fallback_bearer: str | None = None,
 ) -> dict | None:
-    """
-    GET {auth}/users/{id}. Сначала используется заголовок Authorization запроса;
-    если его нет — optional fallback (например EXPENSE_AUTH_BEARER_FOR_AUTHOR_EMAIL для ссылок из письма).
-    Ответ: JSON с полями email, display_name и т.д.
-    """
+
     hdr = _normalize_authorization_header(authorization)
     if not hdr:
         hdr = _normalize_authorization_header(fallback_bearer)
@@ -58,10 +54,7 @@ async def fetch_users_by_ids(
     authorization: Optional[str],
     user_ids: set[int],
 ) -> dict[int, dict]:
-    """
-    GET {auth}/users/{id} для каждого уникального id (параллельно, с лимитом).
-    Возвращает словарь id -> тело ответа auth (snake_case полей).
-    """
+
     if not authorization or not user_ids:
         return {}
     base = auth_base_url.rstrip("/")

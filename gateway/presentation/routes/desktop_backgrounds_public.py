@@ -1,9 +1,4 @@
-"""Публичная раздача файлов фона рабочего стола по URL из поля desktop_background.
 
-Путь в БД: `desktop_backgrounds/{user_id}/{uuid}.{ext}` — фронт собирает
-`https://<gateway>/<этот путь>`. Ранее маршрута не было (только `/api/v1/media/...` с Bearer,
-что не подходит для <img src> без обходных решений).
-"""
 
 import re
 from pathlib import Path
@@ -15,7 +10,7 @@ from infrastructure.config import get_settings
 
 router = APIRouter(tags=["desktop_backgrounds"])
 
-# Имена задаёт gateway при загрузке: uuid4().hex + допустимое расширение
+
 _SAFE_FILENAME = re.compile(
     r"^[a-f0-9]{32}\.(jpg|jpeg|png|gif|webp)$",
     re.IGNORECASE,

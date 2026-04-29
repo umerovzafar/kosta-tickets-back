@@ -1,4 +1,3 @@
--- Конечный срок оплаты по заявке на расход (опционально).
 ALTER TABLE expense_requests
   ADD COLUMN IF NOT EXISTS payment_deadline DATE NULL;
 

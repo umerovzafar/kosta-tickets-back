@@ -11,7 +11,7 @@ from infrastructure.repository_shared import _now_utc
 
 
 class UserProjectAccessRepository:
-    """Какие проекты пользователь может выбирать при списании времени."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -24,7 +24,7 @@ class UserProjectAccessRepository:
         granted_by_auth_user_id: int | None,
         projects: ClientProjectRepository,
     ) -> None:
-        """Добавляет строку доступа, если её ещё нет. Проект должен существовать."""
+
         pid = (project_id or "").strip()
         if not pid:
             raise ValueError("Пустой идентификатор проекта")
@@ -68,7 +68,7 @@ class UserProjectAccessRepository:
         return [int(x) for x in r.scalars().all()]
 
     async def list_peer_auth_user_ids_for_manager(self, manager_auth_user_id: int) -> list[int]:
-        """Пользователи с доступом к тем же проектам, что и менеджер (включая самого менеджера)."""
+
         my_projects = await self.list_project_ids(manager_auth_user_id)
         ids: set[int] = {int(manager_auth_user_id)}
         for pid in my_projects:
@@ -84,7 +84,7 @@ class UserProjectAccessRepository:
         granted_by_auth_user_id: int | None,
         projects: ClientProjectRepository,
     ) -> set[str]:
-        """Возвращает объединение старых и новых id проектов (для проверок после flush)."""
+
         old_pids = await self.list_project_ids(auth_user_id)
         seen: set[str] = set()
         normalized: list[str] = []

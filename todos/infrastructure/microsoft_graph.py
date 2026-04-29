@@ -1,4 +1,4 @@
-"""Клиент Microsoft Graph API для календаря Outlook (OAuth2 + события)."""
+
 
 from datetime import datetime, timezone
 from typing import Any
@@ -15,7 +15,7 @@ SCOPES = ["Calendars.ReadWrite", "User.Read", "offline_access"]
 
 
 def get_authorize_url(state: str) -> str:
-    """URL для редиректа пользователя на страницу входа Microsoft."""
+
     s = get_settings()
     client_id = (s.microsoft_client_id or "").strip()
     if not client_id:
@@ -47,7 +47,7 @@ def get_authorize_url(state: str) -> str:
 
 
 async def exchange_code_for_tokens(code: str) -> dict[str, Any]:
-    """Обмен authorization code на access_token и refresh_token."""
+
     s = get_settings()
     url = TOKEN_URL_TEMPLATE.format(tenant=s.microsoft_tenant_id or "common")
     async with httpx.AsyncClient() as client:
@@ -75,7 +75,7 @@ async def exchange_code_for_tokens(code: str) -> dict[str, Any]:
 
 
 async def refresh_tokens(refresh_token: str) -> dict[str, Any]:
-    """Обновление access_token по refresh_token."""
+
     s = get_settings()
     url = TOKEN_URL_TEMPLATE.format(tenant=s.microsoft_tenant_id or "common")
     async with httpx.AsyncClient() as client:
@@ -106,7 +106,7 @@ async def list_calendar_events(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Список событий календаря (GET /me/events). При start/end — calendarView за период."""
+
     if start and end:
         params = {
             "startDateTime": start.isoformat(),
@@ -133,7 +133,7 @@ async def create_calendar_event(
     end: datetime,
     body: str | None = None,
 ) -> dict[str, Any]:
-    """Создание события в календаре (POST /me/events), формат как в Microsoft Graph."""
+
     payload = {
         "subject": subject,
         "start": {

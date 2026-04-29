@@ -1,4 +1,4 @@
-"""Проверка сессии через auth-сервис (как у todos)."""
+
 
 from typing import Annotated
 

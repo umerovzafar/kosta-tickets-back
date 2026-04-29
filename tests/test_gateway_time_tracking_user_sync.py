@@ -1,4 +1,4 @@
-"""Логика самосинхронизации POST /api/v1/time-tracking/users (gateway)."""
+
 
 from decimal import Decimal
 
@@ -9,7 +9,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("gateway")
 
-from presentation.routes.time_tracking_routes import (  # noqa: E402
+from presentation.routes.time_tracking_routes import (
     UserUpsertBody,
     _self_time_tracking_user_upsert_payload,
 )

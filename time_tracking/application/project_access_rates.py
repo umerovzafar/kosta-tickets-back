@@ -1,8 +1,4 @@
-"""Проверка почасовых ставок при выдаче доступа к проекту (валюта проекта).
 
-Требуется billable (кроме режима «ставка по проекту» с суммой на проекте).
-Проверка cost отключена — временно необязательна.
-"""
 
 from __future__ import annotations
 
@@ -21,12 +17,7 @@ async def validate_hourly_rates_for_project_access(
     auth_user_id: int,
     project_ids: list[str],
 ) -> None:
-    """
-    Без ставки billable в валюте проекта (интервал на сегодня) доступ к проекту не выдаётся,
-    кроме режима «ставка по проекту» с заданной суммой — тогда billable не требуется заранее.
 
-    Ставка cost (себестоимость) для выдачи доступа **временно не обязательна**.
-    """
     if not project_ids:
         return
     cpr = ClientProjectRepository(session)

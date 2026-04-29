@@ -1,4 +1,4 @@
-"""Счета клиентам (биллинг по времени и расходам)."""
+
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ async def invoices_stats(
     date_from: Optional[date] = Query(None, alias="dateFrom"),
     date_to: Optional[date] = Query(None, alias="dateTo"),
 ):
-    """Сводка по счетам: сколько в каждом (эффективном) статусе, оплачено/остаток по валютам, непогашенные."""
+
     return await get_invoices_aggregated_stats(
         session,
         client_id=client_id,

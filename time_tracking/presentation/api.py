@@ -9,9 +9,9 @@ from application.client_expense_category_defaults import (
 )
 from application.client_task_defaults import seed_default_common_tasks_for_all_clients
 from infrastructure.database import Base, async_session_factory, engine
-from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
-from infrastructure import models_reports  # noqa: F401 — таблицы отчётов
-from infrastructure import models_invoices  # noqa: F401 — счета
+from infrastructure import models
+from infrastructure import models_reports
+from infrastructure import models_invoices
 from infrastructure.schema_patches import (
     apply_client_expense_categories_schema_patch,
     apply_client_projects_schema_patch,
@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
     async with async_session_factory() as session:
         await seed_default_common_tasks_for_all_clients(session)
         await seed_default_expense_categories_for_all_clients(session)
-        # Одноразовый идемпотентный бэкфилл: квантуем duration_seconds до минут, выравниваем hours/rounded_hours.
+
         await renormalize_time_entries_to_minute(session)
         await session.commit()
     yield

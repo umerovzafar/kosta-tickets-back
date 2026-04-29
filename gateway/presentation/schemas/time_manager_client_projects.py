@@ -1,4 +1,4 @@
-"""Проекты клиента time manager (gateway)."""
+
 
 from datetime import date
 from decimal import Decimal

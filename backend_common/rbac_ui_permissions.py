@@ -1,8 +1,4 @@
-"""Серверная матрица прав для UI и согласования с проверками gateway/сервисов.
 
-Клиент может использовать только как подсказку для навигации; авторизация остаётся в API.
-Версия контракта: поле v при изменении набора ключей.
-"""
 
 from __future__ import annotations
 
@@ -10,7 +6,6 @@ from typing import Any, Optional
 
 RBAC_UI_VERSION = 1
 
-# --- Наборы ролей (как в gateway / expenses; обе формы «Офис …») ---
 
 MAIN_ADMIN = "Главный администратор"
 ADMIN = "Администратор"
@@ -33,7 +28,7 @@ USERS_VIEW_DIRECTORY: frozenset[str] = frozenset(
 
 USERS_MANAGE_BLOCK_ARCHIVE: frozenset[str] = frozenset({MAIN_ADMIN, ADMIN, PARTNER})
 
-# Назначение роли пользователю (не «Главный админ»): Главный или Администратор
+
 USERS_ASSIGN_ORG_ROLES: frozenset[str] = frozenset({MAIN_ADMIN, ADMIN})
 
 TICKETS_CROSS_USER: frozenset[str] = frozenset(
@@ -142,7 +137,7 @@ _MANAGE_TIME_ENTRIES: frozenset[str] = frozenset({MAIN_ADMIN, ADMIN, PARTNER})
 
 INVENTORY_WRITE: frozenset[str] = frozenset({IT, ADMIN, OFFICE_MGR_SPACE, PARTNER})
 
-# Уведомления: создание/редактирование (REST); GET доступен всем авторизованным
+
 NOTIFICATIONS_WRITE: frozenset[str] = frozenset({PARTNER, IT, OFFICE_MGR_SPACE, OFFICE_MGR_HYPHEN})
 
 HOURLY_VIEW: frozenset[str] = frozenset(
@@ -161,7 +156,7 @@ HOURLY_ADMIN_RATES: frozenset[str] = frozenset({MAIN_ADMIN, ADMIN})
 
 
 def normalize_role_key(role: str) -> str:
-    """Сопоставление ролей без учёта регистра; ё→е (как в expenses)."""
+
     return (role or "").strip().lower().replace("ё", "е")
 
 
@@ -179,7 +174,7 @@ def build_ui_permissions(
     org_role: Optional[str],
     time_tracking_role: Optional[str],
 ) -> dict[str, Any]:
-    """Вычисляет флаги для меню/кнопок; не заменяет проверки на маршрутах."""
+
     r = org_role
     tt = (time_tracking_role or "").strip().lower()
     is_tt_user = tt == "user"

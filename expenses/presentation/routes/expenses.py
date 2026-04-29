@@ -1,4 +1,4 @@
-"""Заявки на расход по ТЗ: /expenses."""
+
 
 import asyncio
 import logging
@@ -62,14 +62,14 @@ from presentation.schemas import (
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
 _log = logging.getLogger(__name__)
-# В том же запросе, не BackgroundTasks — иначе за gateway фоновая задача может не выполниться.
+
 _MODERATION_MAIL_TIMEOUT_SEC = 90.0
 _PARTNER_RECORD_MAIL_TIMEOUT_SEC = 90.0
 
 _ALLOWED_ATTACHMENT_KINDS = frozenset({"payment_document", "payment_receipt"})
-# Документ для оплаты — до «Выплачено» (черновик, доработка, на согласовании, одобрено).
+
 _AUTHOR_PAYMENT_DOC_STATUSES = frozenset({"draft", "revision_required", "pending_approval", "approved"})
-# Квитанция об оплате — в т.ч. до выплаты (фронт грузит сразу после save) и not_reimbursable; не в rejected/closed/withdrawn.
+
 _PAYMENT_RECEIPT_STATUSES = frozenset(
     {"draft", "revision_required", "pending_approval", "approved", "paid", "not_reimbursable"}
 )
@@ -888,7 +888,7 @@ async def pay_expense(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Перевод в «Выплачено» (paid): любой expense_type, возмещаемые и невозмещаемые одобренные заявки."""
+
     check_moderate_role(user)
     repo = ExpenseRepository(session)
     row = await repo.get_by_id(expense_id, load_children=True)
@@ -1060,7 +1060,7 @@ async def download_attachment_file(
     user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Открыть / скачать файл вложения (Bearer). Для ссылок из письма без входа — /email-file с токеном."""
+
     check_view_role(user)
     settings = get_settings()
     repo = ExpenseRepository(session)

@@ -1,4 +1,4 @@
-"""Маршруты пользователей учёта времени (список из БД и синхронизация)."""
+
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 def _position_merged(row_pos: str | None, auth_map: dict[int, str | None], auth_user_id: int) -> str | None:
-    """Должность из БД TT, иначе из auth (если есть)."""
+
     if row_pos is not None and str(row_pos).strip():
         return str(row_pos).strip()
     v = auth_map.get(auth_user_id)
@@ -48,7 +48,7 @@ def _user_response_directory(
     *,
     position: str | None,
 ) -> UserResponse:
-    """Справочник TT: должность в `position`; поле `role` не заполняем (пустая строка) — в UI показывать должности, не роль модуля."""
+
     return UserResponse(
         id=row.auth_user_id,
         email=row.email,
@@ -70,7 +70,7 @@ async def list_users(
     viewer: dict = Depends(require_bearer_user),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> list[UserResponse]:
-    """Возвращает пользователей из БД time_tracking."""
+
     await ensure_can_list_all_tt_users(viewer)
     repo = TimeTrackingUserRepository(session)
     rows = await repo.list_users()
@@ -94,10 +94,7 @@ async def list_partner_users(
     viewer: dict = Depends(require_bearer_user),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> list[UserResponse]:
-    """
-    Справочник для UI: кого можно назначить «партнёром на проекте».
-    Условия совпадают с бэкенд-проверкой при сохранении доступа.
-    """
+
     await ensure_can_list_all_tt_users(viewer)
     repo = TimeTrackingUserRepository(session)
     rows = await repo.list_users()
@@ -162,7 +159,7 @@ async def list_users_in_manager_scope(
     viewer: dict = Depends(require_bearer_user),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> list[UserResponse]:
-    """Список auth_user_id: менеджер + все, у кого есть доступ хотя бы к одному из проектов менеджера."""
+
     await ensure_managed_scope_allowed(viewer, manager_auth_user_id)
     par = UserProjectAccessRepository(session)
     ur = TimeTrackingUserRepository(session)
@@ -240,7 +237,7 @@ async def upsert_user(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> dict:
-    """Добавляет или обновляет пользователя в БД time_tracking. Вызывать из auth или скрипта синхронизации."""
+
     ensure_upsert_user_allowed(viewer, body.auth_user_id)
     repo = TimeTrackingUserRepository(session)
     payload = body.model_dump(exclude_unset=True)
@@ -286,7 +283,7 @@ async def delete_user(
     viewer: dict = Depends(require_bearer_user),
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> dict:
-    """Удаляет пользователя из БД time_tracking по auth_user_id."""
+
     ensure_delete_tt_user_allowed(viewer)
     par = UserProjectAccessRepository(session)
     cpr = ClientProjectRepository(session)

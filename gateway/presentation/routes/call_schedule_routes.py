@@ -1,4 +1,4 @@
-"""Прокси к сервису расписания звонков (Microsoft Graph, общий ящик)."""
+
 
 import httpx
 from fastapi import APIRouter, Request

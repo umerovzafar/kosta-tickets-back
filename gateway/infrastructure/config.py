@@ -3,7 +3,7 @@ from functools import lru_cache
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
-# Дефолты как в docker-compose — пустые значения из Portainer не должны ломать прокси.
+
 _DEFAULT_SERVICE_URLS: dict[str, str] = {
     "auth_service_url": "http://auth:1236",
     "tickets_service_url": "http://tickets:1235",
@@ -20,12 +20,12 @@ _DEFAULT_SERVICE_URLS: dict[str, str] = {
 
 
 class Settings(BaseSettings):
-    """environment: development — в JSON 500 можно добавить trace; production — только requestId."""
+
     environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     database_url: str = ""
     media_path: str = "./media"
     service_name: str = "gateway"
-    # Sentry (опционально): задайте DSN в .env / Portainer
+
     sentry_dsn: str = ""
     gateway_base_url: str = ""
     auth_service_url: str = ""
@@ -42,20 +42,20 @@ class Settings(BaseSettings):
     call_schedule_service_url: str = ""
     frontend_url: str = ""
     admin_frontend_url: str = ""
-    # CORS: широкий regex для частных сетей (RFC1918). В проде обычно отключают.
+
     cors_allow_private_network: bool = False
-    # Общий секрет для backend WebSocket (tickets, notifications); gateway подставляет в query.
+
     ws_internal_secret: str = ""
-    # HSTS только если gateway отдаёт ответы по HTTPS (иначе браузер игнорирует).
+
     security_hsts_enabled: bool = False
-    # Опционально, например: default-src 'none'; frame-ancestors 'none'
+
     security_csp: str = ""
-    # Тот же секрет, что у auth — для проверки OAuth state на /api/v1/auth/azure/callback
+
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
-    # Как у auth — Max-Age HttpOnly-cookie после OAuth (секунды).
+
     jwt_expire_minutes: int = Field(default=1440, validation_alias="JWT_EXPIRE_MINUTES")
-    # Совпадает с auth AUTH_SESSION_COOKIE_NAME — для прокси и verify_bearer с cookie.
+
     auth_session_cookie_name: str = "kl_access_token"
     auth_set_session_cookie: bool = Field(default=False, validation_alias="AUTH_SET_SESSION_COOKIE")
     auth_session_cookie_secure: bool = Field(default=True, validation_alias="AUTH_SESSION_COOKIE_SECURE")

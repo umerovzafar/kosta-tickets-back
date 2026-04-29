@@ -13,7 +13,7 @@ from presentation.startup import ensure_auth_schema, seed_default_roles
 
 _log = logging.getLogger("auth.startup")
 
-# В Docker Swarm / Portainer depends_on не гарантирует порядок — ждём БД (как в expenses).
+
 _STARTUP_RETRIES = 30
 _STARTUP_DELAY_SEC = 2.0
 

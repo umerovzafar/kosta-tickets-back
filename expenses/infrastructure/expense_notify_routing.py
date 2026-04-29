@@ -1,6 +1,4 @@
-"""
-Кому слать письмо о заявке на согласование: EXPENSE_NOTIFY_ROUTING_JSON или fallback EXPENSE_NOTIFY_TO.
-"""
+
 
 from __future__ import annotations
 
@@ -91,19 +89,7 @@ def resolve_expense_notify_recipients(
     project_id: str | None,
     is_reimbursable: bool,
 ) -> list[str]:
-    """
-    Если задан EXPENSE_NOTIFY_ROUTING_JSON — разбор правил (первое совпадение).
-    Иначе — EXPENSE_NOTIFY_TO (через запятую).
 
-    Формат JSON:
-    {
-      "default": ["a@x.com", "b@x.com"],
-      "rules": [
-        { "if": { "departmentId": "uuid-or-code" }, "to": ["moderator@x.com"] },
-        { "if": { "expenseType": "office", "isReimbursable": true }, "to": ["c@x.com"] }
-      ]
-    }
-    """
     raw = (settings.expense_notify_routing_json or "").strip()
     if raw.startswith("\ufeff"):
         raw = raw.lstrip("\ufeff").strip()

@@ -97,14 +97,14 @@ def _user_to_detail(user: User) -> UserDetailResponse:
 
 
 def require_main_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Только Главный администратор."""
+
     if (current_user.role or "").strip() != Role.MAIN_ADMIN.value:
         raise HTTPException(status_code=403, detail="Only Main Administrator can perform this action")
     return current_user
 
 
 def require_assign_user_role(current_user: User = Depends(get_current_user)) -> User:
-    """Назначение роли пользователю: Главный администратор или Администратор."""
+
     role = (current_user.role or "").strip()
     if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value):
         raise HTTPException(
@@ -115,7 +115,7 @@ def require_assign_user_role(current_user: User = Depends(get_current_user)) -> 
 
 
 def require_main_admin_or_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Главный администратор или Администратор — управление доступом к учёту времени и ролями учёта времени."""
+
     role = (current_user.role or "").strip()
     if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value):
         raise HTTPException(status_code=403, detail="Only Main Administrator or Administrator can manage time tracking access")
@@ -123,7 +123,7 @@ def require_main_admin_or_admin(current_user: User = Depends(get_current_user)) 
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Главный администратор, Администратор или Партнер — блокировка и архивация пользователей."""
+
     role = (current_user.role or "").strip()
     if role not in (Role.MAIN_ADMIN.value, Role.ADMIN.value, Role.PARTNER.value):
         raise HTTPException(status_code=403, detail="Only Main Administrator, Administrator or Partner can block or archive users")
@@ -136,13 +136,13 @@ ROLES_CAN_VIEW_USER_DIRECTORY = {
     Role.PARTNER.value,
     Role.IT_DEPARTMENT.value,
     Role.OFFICE_MANAGER.value,
-    # Иногда в БД/выгрузках встречается дефис вместо пробела — считаем тем же доступом.
+
     "Офис-менеджер",
 }
 
 
 def require_view_user_directory(current_user: User = Depends(get_current_user)) -> User:
-    """Список пользователей — админские роли, IT и офис-менеджер (в т.ч. отчёты посещаемости)."""
+
     role = (current_user.role or "").strip()
     if role not in ROLES_CAN_VIEW_USER_DIRECTORY:
         raise HTTPException(
@@ -156,7 +156,7 @@ def require_user_detail_access(
     user_id: int,
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Профиль: свой или те же роли, что для каталога."""
+
     role = (current_user.role or "").strip()
     if current_user.id == user_id:
         return current_user
@@ -177,7 +177,7 @@ async def list_users(
 ):
     uc = ListUsersUseCase(user_repo)
     users = await uc.execute(include_archived=include_archived)
-    return [_user_to_response(u, omit_permissions=True) for u in users]  # без permissions в списке
+    return [_user_to_response(u, omit_permissions=True) for u in users]
 
 
 @router.get("/me", response_model=UserResponse)
@@ -206,7 +206,7 @@ async def set_user_role(
     user_repo: UserRepositoryPort = Depends(get_user_repo),
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
 ):
-    """Назначить роль пользователю. Главный администратор или Администратор; роль «Главный администратор» может назначить только Главный администратор."""
+
     role_to_assign = (body.role or "").strip()
     if role_to_assign == Role.MAIN_ADMIN.value and (current_user.role or "").strip() != Role.MAIN_ADMIN.value:
         raise HTTPException(
@@ -261,7 +261,7 @@ async def set_time_tracking_role(
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
-    """Назначить роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей. Главный администратор или Администратор."""
+
     row = await user_repo.get_by_id(user_id)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -300,7 +300,7 @@ async def set_position(
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
-    """Установить должность пользователя. Главный администратор или Администратор."""
+
     row = await user_repo.get_by_id(user_id)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -326,7 +326,7 @@ async def set_my_desktop_background(
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
-    """Установить или заменить фон рабочего стола текущего пользователя."""
+
     path = (body.path or "").strip() or None
     uc = SetDesktopBackgroundUseCase(user_repo)
     user = await uc.execute(current_user.id, path)
@@ -342,7 +342,7 @@ async def delete_my_desktop_background(
     session: AsyncSession = Depends(get_session),
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
-    """Удалить фон рабочего стола текущего пользователя."""
+
     uc = SetDesktopBackgroundUseCase(user_repo)
     user = await uc.execute(current_user.id, None)
     await session.commit()

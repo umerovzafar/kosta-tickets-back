@@ -1,4 +1,4 @@
-"""Счета клиентам: заголовок, строки, платежи, аудит."""
+
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -10,7 +10,7 @@ from infrastructure.database import Base
 
 
 class InvoiceCounterModel(Base):
-    """Счётчик номеров счетов по году (INV-YYYY-NNNNN)."""
+
 
     __tablename__ = "time_tracking_invoice_counters"
 

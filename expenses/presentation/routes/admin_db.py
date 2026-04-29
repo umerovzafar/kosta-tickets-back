@@ -1,4 +1,4 @@
-"""Администрирование БД модуля расходов (только главный администратор)."""
+
 
 import logging
 
@@ -32,12 +32,7 @@ async def reset_expenses_database(
     body: ResetExpensesDatabaseBody,
     user: dict = Depends(get_current_user),
 ):
-    """
-    Удаляет все таблицы модуля расходов (заявки, вложения, история, аудит, справочники, курсы),
-    создаёт схему заново и выполняет seed. Файлы вложений на диске не удаляются.
 
-    Требуется роль «Главный администратор» и тело `{"confirm": "RESET_EXPENSES_DB"}`.
-    """
     check_main_admin(user)
     settings = get_settings()
     if not settings.expense_allow_database_reset:

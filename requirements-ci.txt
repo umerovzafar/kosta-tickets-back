@@ -1,4 +1,3 @@
-# Зависимости для pytest в CI (дополнительно к requirements-dev.txt)
 -r gateway/requirements.txt
 -r time_tracking/requirements.txt
 -r call_schedule/requirements.txt

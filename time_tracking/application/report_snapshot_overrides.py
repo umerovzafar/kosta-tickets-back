@@ -1,12 +1,11 @@
-"""Правила полей, разрешённых в overrides строки снимка отчёта (не трогать id/ссылки, не менять projectCode)."""
+
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-# Редактируем только «содержимое», не идентификаторы и не код проекта.
-# Ключи после нормализации в camelCase (как в данных отчёта по времени).
+
 OVERRIDE_ALLOWED_KEYS: frozenset[str] = frozenset(
     {
         "workDate",
@@ -30,7 +29,7 @@ OVERRIDE_ALLOWED_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# Явно запрещённые (если придут в camelCase или останутся после нормализации) — 400
+
 OVERRIDE_FORBIDDEN_KEYS: frozenset[str] = frozenset(
     {
         "id",
@@ -53,13 +52,13 @@ OVERRIDE_FORBIDDEN_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# snake_case из плоского экспорта/БД → camelCase для согласованного хранения overrides
+
 _SNAKE_TO_CAMEL: dict[str, str] = {
     "work_date": "workDate",
     "recorded_at": "recordedAt",
     "client_name": "clientName",
     "project_name": "projectName",
-    "project_code": "projectCode",  # в forbidden
+    "project_code": "projectCode",
     "task_name": "taskName",
     "is_billable": "isBillable",
     "task_billable_by_default": "taskBillableByDefault",
@@ -88,11 +87,7 @@ MAX_TOP_LEVEL_KEYS = 32
 
 
 def validate_and_normalize_overrides(raw: dict[str, Any] | None) -> dict[str, Any]:
-    """
-    Проверить тело `overrides` для PATCH строки снимка.
 
-    Возвращает нормализованный flat-dict (camelCase ключи).
-    """
     if raw is None or not raw:
         raise ValueError("Передайте непустой объект overrides")
     if not isinstance(raw, dict):
@@ -120,7 +115,7 @@ def validate_and_normalize_overrides(raw: dict[str, Any] | None) -> dict[str, An
 
 
 def merge_frozen_and_overrides(frozen: dict[str, Any] | None, ovr: dict[str, Any] | None) -> dict[str, Any]:
-    """Плоское слияние: отображаем снимок как `frozen` + правки (overrides не снимают `projectCode` с frozen, если тот в frozen)."""
+
     base: dict[str, Any] = dict(frozen) if isinstance(frozen, dict) else {}
     if ovr and isinstance(ovr, dict):
         base.update(ovr)

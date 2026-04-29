@@ -1,4 +1,4 @@
-"""Auth service startup helpers."""
+
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ _USER_COLUMN_PATCHES: Sequence[str] = (
 
 
 def seed_default_roles(sync_conn) -> None:
-    """Create default roles and grant time tracking permissions."""
+
     result = sync_conn.execute(text("SELECT id FROM roles LIMIT 1"))
     if result.fetchone() is None:
         for role in Role:
@@ -83,6 +83,6 @@ def seed_default_roles(sync_conn) -> None:
 
 
 async def ensure_auth_schema(conn) -> None:
-    """Apply lightweight runtime schema patches needed by auth."""
+
     for statement in _USER_COLUMN_PATCHES:
         await conn.execute(text(statement))

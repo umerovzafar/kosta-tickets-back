@@ -1,4 +1,4 @@
-"""Прокси к сервису time_tracking. Требует аутентификации."""
+
 
 import json
 from decimal import Decimal
@@ -135,7 +135,7 @@ def require_manage_role(user: dict = Depends(get_current_user)):
 
 
 async def _fetch_time_tracking_user_role(auth_user_id: int) -> str | None:
-    """Роль в сервисе time_tracking (user / manager / …)."""
+
     r = await _tt_request("GET", f"/users/{auth_user_id}", timeout=10.0)
     if r.status_code == 404:
         return None
@@ -222,7 +222,7 @@ def _current_auth_user_id(user: dict) -> int:
 
 
 async def _tt_managed_scope_user_ids(manager_auth_user_id: int) -> set[int]:
-    """auth_user_id в зоне менеджера: сам менеджер и пользователи с общими проектами (см. time_tracking)."""
+
     r = await _tt_request("GET", f"/users/managed-scope/{manager_auth_user_id}", timeout=15.0)
     if r.status_code >= 400:
         return {int(manager_auth_user_id)}
@@ -246,7 +246,7 @@ async def _tt_managed_scope_user_ids(manager_auth_user_id: int) -> set[int]:
 
 
 async def require_view_time_tracking_user_directory(user: dict = Depends(get_current_user)):
-    """Список пользователей TT: офис / админы или менеджер учёта времени (ограниченный список — отдельный маршрут)."""
+
     role = (user.get("role") or "").strip()
     if role in _VIEW_ROLES_TIME_ENTRIES:
         return user
@@ -263,7 +263,7 @@ async def require_time_entry_read(
     auth_user_id: int,
     user: dict = Depends(get_current_user),
 ):
-    """Свои записи — любой авторизованный пользователь; чужие — офис / менеджер TT (только общие проекты)."""
+
     if _current_auth_user_id(user) == auth_user_id:
         return user
     role = (user.get("role") or "").strip()
@@ -288,7 +288,7 @@ async def require_time_entry_write(
     auth_user_id: int,
     user: dict = Depends(get_current_user),
 ):
-    """Создание/изменение/удаление своих записей; чужие — админы партнёрства или менеджер TT (общие проекты)."""
+
     if _current_auth_user_id(user) == auth_user_id:
         return user
     role = (user.get("role") or "").strip()
@@ -310,7 +310,7 @@ async def require_time_entry_write(
 
 
 class UserUpsertBody(BaseModel):
-    """Тело синхронизации пользователя. Принимает snake_case и camelCase; в time_tracking уходит JSON с snake_case."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -318,7 +318,7 @@ class UserUpsertBody(BaseModel):
     email: str
     display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
-    position: Optional[str] = None  # должность (auth); для отчётов в time_tracking
+    position: Optional[str] = None
     role: str = ""
     is_blocked: bool = Field(False, alias="isBlocked")
     is_archived: bool = Field(False, alias="isArchived")
@@ -326,7 +326,7 @@ class UserUpsertBody(BaseModel):
 
 
 def _user_payload_bool(user: dict, snake: str, camel: str) -> bool:
-    """Булево из ответа auth (snake_case или camelCase)."""
+
     v = user.get(snake)
     if v is not None:
         return v is True or v == 1 or str(v).lower() == "true"
@@ -337,7 +337,7 @@ def _user_payload_bool(user: dict, snake: str, camel: str) -> bool:
 
 
 def _self_time_tracking_user_upsert_payload(user: dict, body: UserUpsertBody) -> dict:
-    """Тело POST /users для самого пользователя: роль и блокировки из токена, не из тела запроса."""
+
     my_id = _current_auth_user_id(user)
     tt_auth_role = (user.get("time_tracking_role") or user.get("timeTrackingRole") or "").strip()
     if tt_auth_role not in {"user", "manager"}:
@@ -515,7 +515,7 @@ async def proxy_put_project_access(
 
 @router.get("/users/partners")
 async def list_partner_users(user: dict = Depends(require_view_time_tracking_user_directory)):
-    """Партнёры для выбора на фронте (должность position и/или орг-роль)."""
+
     role = (user.get("role") or "").strip()
     if role in _VIEW_ROLES_TIME_ENTRIES:
         return await _tt_json("GET", "/users/partners")
@@ -766,7 +766,7 @@ async def list_projects_for_expenses(
     offset: int = Query(0, ge=0),
     _: dict = Depends(get_current_user),
 ):
-    """Плоский список проектов всех клиентов для выбора в форме расхода."""
+
     params: dict[str, str] = {
         "includeArchived": "true" if include_archived else "false",
     }
@@ -782,7 +782,7 @@ async def list_expense_categories_for_project(
     include_archived: bool = Query(False, alias="includeArchived"),
     _: dict = Depends(get_current_user),
 ):
-    """Категории расходов клиента, к которому привязан проект (для формы расхода)."""
+
     return await _tt_json(
         "GET",
         f"/projects/{project_id}/expense-categories",
@@ -795,7 +795,7 @@ async def list_time_tracking_assignees_for_project(
     project_id: str,
     _: dict = Depends(get_current_user),
 ):
-    """Сотрудники с доступом к проекту — выбор исполнителя при добавлении строки времени (менеджер/отчёт)."""
+
     return await _tt_json("GET", f"/projects/{project_id}/time-tracking-assignees")
 
 
@@ -958,11 +958,6 @@ async def delete_user(
     return await _tt_json("DELETE", f"/users/{auth_user_id}")
 
 
-# ---------------------------------------------------------------------------
-# Reports proxy
-# ---------------------------------------------------------------------------
-
-
 @router.get("/reports/meta")
 async def reports_meta(_: dict = Depends(get_current_user)):
     return await _tt_json("GET", "/reports/meta")
@@ -1103,11 +1098,6 @@ async def reports_project_budget_export(
     if cd := r.headers.get("content-disposition"):
         out_headers["Content-Disposition"] = cd
     return Response(content=r.content, status_code=r.status_code, headers=out_headers)
-
-
-# ---------------------------------------------------------------------------
-# Invoices (биллинг)
-# ---------------------------------------------------------------------------
 
 
 def _invoice_actor_qs(user: dict) -> dict[str, str]:

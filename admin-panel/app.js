@@ -22,19 +22,15 @@
         : '1234';
     var proto = o.protocol;
     var host = o.hostname;
-    // Уже открыт сам gateway (редко) — API на том же origin.
     if (port === gwPort) {
       return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
     }
-    // Контейнер admin-panel (:80→8080/8081) ≠ gateway (:1234): иначе POST /api попадает в nginx статики → 405.
     if (port === '8080' || port === '8081') {
       return proto + '//' + host + ':' + gwPort;
     }
-    // LAN: админка на IP с любым портом (80, 9000, …), gateway на том же хосте :1234.
     if (_isPrivateLanHost(host)) {
       return proto + '//' + host + ':' + gwPort;
     }
-    // Прод: один домен, nginx проксирует /api на gateway.
     return o.origin ? o.origin.replace(/\/$/, '') : 'http://localhost:1234';
   })();
   var TOKEN_KEY = 'admin_access_token';
@@ -113,7 +109,6 @@
     API_BASE: API_BASE,
     ROLES: ROLES,
 
-    /** GET /health на gateway — без токена; для диагностики со страницы входа. */
     pingGatewayHealth: function () {
       var url = (API_BASE || '').replace(/\/$/, '') + '/health';
       return fetch(url, { method: 'GET' }).then(function (r) {
@@ -168,7 +163,6 @@
       });
     },
 
-    /** Только «Главный администратор». Тело: { confirm: 'RESET_EXPENSES_DB' } */
     resetExpensesDatabase: function () {
       return apiFetch('/api/v1/admin/expenses-database/reset', {
         method: 'POST',

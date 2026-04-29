@@ -1,4 +1,4 @@
-"""Интервалы дат для почасовых ставок (включительно); null = «с начала» / «без конца»."""
+
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def intervals_overlap(
     b_start: date | None,
     b_end: date | None,
 ) -> bool:
-    """Пересечение полуинтервалов [start, end] на датах, границы включительно."""
+
     if effective_end(a_end) < effective_start(b_start):
         return False
     if effective_end(b_end) < effective_start(a_start):
@@ -41,7 +41,7 @@ def normalize_currency(currency: str | None) -> str:
 
 
 def filter_rates_by_currency(rows: list[Any], currency: str) -> list[Any]:
-    """Оставить только ставки в указанной валюте (для расчёта сумм в валюте проекта)."""
+
     cur = normalize_currency(currency)
     return [r for r in rows if normalize_currency(getattr(r, "currency", None)) == cur]
 
@@ -53,7 +53,7 @@ def pick_rate_for_date(
     valid_from_attr: str = "valid_from",
     valid_to_attr: str = "valid_to",
 ) -> Any | None:
-    """Возвращает ставку, действующую на дату (пересечение по включительным границам)."""
+
     candidates: list[Any] = []
     for row in rows:
         vf = getattr(row, valid_from_attr, None)
@@ -64,5 +64,5 @@ def pick_rate_for_date(
         return None
     if len(candidates) == 1:
         return candidates[0]
-    # При корректных данных без пересечений — одна запись; иначе детерминированно берём первую по id
+
     return sorted(candidates, key=lambda r: getattr(r, "id", ""))[0]

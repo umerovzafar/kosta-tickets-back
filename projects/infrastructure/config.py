@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    """Настройки сервиса проектов."""
+
 
     database_url: str = ""
     service_name: str = "projects"

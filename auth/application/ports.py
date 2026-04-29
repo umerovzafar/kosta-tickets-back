@@ -6,7 +6,7 @@ from domain.entities import User
 class RoleRepositoryPort(ABC):
     @abstractmethod
     async def list_all(self) -> Sequence[dict]:
-        """Return list of {id, name} for all roles."""
+
         pass
 
     @abstractmethod
@@ -35,12 +35,12 @@ class RoleRepositoryPort(ABC):
 
     @abstractmethod
     async def get_permissions(self, role_id: int) -> dict:
-        """Return {permission_key: bool} for role."""
+
         pass
 
     @abstractmethod
     async def set_permissions(self, role_id: int, permissions: dict) -> None:
-        """Set permissions for role. permissions: {permission_key: bool}."""
+
         pass
 
 
@@ -107,12 +107,12 @@ class UserRepositoryPort(ABC):
 
     @abstractmethod
     async def set_active_session_jti(self, user_id: int, jti: Optional[str]) -> Optional[User]:
-        """Текущая сессия (jti в JWT). None — только для миграции; выход задаёт случайное значение без выдачи токена."""
+
         pass
 
     @abstractmethod
     async def get_local_admin_credentials(self) -> Optional[Tuple[str, str]]:
-        """После bootstrap: (username, bcrypt_hash)."""
+
         pass
 
     @abstractmethod

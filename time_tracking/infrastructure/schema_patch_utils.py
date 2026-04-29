@@ -1,4 +1,4 @@
-"""Helpers for readable, repeatable runtime schema patches."""
+
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ async def add_columns_if_missing(
     for column_definition in column_definitions:
         first = column_definition.strip().split(None, 1)[0]
         validate_sql_identifier(first, kind="column name")
-        # Остаток (тип, NULL/NOT NULL и т.д.) — только из кода репозитория, не из пользователя.
+
         ddl_lines.append(
             f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_definition}"
         )

@@ -1,4 +1,4 @@
-"""Прокси записей времени → сервис time_tracking."""
+
 
 from datetime import date
 from decimal import Decimal
@@ -21,7 +21,7 @@ def _base() -> str:
 
 
 class TimeEntryCreateBody(BaseModel):
-    """Фронт шлёт `durationSeconds` (источник истины). `hours` — для обратной совместимости."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -47,7 +47,7 @@ class TimeEntryPatchBody(BaseModel):
 
 
 class TimeEntryDeleteBody(BaseModel):
-    """Только при снятии с учёта чужой записи (менеджер)."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -128,7 +128,7 @@ async def time_entries_delete_gateway(
 
 
 class ProjectAccessPutBody(BaseModel):
-    """Тело замены списка проектов с доступом (только projectIds; кто выдал — подставляет gateway)."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 

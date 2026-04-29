@@ -26,7 +26,7 @@ class HikvisionBindingUpsertBody(BaseModel):
 class AttendanceExplanationUpsertBody(BaseModel):
     day: str
     camera_employee_no: str
-    status: str  # late | absent
+    status: str
     explanation_text: str
     app_user_id: Optional[int] = None
 
@@ -80,15 +80,7 @@ async def get_attendance(
     camera_ip: Optional[str] = Query(None, description="Ограничить список камер (один IP или несколько через запятую)"),
     session: AsyncSession = Depends(get_session),
 ) -> List[dict]:
-    """
-    Получить события посещения с одной или нескольких камер Hikvision.
 
-    Камеры настраиваются в .env через переменные:
-    HIKVISION_DEVICE_IP, HIKVISION_DEVICE_PORT, HIKVISION_DEVICE_USER, HIKVISION_DEVICE_PASSWORD,
-    HIKVISION_REQUEST_TIMEOUT, HIKVISION_DEVICE_IPS (список IP через запятую).
-
-    Фильтрация выполняется по полям person_id, name, department, checkpoint, attendance_status.
-    """
     settings = get_settings()
     try:
         hosts = resolve_hikvision_hosts(settings, camera_ip)
@@ -142,16 +134,7 @@ async def get_users(
     employee_no: Optional[str] = Query(None, description="Фильтр по employeeNo/табельному номеру (точное совпадение)"),
     camera_ip: Optional[str] = Query(None, description="Ограничить список камер (один IP или несколько через запятую)"),
 ) -> List[dict]:
-    """
-    Получить список пользователей (persons) с одной или нескольких камер Hikvision.
 
-    Камеры настраиваются в .env через переменные:
-    HIKVISION_DEVICE_IP, HIKVISION_DEVICE_PORT, HIKVISION_DEVICE_USER, HIKVISION_DEVICE_PASSWORD,
-    HIKVISION_REQUEST_TIMEOUT, HIKVISION_DEVICE_IPS (список IP через запятую).
-
-    Возвращает список по устройствам:
-    [{ camera_ip, users: [...], error }]
-    """
     settings = get_settings()
     try:
         hosts = resolve_hikvision_hosts(settings, camera_ip)
@@ -202,7 +185,7 @@ async def upsert_mapping(
     if not employee_no:
         raise HTTPException(status_code=400, detail="camera_employee_no is required")
 
-    # Удаляем старую привязку этого app_user_id, чтобы соответствие было 1:1.
+
     await session.execute(
         delete(HikvisionUserBindingModel).where(
             HikvisionUserBindingModel.app_user_id == body.app_user_id,

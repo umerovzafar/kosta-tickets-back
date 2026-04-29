@@ -18,7 +18,7 @@ class TimeEntryRepository:
         self._session = session
 
     def _aggregate_triplet(self):
-        # Фактические часы (duration_seconds уже кратно минуте — никакого доп. округления).
+
         return (
             func.coalesce(
                 func.sum(case((TimeEntryModel.is_billable.is_(True), TimeEntryModel.hours), else_=0)),
@@ -171,7 +171,7 @@ class TimeEntryRepository:
                 TimeEntryModel.work_date >= date_from,
                 TimeEntryModel.work_date <= date_to,
             )
-            # Строго хронологически: дата работы → момент создания записи → id (стабильный порядок).
+
             .order_by(
                 TimeEntryModel.work_date.asc(),
                 TimeEntryModel.created_at.asc(),
@@ -195,7 +195,7 @@ class TimeEntryRepository:
         duration_seconds: int | None,
         hours: Decimal | None,
     ) -> int:
-        """См. `application.time_rounding.resolve_duration_for_entry`."""
+
         return resolve_duration_for_entry(duration_seconds, hours)
 
     async def create(
@@ -220,7 +220,7 @@ class TimeEntryRepository:
             work_date=work_date,
             duration_seconds=sec,
             hours=h,
-            # rounded_hours сохраняется для обратной совместимости схемы: всегда = hours.
+
             rounded_hours=h,
             is_billable=is_billable,
             project_id=project_id,
@@ -340,7 +340,7 @@ class TimeEntryRepository:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> list[TimeEntryModel]:
-        """Все записи времени по проекту в диапазоне дат (для дашборда: суммы, прогресс)."""
+
         q = (
             select(TimeEntryModel)
             .where(and_(*self._project_entry_conditions(project_id, date_from, date_to)))
@@ -375,7 +375,7 @@ class TimeEntryRepository:
         voided_by_auth_user_id: int,
         void_kind: str,
     ) -> TimeEntryModel:
-        """Снятие с учёта: строка остаётся в БД (для отображения сотруднику), из сумм исключается."""
+
         row = await self.get_by_id(auth_user_id, entry_id)
         if not row:
             raise LookupError("not_found")

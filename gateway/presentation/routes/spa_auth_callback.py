@@ -1,10 +1,4 @@
-"""
-Если auth после Azure редиректит на origin gateway (API), а SPA на другом поддомене —
-браузер запрашивает GET /auth/callback без hash в теле запроса, но hash есть в JS.
 
-Отдаём HTML: либо перенос на FRONTEND_URL/auth/callback + hash/query, либо (тот же хост)
-сохранение токена в localStorage и переход на /home.
-"""
 
 import json
 from urllib.parse import urlparse
@@ -37,7 +31,7 @@ async def spa_auth_callback_bridge(request: Request) -> HTMLResponse:
     fe_host_json = json.dumps(fe_host)
     req_host_json = json.dumps(req_host)
 
-    # Токен в #access_token=… или ?access_token=… — как в AuthCallbackPage на фронте
+
     html = f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>Вход</title></head>
 <body>

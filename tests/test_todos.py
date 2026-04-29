@@ -1,4 +1,4 @@
-"""Тесты Todos API."""
+
 
 import pytest
 
@@ -7,13 +7,13 @@ from service_path import ensure_service_in_path
 
 @pytest.mark.skip(reason="Требует PostgreSQL")
 async def test_todos_health(todos_client):
-    """Health endpoint."""
+
     r = await todos_client.get("/health")
     assert r.status_code in (200, 503)
 
 
 def test_calendar_oauth_state_is_signed_and_rejects_tampering(monkeypatch):
-    """OAuth state должен быть подписан и ломаться при подмене."""
+
     monkeypatch.setenv("MICROSOFT_OAUTH_STATE_SECRET", "todos-state-secret-for-tests")
     monkeypatch.setenv("MICROSOFT_CLIENT_SECRET", "")
     ensure_service_in_path("todos")

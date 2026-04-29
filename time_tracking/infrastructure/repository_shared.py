@@ -4,12 +4,12 @@ from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-# Согласовано с NUMERIC(16,6) у time_tracking_entries.hours (~0.04 с в долях часа).
+
 _ENTRY_HOURS_QUANT = Decimal("0.000001")
 
 
 def normalize_time_entry_hours(hours: Decimal) -> Decimal:
-    """Округление длительности до 6 знаков после запятой в часах (например 10 с ≈ 0.002778 ч)."""
+
     q = hours.quantize(_ENTRY_HOURS_QUANT, rounding=ROUND_HALF_UP)
     if q <= 0:
         raise ValueError("Количество часов должно быть больше нуля")

@@ -75,7 +75,6 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# Колонки по умолчанию как на макете (заголовок + цвет точки / акцента)
 _DEFAULT_KANBAN_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Сегодня", "#7c3aed"),
     ("На этой неделе", "#2563eb"),
@@ -84,7 +83,7 @@ _DEFAULT_KANBAN_COLUMNS: tuple[tuple[str, str], ...] = (
 
 
 class KanbanRepository:
-    """Доска, колонки и карточки: одна доска на пользователя."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -142,7 +141,7 @@ class KanbanRepository:
         return cards
 
     async def _cards_for_column_all(self, column_id: int) -> list[TodoCardModel]:
-        """Все карточки колонки, включая архивные (для пересчёта position при move/delete)."""
+
         r = await self._session.execute(
             select(TodoCardModel).where(TodoCardModel.column_id == column_id)
         )
@@ -295,7 +294,7 @@ class KanbanRepository:
         self,
         card_ids: list[int],
     ) -> dict[int, list[tuple[int, str, str]]]:
-        """card_id -> [(label_id, title, color), ...]."""
+
         if not card_ids:
             return {}
         r = await self._session.execute(

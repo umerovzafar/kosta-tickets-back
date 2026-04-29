@@ -1,18 +1,4 @@
-"""
-Удаление тестовых заявок на расход: строки, у которых текст совпадает с префиксом
-(по умолчанию в поле description — «[mock]…», как в демо-данных).
 
-В БД заявка удаляется вместе с вложениями, историей статусов и аудитом (CASCADE).
-Дополнительно удаляется каталог файлов: media_path/expenses/<id>/
-
-Ожидается отдельная БД модуля расходов (см. EXPENSES_DATABASE_URL / DATABASE_URL в .env).
-
-Запуск (из корня пакета expenses, рядом с main.py / infrastructure/):
-  export DATABASE_URL=postgresql+asyncpg://...
-  # или: export EXPENSES_DATABASE_URL=...
-  python scripts/delete_mock_expenses.py --dry-run
-  python scripts/delete_mock_expenses.py --execute
-"""
 from __future__ import annotations
 
 import argparse
@@ -23,11 +9,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import delete, or_, select  # noqa: E402
+from sqlalchemy import delete, or_, select
 
-from infrastructure.config import get_settings  # noqa: E402
-from infrastructure.database import async_session_factory  # noqa: E402
-from infrastructure.models import ExpenseRequestModel  # noqa: E402
+from infrastructure.config import get_settings
+from infrastructure.database import async_session_factory
+from infrastructure.models import ExpenseRequestModel
 
 
 def _where_prefix(prefix: str, *, match_all_text: bool):

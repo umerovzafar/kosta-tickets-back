@@ -1,4 +1,4 @@
-"""Правила overrides для строк снимка отчёта."""
+
 
 import pytest
 
@@ -46,7 +46,7 @@ def test_merge() -> None:
 
 
 def test_allowlist_covers_intended_user_fields() -> None:
-    # Явно: projectCode / id-поля не в allow
+
     assert "projectCode" not in OVERRIDE_ALLOWED_KEYS
     assert "timeEntryId" not in OVERRIDE_ALLOWED_KEYS
     assert "note" in OVERRIDE_ALLOWED_KEYS

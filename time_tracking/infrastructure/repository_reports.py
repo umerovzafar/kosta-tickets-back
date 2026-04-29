@@ -1,4 +1,4 @@
-"""Репозитории для saved views и snapshots отчётов."""
+
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""CRUD ролей и прав (в т.ч. time_tracking). Создание/изменение/удаление — только для Администратора."""
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,7 +34,7 @@ def get_role_repo(session: AsyncSession = Depends(get_session)) -> RoleRepositor
 
 
 def require_main_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Только Главный администратор может управлять ролями и правами."""
+
     if (current_user.role or "").strip() != Role.MAIN_ADMIN.value:
         raise HTTPException(status_code=403, detail="Only Main Administrator can manage roles")
     return current_user
@@ -46,7 +46,7 @@ async def list_roles(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(get_current_user),
 ):
-    """Список всех ролей (любой авторизованный)."""
+
     uc = ListRolesUseCase(role_repo)
     roles = await uc.execute()
     return [RoleResponse(id=r["id"], name=r["name"]) for r in roles]
@@ -59,7 +59,7 @@ async def create_role(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(require_main_admin),
 ):
-    """Создать новую роль. Только Администратор."""
+
     uc = CreateRoleUseCase(role_repo)
     role = await uc.execute(body.name)
     await session.commit()
@@ -77,7 +77,7 @@ async def get_role(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(get_current_user),
 ):
-    """Получить роль по id."""
+
     role = await role_repo.get_by_id(role_id)
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
@@ -92,7 +92,7 @@ async def update_role(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(require_main_admin),
 ):
-    """Изменить название роли. Только Администратор."""
+
     uc = UpdateRoleUseCase(role_repo)
     role = await uc.execute(role_id, body.name)
     await session.commit()
@@ -111,7 +111,7 @@ async def delete_role(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(require_main_admin),
 ):
-    """Удалить роль. Нельзя удалить, если есть пользователи с этой ролью. Только Администратор."""
+
     uc = DeleteRoleUseCase(role_repo)
     ok, reason = await uc.execute(role_id)
     await session.commit()
@@ -130,7 +130,7 @@ async def get_role_permissions(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(get_current_user),
 ):
-    """Права роли (например time_tracking: true)."""
+
     uc = GetRolePermissionsUseCase(role_repo)
     perms = await uc.execute(role_id)
     if perms is None:
@@ -146,7 +146,7 @@ async def set_role_permissions(
     role_repo: RoleRepositoryPort = Depends(get_role_repo),
     current_user: User = Depends(require_main_admin),
 ):
-    """Установить права роли. Тело: {"permissions": {"time_tracking": true}}. Только Администратор."""
+
     uc = SetRolePermissionsUseCase(role_repo)
     ok = await uc.execute(role_id, body.permissions or {})
     await session.commit()

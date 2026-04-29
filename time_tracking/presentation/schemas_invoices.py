@@ -1,4 +1,4 @@
-"""Схемы API счетов (camelCase для JSON)."""
+
 
 from __future__ import annotations
 

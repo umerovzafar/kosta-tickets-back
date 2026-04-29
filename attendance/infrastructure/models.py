@@ -33,7 +33,7 @@ class AttendanceExplanationModel(Base):
     day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     app_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     camera_employee_no: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # late | absent
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     explanation_text: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     explanation_file_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

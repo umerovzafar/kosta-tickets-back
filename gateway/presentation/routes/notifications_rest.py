@@ -38,7 +38,7 @@ async def list_notifications(
     include_archived: bool = False,
     user: dict = Depends(get_current_user),
 ):
-    """Список уведомлений (любой авторизованный)."""
+
     url = _notifications_url("")
     params = {"skip": skip, "limit": limit, "include_archived": include_archived}
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -53,7 +53,7 @@ async def get_notification(
     notification_uuid: str,
     user: dict = Depends(get_current_user),
 ):
-    """Получить уведомление по uuid."""
+
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(url, headers=merge_upstream_headers())
@@ -69,7 +69,7 @@ async def create_notification(
     body: dict,
     user: dict = Depends(require_write_role),
 ):
-    """Создать уведомление (Партнер, IT, Офис менеджер)."""
+
     url = _notifications_url("")
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.post(url, json=body, headers=merge_upstream_headers())
@@ -84,7 +84,7 @@ async def update_notification(
     body: dict,
     user: dict = Depends(require_write_role),
 ):
-    """Обновить уведомление."""
+
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.patch(url, json=body, headers=merge_upstream_headers())
@@ -101,7 +101,7 @@ async def archive_notification(
     body: dict,
     user: dict = Depends(require_write_role),
 ):
-    """Архивировать или радархивировать уведомление."""
+
     url = _notifications_url(f"/{notification_uuid}/archive")
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.post(url, json=body, headers=merge_upstream_headers())
@@ -117,7 +117,7 @@ async def delete_notification(
     notification_uuid: str,
     user: dict = Depends(require_write_role),
 ):
-    """Удалить уведомление."""
+
     url = _notifications_url(f"/{notification_uuid}")
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.delete(url, headers=merge_upstream_headers())

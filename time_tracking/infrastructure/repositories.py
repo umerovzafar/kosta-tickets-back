@@ -1,4 +1,4 @@
-"""Compatibility facade for split repository modules."""
+
 
 from infrastructure.repository_access import UserProjectAccessRepository
 from infrastructure.repository_clients import (

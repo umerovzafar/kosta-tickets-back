@@ -1,8 +1,4 @@
-"""Project Budget Report Service — отчёт по бюджетам проектов.
 
-Бюджет может быть: только часы, только сумма, или **одновременно** лимит часов и сумма
-(«пакет»: услуга до N часов и не более M в валюте проекта).
-"""
 
 from __future__ import annotations
 
@@ -24,9 +20,6 @@ from application.report_builder import (
 )
 from infrastructure.models import TimeEntryModel, TimeManagerClientProjectModel
 from application.services.reports._base import _d, _hours, _money, _ZERO, build_response
-
-# Часы «потрачено» — сумма всех списанных часов по проекту (как в отчёте).
-# Сумма — только billable по ставкам.
 
 
 def _spent_hours_project(
@@ -59,7 +52,7 @@ async def get_budget_report(
     clients_map = await _load_clients_map(session)
     users_map = await _load_users_map(session)
 
-    # Filter projects
+
     target_projects = list(projects_map.values())
     if project_ids:
         pids_set = set(project_ids)
@@ -83,7 +76,7 @@ async def get_budget_report(
             date_to=date_to,
         )
 
-    # Load time entries to calculate budget_spent
+
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, target_pids, client_ids, True,
     )
@@ -166,7 +159,7 @@ async def get_budget_report(
             row["budget"] = _money(lim_m)
             row["budget_spent"] = _money(spent_m)
             row["budget_remaining"] = _money(rem_m)
-        else:  # hours_and_money
+        else:
             row["has_budget"] = (lim_h > _ZERO) or (lim_m > _ZERO)
             row["budget"] = None
             row["budget_spent"] = None
@@ -211,7 +204,7 @@ def _build_users_list(
     user_buckets: dict,
     users_map: dict,
 ) -> list[dict[str, Any]]:
-    """Список пользователей, логировавших время по проекту."""
+
     result = []
     for uid, ubkt in user_buckets.items():
         u = users_map.get(uid)

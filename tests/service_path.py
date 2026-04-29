@@ -1,4 +1,4 @@
-"""Изоляция top-level `application` / `infrastructure` / `presentation` при тестах."""
+
 
 import sys
 from pathlib import Path
@@ -22,7 +22,7 @@ _SERVICE_DIR_NAMES = (
 
 
 def ensure_service_in_path(service: str) -> None:
-    """Убрать из sys.path пути к сервисам с одинаковыми top-level пакетами, затем вставить один целевой."""
+
     service_paths = {str((_ROOT / s).resolve()) for s in _SERVICE_DIR_NAMES if (_ROOT / s).is_dir()}
     for p in list(sys.path):
         try:
@@ -43,5 +43,4 @@ def ensure_service_in_path(service: str) -> None:
         del sys.modules[k]
 
 
-# совместимость с conftest
 _ensure_service_in_path = ensure_service_in_path

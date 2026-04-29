@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     azure_tenant_id: str = ""
     azure_client_id: str = ""
     azure_client_secret: str = ""
-    # И AUTH_REDIRECT_URI, и AZURE_REDIRECT_URI (как в .env.example и docker-compose)
+
     auth_redirect_uri: str = Field(
         default="",
         validation_alias=AliasChoices("AUTH_REDIRECT_URI", "AZURE_REDIRECT_URI"),
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     )
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
-    # HttpOnly-cookie с JWT (имя должно совпадать с gateway AUTH_SESSION_COOKIE_NAME). Один сайт с API — иначе cookie не уйдёт.
+
     auth_session_cookie_name: str = Field(default="kl_access_token", validation_alias=AliasChoices("AUTH_SESSION_COOKIE_NAME"))
     auth_set_session_cookie: bool = Field(
         default=False,
@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     admin_frontend_url: str = ""
     admin_username: str = "admin"
     admin_password: str = ""
-    # Одноразовая первичная настройка: POST /auth/admin-bootstrap с телом {"secret": "..."}.
-    # После генерации пароль хранится в БД (bcrypt); env ADMIN_PASSWORD для входа не нужен.
+
+
     admin_bootstrap_secret: str = Field(
         default="",
         validation_alias=AliasChoices("ADMIN_BOOTSTRAP_SECRET", "admin_bootstrap_secret"),
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
 _log = logging.getLogger("auth.config")
 
-# Минимум длины строки (не энтропия). Раньше было 32 — старые стеки с change-me-in-production (23) не стартовали.
+
 _MIN_JWT_SECRET_LEN = 16
 _RECOMMENDED_JWT_SECRET_LEN = 32
 
@@ -66,7 +66,7 @@ def get_settings() -> Settings:
 
 
 def validate_production_secrets(settings: Settings) -> None:
-    """Проверка обязательных секретов при старте. Вызывает RuntimeError при небезопасной конфигурации."""
+
     jwt_secret = (settings.jwt_secret or "").strip()
     if not jwt_secret:
         raise RuntimeError(

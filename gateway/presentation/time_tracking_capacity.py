@@ -1,4 +1,4 @@
-"""Чтение нормы часов из сервиса time_tracking (обогащение профиля в gateway)."""
+
 
 from typing import Any, Optional
 
@@ -16,7 +16,7 @@ async def fetch_weekly_capacity_hours(
     auth_user_id: int,
     authorization: Optional[str] = None,
 ) -> Optional[float]:
-    """Возвращает weekly_capacity_hours или None, если пользователя нет в TT или сервис недоступен."""
+
     base = _time_tracking_base()
     if not base:
         return None

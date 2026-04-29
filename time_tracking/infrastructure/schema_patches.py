@@ -1,4 +1,4 @@
-"""Дополнение схемы для существующих БД (create_all не добавляет новые колонки в уже созданные таблицы)."""
+
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -28,7 +28,7 @@ _PROJECT_BILLING_COLUMN_DEFINITIONS = (
 
 
 async def apply_team_workload_schema_patch(conn: AsyncConnection) -> None:
-    """Соответствует scripts/add_time_tracking_team_workload.sql — идемпотентно."""
+
     await conn.execute(
         text(
             """
@@ -73,7 +73,7 @@ async def apply_team_workload_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_time_manager_clients_schema_patch(conn: AsyncConnection) -> None:
-    """Таблица клиентов time manager — идемпотентно."""
+
     await conn.execute(
         text(
             """
@@ -116,7 +116,7 @@ async def apply_time_tracking_clients_is_archived_patch(conn: AsyncConnection) -
 
 
 async def apply_time_tracking_clients_contact_columns_patch(conn: AsyncConnection) -> None:
-    """Телефон/почта клиента и основное контактное лицо."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_clients",
@@ -125,7 +125,7 @@ async def apply_time_tracking_clients_contact_columns_patch(conn: AsyncConnectio
 
 
 async def apply_client_extra_contacts_schema_patch(conn: AsyncConnection) -> None:
-    """Дополнительные контактные лица клиента."""
+
     await conn.execute(
         text(
             """
@@ -153,7 +153,7 @@ async def apply_client_extra_contacts_schema_patch(conn: AsyncConnection) -> Non
 
 
 async def apply_client_tasks_schema_patch(conn: AsyncConnection) -> None:
-    """Задачи по клиентам — идемпотентно."""
+
     await conn.execute(
         text(
             """
@@ -182,7 +182,7 @@ async def apply_client_tasks_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_client_expense_categories_schema_patch(conn: AsyncConnection) -> None:
-    """Категории расходов по клиентам — идемпотентно (PostgreSQL)."""
+
     await conn.execute(
         text(
             """
@@ -219,7 +219,7 @@ async def apply_client_expense_categories_schema_patch(conn: AsyncConnection) ->
 
 
 async def apply_client_projects_schema_patch(conn: AsyncConnection) -> None:
-    """Проекты по клиентам time manager — идемпотентно (PostgreSQL)."""
+
     await conn.execute(
         text(
             """
@@ -271,7 +271,7 @@ async def apply_client_projects_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_client_projects_is_archived_patch(conn: AsyncConnection) -> None:
-    """Флаг архива проекта (скрытие из списков по умолчанию)."""
+
     await conn.execute(
         text(
             """
@@ -283,7 +283,7 @@ async def apply_client_projects_is_archived_patch(conn: AsyncConnection) -> None
 
 
 async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> None:
-    """Добавляет колонки биллинга/бюджета к уже существующей таблице проектов."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_client_projects",
@@ -292,7 +292,7 @@ async def apply_client_projects_billing_columns_patch(conn: AsyncConnection) -> 
 
 
 async def apply_user_project_access_patch(conn: AsyncConnection) -> None:
-    """Доступ пользователей к проектам для списания времени (asyncpg — по одной команде)."""
+
     await conn.execute(
         text(
             """
@@ -326,7 +326,7 @@ async def apply_user_project_access_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_time_entries_task_id_schema_patch(conn: AsyncConnection) -> None:
-    """Связь записи времени с задачей клиента (оплачиваемая / неоплачиваемая по справочнику)."""
+
     await conn.execute(
         text(
             """
@@ -347,7 +347,7 @@ async def apply_time_entries_task_id_schema_patch(conn: AsyncConnection) -> None
 
 
 async def apply_reports_schema_patch(conn: AsyncConnection) -> None:
-    """Таблицы модуля отчётов: saved views, snapshots, snapshot rows."""
+
     await conn.execute(
         text(
             """
@@ -408,7 +408,7 @@ async def apply_reports_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_invoices_schema_patch(conn: AsyncConnection) -> None:
-    """Счета, строки, платежи, аудит — идемпотентно."""
+
     await conn.execute(
         text(
             """
@@ -536,7 +536,7 @@ async def apply_invoices_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> None:
-    """Точность поля hours: NUMERIC(12,2) → NUMERIC(16,6), чтобы сохранялись секунды в долях часа."""
+
     await conn.execute(
         text(
             """
@@ -548,7 +548,7 @@ async def apply_time_entries_hours_precision_patch(conn: AsyncConnection) -> Non
 
 
 async def apply_project_currency_patch(conn: AsyncConnection) -> None:
-    """Добавить поле currency в таблицу проектов (по умолчанию USD)."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_client_projects",
@@ -557,11 +557,7 @@ async def apply_project_currency_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) -> None:
-    """Добавить duration_seconds (источник истины, всегда кратно 60 после ренормализации) и rounded_hours.
 
-    Поле rounded_hours оставлено в схеме ради обратной совместимости и хранит ту же величину, что и hours.
-    Никакого шагового округления на стороне Postgres больше не применяется.
-    """
     await conn.execute(
         text(
             """
@@ -570,7 +566,7 @@ async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) ->
             """
         )
     )
-    # Бэкфилл из hours (NUMERIC(16,6)) → секунды (integer). ROUND HALF_UP на стороне Postgres (ROUND halves away from zero).
+
     await conn.execute(
         text(
             """
@@ -616,7 +612,7 @@ async def apply_time_entries_seconds_and_rounded_patch(conn: AsyncConnection) ->
 
 
 async def apply_time_entries_external_reference_patch(conn: AsyncConnection) -> None:
-    """Внешняя ссылка (тикет/URL) на строку учёта времени — для отчётов и сверок."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_entries",
@@ -625,7 +621,7 @@ async def apply_time_entries_external_reference_patch(conn: AsyncConnection) -> 
 
 
 async def apply_time_entries_manager_void_patch(conn: AsyncConnection) -> None:
-    """Снятие записи с учёта менеджером без физического удаления (видимость сотруднику)."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_entries",
@@ -638,7 +634,7 @@ async def apply_time_entries_manager_void_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
-    """Недельные сдачи учёта времени (блокировка прошлых дней) + reports_to для уведомлений."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_users",
@@ -673,7 +669,7 @@ async def apply_weekly_submissions_schema_patch(conn: AsyncConnection) -> None:
 
 
 async def apply_client_projects_project_billable_amount_patch(conn: AsyncConnection) -> None:
-    """Фиксированная оплачиваемая ставка по проекту (копируется на сотрудников с доступом)."""
+
     await add_columns_if_missing(
         conn,
         "time_tracking_client_projects",
@@ -682,7 +678,7 @@ async def apply_client_projects_project_billable_amount_patch(conn: AsyncConnect
 
 
 async def apply_hourly_rates_applies_to_project_patch(conn: AsyncConnection) -> None:
-    """Ставка billable, привязанная к конкретному проекту (ставка «по проекту» на сотрудника)."""
+
     await conn.execute(
         text(
             """

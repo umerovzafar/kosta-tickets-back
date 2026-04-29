@@ -1,4 +1,4 @@
-"""Liveness/readiness и минимальные метрики для оркестраторов (K8s, Docker Swarm)."""
+
 
 from __future__ import annotations
 

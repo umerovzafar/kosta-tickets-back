@@ -1,7 +1,4 @@
-"""
-Парсинг Excel-графика отсутствий и запись в БД (синхронный Session).
-Удаляются только записи schedule_employees с указанным year, затем вставляются новые.
-"""
+
 
 from __future__ import annotations
 
@@ -61,11 +58,7 @@ def import_schedule_from_workbook(
     sheet_name: str | None,
     source: Path | bytes,
 ) -> tuple[int, int]:
-    """
-    Импорт из пути к файлу или сырых байт .xlsx.
-    Удаляет сотрудников и их дни только для данного year.
-    Возвращает (число сотрудников, число отмеченных дней).
-    """
+
     if isinstance(source, Path):
         wb = load_workbook(source, data_only=True, read_only=False)
     else:

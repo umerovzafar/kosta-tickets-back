@@ -1,4 +1,4 @@
-"""Разбор подписанного OAuth state (тот же формат, что в auth)."""
+
 
 from typing import Literal, Optional
 

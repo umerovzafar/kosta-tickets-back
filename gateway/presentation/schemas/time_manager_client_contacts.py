@@ -1,4 +1,4 @@
-"""Доп. контакты клиента time manager (gateway)."""
+
 
 from typing import Optional
 

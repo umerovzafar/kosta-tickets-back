@@ -1,4 +1,4 @@
-"""Модели БД для модуля отчётов time_tracking."""
+
 
 from datetime import datetime
 
@@ -9,7 +9,7 @@ from infrastructure.database import Base
 
 
 class ReportSavedViewModel(Base):
-    """Сохранённый шаблон фильтров отчёта (saved view)."""
+
 
     __tablename__ = "tt_report_saved_views"
 
@@ -22,7 +22,7 @@ class ReportSavedViewModel(Base):
 
 
 class ReportSnapshotModel(Base):
-    """Замороженный снимок отчёта (финальный отчёт)."""
+
 
     __tablename__ = "tt_report_snapshots"
 
@@ -45,7 +45,7 @@ class ReportSnapshotModel(Base):
 
 
 class ReportSnapshotRowModel(Base):
-    """Строка замороженного снимка (копия данных + редактируемые поля)."""
+
 
     __tablename__ = "tt_report_snapshot_rows"
 

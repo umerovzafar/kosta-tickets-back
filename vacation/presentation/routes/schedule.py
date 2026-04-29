@@ -124,10 +124,7 @@ async def import_excel_upload(
     file: UploadFile = File(...),
     sheet: str | None = Form(None),
 ):
-    """
-    Загрузка .xlsx: парсинг и замена в БД данных только за указанный `year`.
-    Даты в колонках файла должны быть того же календарного года, что и `year`.
-    """
+
     settings = get_settings()
     db_url = resolve_database_url(settings).strip()
     if not db_url:
@@ -140,7 +137,7 @@ async def import_excel_upload(
     content = await file.read()
     if len(content) > MAX_IMPORT_FILE_BYTES:
         raise HTTPException(status_code=400, detail="Файл слишком большой (максимум 20 МБ)")
-    # .xlsx/.xlsm — ZIP (OOXML); без этого можно подсунуть произвольное расширение.
+
     if len(content) < 4 or content[:4] != b"PK\x03\x04":
         raise HTTPException(
             status_code=400,
@@ -164,16 +161,13 @@ async def import_excel_upload(
 
 @router.get("/kind-codes", response_model=dict[str, str])
 async def kind_codes() -> dict[str, str]:
-    """Расшифровка kind_code из легенды графика (ежегодный отпуск, болезнь, …)."""
+
     return {str(k): v for k, v in KIND_LABELS.items()}
 
 
 @router.get("/kind-legend", response_model=list[KindLegendEntry])
 async def kind_legend() -> list[KindLegendEntry]:
-    """
-    Типы отсутствий с русскими подписями и цветами для легенды/таблицы (как в макете).
-    Фронт должен использовать эти значения для единообразия с Excel-графиком.
-    """
+
     return list(KIND_LEGEND_ENTRIES)
 
 

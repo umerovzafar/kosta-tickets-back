@@ -1,8 +1,8 @@
-"""Бизнес-правила расчётов и статусов заявок на расход (ТЗ TZ-expenses-backend.md)."""
+
 
 from decimal import Decimal, ROUND_HALF_UP
 
-# §5.1
+
 ALLOWED_STATUSES = frozenset(
     {
         "draft",
@@ -17,7 +17,7 @@ ALLOWED_STATUSES = frozenset(
     }
 )
 
-# §4 — коды типов расходов
+
 ALLOWED_EXPENSE_TYPES = frozenset(
     {
         "transport",
@@ -32,7 +32,7 @@ ALLOWED_EXPENSE_TYPES = frozenset(
     }
 )
 
-# Подтипы для expenseType=partner_expense (фронт ExpensesFormPanel)
+
 PARTNER_EXPENSE_SUBTYPES = frozenset(
     {
         "partner_fuel",
@@ -43,16 +43,16 @@ PARTNER_EXPENSE_SUBTYPES = frozenset(
     }
 )
 
-# Старые коды из ранних версий — приводим к актуальным при записи
+
 _EXPENSE_TYPE_ALIASES = {"meals": "food", "office": "services"}
 
-# §3.2 paymentMethod
+
 ALLOWED_PAYMENT_METHODS = frozenset({"cash", "card", "transfer", "other_payment"})
 
-# Реестр «утверждённых» (§10); вкладка «Расходы» в Учёте времени: view=timeTracking / scope=registry
+
 REGISTRY_STATUSES = frozenset({"approved", "paid", "closed"})
 
-# Отчёты time_tracking / дашборд: всё, что не черновик и не отменено (иначе отчёт «Расходы» пуст при очереди на согласование)
+
 REPORT_INCLUSION_STATUSES = frozenset(
     {
         "pending_approval",
@@ -66,7 +66,7 @@ REPORT_INCLUSION_STATUSES = frozenset(
 
 
 def calc_equivalent(amount_uzs: Decimal, exchange_rate: Decimal) -> Decimal:
-    """equivalentAmount в USD: UZS / (UZS за 1 USD)."""
+
     if exchange_rate <= 0:
         raise ValueError("exchange_rate must be positive")
     return (amount_uzs / exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -87,7 +87,7 @@ def is_partner_expense(expense_type: str | None) -> bool:
 
 
 def validate_expense_subtype_rules(expense_type: str, expense_subtype: str | None) -> None:
-    """Для partner_expense обязателен subtype из whitelist."""
+
     if (expense_type or "").strip() != "partner_expense":
         return
     s = (expense_subtype or "").strip()
@@ -144,18 +144,16 @@ def validate_submit_fields(
         raise ValueError("isReimbursable is required")
     if expense_amount_limit_uzs is not None and amount_uzs > expense_amount_limit_uzs:
         raise ValueError("amountUzs exceeds allowed limit; additional approval may be required")
-    # Расход партнёра — только учёт в системе, без цепочки согласования и без требований к вложениям/проекту.
+
     if is_partner_expense(expense_type):
         return
     if is_reimbursable:
-        # projectId не обязателен: не все возмещаемые расходы ведутся по проекту
-        # (транспорт, общекомандные, «за клиента» без привязки к matter и т.д.).
-        # Отчёты time tracking по проекту учитывают только строки с непустым project_id.
-        # Документ для оплаты при отправке; квитанция может быть добавлена до/после оплаты (см. политику вложений).
+
+
         if payment_document_count >= 1:
             pass
         elif attachment_count >= 1 and payment_document_count == 0 and payment_receipt_count == 0:
-            # Старые заявки: вложения без attachmentKind
+
             pass
         else:
             raise ValueError("Для возмещаемого расхода приложите документ для оплаты")

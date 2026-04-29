@@ -1,11 +1,4 @@
-"""
-Запуск из каталога expenses (или с PYTHONPATH=.) после настройки .env в корне репозитория:
 
-  cd expenses
-  python send_expense_smtp_test.py
-
-Переменные: EXPENSE_SMTP_*, EXPENSE_NOTIFY_TO, опционально EXPENSE_MAIL_FROM, FRONTEND_URL.
-"""
 
 from __future__ import annotations
 

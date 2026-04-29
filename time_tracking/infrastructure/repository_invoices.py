@@ -1,4 +1,4 @@
-"""Доступ к данным счетов."""
+
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def _m4(v: Decimal) -> Decimal:
 
 
 def _sync_orm_payment_status(inv: InvoiceModel) -> None:
-    """Согласовать status с amount_paid/total (как application._sync_payment_status)."""
+
     if inv.status in ("canceled", "draft"):
         return
     bal = _m4(inv.total_amount - inv.amount_paid)
@@ -186,7 +186,7 @@ class InvoiceRepository:
         date_to: date | None = None,
         cap: int = 50_000,
     ) -> list[InvoiceModel]:
-        """Все подходящие под фильтр счета (до cap) — для /invoices/stats и сводок."""
+
         q = self._where_invoice_filters(
             select(InvoiceModel),
             client_id=client_id,
@@ -229,7 +229,7 @@ class InvoiceRepository:
     async def time_entry_on_active_invoice(
         self, time_entry_id: str, exclude_invoice_id: str | None = None
     ) -> str | None:
-        """Возвращает id счёта, если запись уже привязана к неотменённому счёту."""
+
         cond = [
             InvoiceLineItemModel.time_entry_id == time_entry_id,
             InvoiceModel.status != "canceled",

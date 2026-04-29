@@ -2,7 +2,6 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Контекст сборки — корень репозитория (см. docker-compose): нужен backend_common.
 COPY projects/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 

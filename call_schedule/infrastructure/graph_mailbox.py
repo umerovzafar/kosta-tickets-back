@@ -1,4 +1,4 @@
-"""Microsoft Graph: служебный ящик, токен client credentials, кэш в памяти процесса."""
+
 
 from __future__ import annotations
 
@@ -25,16 +25,15 @@ _log = logging.getLogger(__name__)
 GRAPH = "https://graph.microsoft.com/v1.0"
 TOKEN_URL_TPL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
-# Кэш токена (без БД). После согласия admin consent в Entra старый token может остаться
-# до истечения (до ~1 ч) с устаревшим набором roles — сбрасываем кэш при 401/403 от Graph.
+
 _lock = asyncio.Lock()
 _cached_token: str | None = None
 _cached_expires: datetime | None = None
 _credential_fingerprint: str | None = None
-# обновлять чуть раньше истечения
+
 _SKEW = timedelta(minutes=2)
 
-# body — чтобы вытаскивать Zoom/Meet/Webex из текста; webLink, onlineMeeting — Teams/Outlook
+
 _EVENT_SELECT = (
     "id,subject,body,bodyPreview,webLink,start,end,location,organizer,"
     "isOnlineMeeting,onlineMeetingProvider,onlineMeeting,showAs,isCancelled,"
@@ -58,7 +57,7 @@ def invalidate_graph_token_cache() -> None:
 
 
 async def get_app_access_token() -> str:
-    """Client credentials: scope .default, кэш до expires."""
+
     global _cached_token, _cached_expires, _credential_fingerprint
     s = get_settings()
     tenant_id, client_id, client_secret = s.graph_client_credentials()
@@ -195,7 +194,7 @@ def _enrich_event_with_join_url(
     *,
     fallback_join_url: str | None = None,
 ) -> dict[str, Any]:
-    """Добавляет `meetingJoinUrl` (основная кнопка Join) и `meetingLinks` (все https из Graph + тела)."""
+
     out = dict(ev)
     all_urls: list[str] = []
     seen: set[str] = set()
@@ -259,7 +258,7 @@ def _enrich_event_with_join_url(
 
 
 async def list_calendars_for_mailbox(mailbox: str) -> list[dict[str, Any]]:
-    """GET /users/{upn}/calendars — список календарей ящика."""
+
     seg = _user_segment(mailbox)
     j = await _graph_get(f"/users/{seg}/calendars?$top=100")
     return j.get("value", []) if isinstance(j, dict) else []
@@ -277,7 +276,7 @@ def _calendar_view_query_string(start: datetime, end: datetime) -> str:
 
 
 async def _merge_full_event_body_if_needed(mailbox: str, ev: dict[str, Any]) -> dict[str, Any]:
-    """calendarView иногда не возвращает `body`, хотя Zoom в preview — догружаем GET /events/{id}."""
+
     if not event_body_is_empty_for_fetch(ev):
         return ev
     if not body_preview_suggests_external_meeting(
@@ -309,11 +308,7 @@ async def list_calendar_view(
     start: datetime,
     end: datetime,
 ) -> list[dict[str, Any]]:
-    """
-    События в интервале (calendarView).
-    calendar_id: id календаря (из list_calendars) или "default" — по умолчанию основной.
-    В каждом элементе добавляется meetingJoinUrl (Teams или webLink), если ссылка есть.
-    """
+
     seg = _user_segment(mailbox)
     q = _calendar_view_query_string(start, end)
     if calendar_id in ("", "default"):
@@ -356,12 +351,7 @@ async def create_calendar_event(
     calendar_id: str | None = None,
     time_zone: str = "UTC",
 ) -> dict[str, Any]:
-    """
-    Создать событие (звонок).
-    `meeting_url` — внешняя ссылка (Zoom, Meet, …) вынесем в тело, чтобы в календаре был явный URL.
-    calendar_id: None / default — основной календарь: POST /users/.../calendar/events
-    иначе POST .../calendars/{id}/events
-    """
+
     seg = _user_segment(mailbox)
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
@@ -393,7 +383,7 @@ async def create_calendar_event(
         if prov:
             payload["onlineMeetingProvider"] = prov
 
-    # Часовой пояс в теле и в Prefer — как в примерах Microsoft для online meeting
+
     prefer_tz = f'outlook.timezone="{time_zone}"'
     extra_headers = {"Prefer": prefer_tz}
 

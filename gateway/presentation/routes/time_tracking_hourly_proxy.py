@@ -1,4 +1,4 @@
-"""Общая логика прокси почасовых ставок (time_tracking) — для /api/v1/time-tracking/... и /api/v1/users/.../hourly-rates."""
+
 
 from datetime import date
 from decimal import Decimal

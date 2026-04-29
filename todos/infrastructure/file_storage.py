@@ -1,4 +1,4 @@
-"""Сохранение вложений карточек Kanban (относительно MEDIA_PATH)."""
+
 
 import re
 import uuid
@@ -24,10 +24,7 @@ def save_todo_card_file(
     original_filename: str,
     content: bytes,
 ) -> tuple[str, int]:
-    """
-    Пишет файл в media/todo_cards/{user_id}/{card_id}/...
-    Возвращает (storage_key относительно media_path, size_bytes).
-    """
+
     if len(content) > _max_bytes():
         raise ValueError(f"File size exceeds {get_settings().max_upload_mb}MB")
     rel_dir = Path("todo_cards") / str(owner_user_id) / str(card_id)

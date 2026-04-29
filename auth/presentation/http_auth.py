@@ -1,4 +1,4 @@
-"""Извлечение access token: Authorization: Bearer или HttpOnly-cookie (см. AUTH_SESSION_COOKIE_NAME)."""
+
 
 from __future__ import annotations
 

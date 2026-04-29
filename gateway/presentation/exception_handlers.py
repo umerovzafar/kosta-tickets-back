@@ -1,4 +1,4 @@
-"""Единый JSON для ошибок API (production: не раскрывать внутренние детали)."""
+
 
 from __future__ import annotations
 

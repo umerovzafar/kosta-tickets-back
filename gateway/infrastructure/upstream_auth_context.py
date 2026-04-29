@@ -1,4 +1,4 @@
-"""Контекст входящего Authorization для прокси к внутренним сервисам (без проброса через десятки сигнатур)."""
+
 
 from __future__ import annotations
 
@@ -13,11 +13,7 @@ _incoming_authorization: ContextVar[str | None] = ContextVar("incoming_authoriza
 
 
 class IncomingAuthorizationMiddleware(BaseHTTPMiddleware):
-    """Сохраняет Authorization входящего запроса в ContextVar на время обработки.
 
-    Если заголовка нет — подставляет Bearer из HttpOnly-cookie (AUTH_SESSION_COOKIE_NAME),
-    чтобы прокси к микросервисам получали тот же токен.
-    """
 
     async def dispatch(self, request: Request, call_next):
         auth = request.headers.get("Authorization")
@@ -39,7 +35,7 @@ def get_incoming_authorization() -> str | None:
 
 
 def merge_upstream_headers(headers: dict[str, str] | None = None) -> dict[str, str] | None:
-    """Объединяет явные заголовки с Authorization из входящего запроса к gateway."""
+
     merged = dict(headers or {})
     auth = get_incoming_authorization()
     if auth:

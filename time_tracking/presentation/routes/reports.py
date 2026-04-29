@@ -1,23 +1,4 @@
-"""Эндпоинты модуля отчётов time_tracking.
 
-Все отчёты с данными по периоду принимают диапазон дат (обязательно):
-
-- ``from`` / ``to`` — YYYY-MM-DD, **или**
-- ``dateFrom`` / ``dateTo`` — то же в camelCase (удобно для фронта; ``from`` — зарезервировано в JS).
-
-Допускаются смешанные пары (например ``from`` + ``dateTo``). Конец периода включительно.
-
-GET /reports/time/{group_by}            — time report: clients = строка (клиент|валюта); projects = проект
-GET /reports/time/{group_by}/export        — `export=detail` (по умол.): time entry / детализация; `export=summary` — агрегат как в превью
-GET /reports/expenses/{group_by}        — expense report
-GET /reports/expenses/{group_by}/export
-GET /reports/uninvoiced
-GET /reports/uninvoiced/export
-GET /reports/project-budget
-GET /reports/project-budget/export
-GET /reports/meta
-GET /reports/users-for-filter
-"""
 
 from __future__ import annotations
 
@@ -66,11 +47,6 @@ _TIME_GROUP_OPTIONS = frozenset({"clients", "projects"})
 _EXPENSE_GROUP_OPTIONS = frozenset({"clients", "projects", "categories", "team"})
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _parse_date(v: str | None, name: str) -> date:
     if not v:
         raise HTTPException(status_code=400, detail=f"{name} is required")
@@ -102,7 +78,7 @@ def _report_period(
         description="Конец периода YYYY-MM-DD включительно (альтернатива параметру to)",
     ),
 ) -> tuple[date, date]:
-    """Диапазон дат для всех отчётов: допустимы пары (from, to) или (dateFrom, dateTo)."""
+
     start_raw = (date_from or frm or "").strip()
     end_raw = (date_to or to_q or "").strip()
     if not start_raw or not end_raw:
@@ -150,22 +126,12 @@ def _parse_bool(raw: str | None) -> bool | None:
     return raw.lower() in ("1", "true", "yes")
 
 
-# ---------------------------------------------------------------------------
-# Meta
-# ---------------------------------------------------------------------------
-
-
 @router.get("/meta", response_model=ReportMetaOut)
 async def get_reports_meta():
     return ReportMetaOut(
         reportTypes=sorted(["time", "expenses", "uninvoiced", "project-budget"]),
         groupOptions=sorted(list(_TIME_GROUP_OPTIONS | _EXPENSE_GROUP_OPTIONS)),
     )
-
-
-# ---------------------------------------------------------------------------
-# Users for filter
-# ---------------------------------------------------------------------------
 
 
 @router.get("/users-for-filter", response_model=list[ReportUserForFilterOut])
@@ -181,11 +147,6 @@ async def get_users_for_filter(session: AsyncSession = Depends(get_session)):
         for u in users
         if not u.is_archived
     ]
-
-
-# ---------------------------------------------------------------------------
-# Time Reports  GET /reports/time/{group_by}
-# ---------------------------------------------------------------------------
 
 
 @router.get(
@@ -291,11 +252,6 @@ async def export_time_report_endpoint(
         raise HTTPException(status_code=500, detail=f"Time report export error: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Expense Reports  GET /reports/expenses/{group_by}
-# ---------------------------------------------------------------------------
-
-
 @router.get(
     "/expenses/{group_by}",
     response_model=ReportResponseOut,
@@ -363,11 +319,6 @@ async def export_expense_report_endpoint(
         raise HTTPException(status_code=500, detail=f"Expense report export error: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Uninvoiced Report  GET /reports/uninvoiced
-# ---------------------------------------------------------------------------
-
-
 @router.get(
     "/uninvoiced",
     response_model=ReportResponseOut,
@@ -433,11 +384,6 @@ async def export_uninvoiced_report_endpoint(
     except Exception as exc:
         _log.error("reports/uninvoiced/export error: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Uninvoiced report export error: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Project Budget Report  GET /reports/project-budget
-# ---------------------------------------------------------------------------
 
 
 @router.get(

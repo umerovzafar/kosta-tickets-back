@@ -1,7 +1,4 @@
-"""
-Сервис проектов (общий справочник для нескольких микросервисов).
-БД: kosta_projects (см. PROJECTS_DATABASE_URL / PROJECTS_DB_NAME).
-"""
+
 
 from contextlib import asynccontextmanager
 
@@ -10,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
 from infrastructure.database import Base, engine
-from infrastructure import models  # noqa: F401 — регистрация таблиц в Base.metadata
+from infrastructure import models
 from presentation.routes.health import router as health_router
 
 

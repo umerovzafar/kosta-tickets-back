@@ -1,4 +1,4 @@
-"""Рассылка событий по всем открытым WebSocket-подключениям к тикетам (real-time)."""
+
 
 import asyncio
 from typing import Any
@@ -9,7 +9,7 @@ QUEUE_MAX = 256
 
 
 class TicketsWSHub:
-    """Очередь исходящих сообщений на каждое подключение — чтобы push не блокировал receive."""
+
 
     def __init__(self):
         self._subs: list[tuple[WebSocket, asyncio.Queue]] = []

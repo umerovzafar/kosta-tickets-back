@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from infrastructure.config import get_settings, resolve_database_url
 from infrastructure.orm_base import Base
-from infrastructure import models  # noqa: F401 — таблицы в Base.metadata
+from infrastructure import models
 
 _log = logging.getLogger("vacation.db")
 

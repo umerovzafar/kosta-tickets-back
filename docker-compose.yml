@@ -1,12 +1,3 @@
-# Kosta Legal — backend (gateway + микросервисы + PostgreSQL).
-# Переменные: скопируйте .env.example в .env и задайте секреты.
-# Запуск: docker compose up -d --build
-# Полная пересборка: docker compose build --no-cache && docker compose up -d
-# Сброс БД (осторожно): docker compose down -v
-#
-# Gateway не ждёт healthy у всех микросервисов — иначе один «unhealthy» (например expenses)
-# блокирует весь стек в Portainer. Критичны только users_db + auth; остальное — service_started.
-# Пока сервис поднимается, API по нему может отдавать 503 — это нормально на старте.
 
 name: kosta-tickets-back
 
@@ -36,12 +27,8 @@ services:
       - ATTENDANCE_HIKVISION_ALLOWED_IPS=${ATTENDANCE_HIKVISION_ALLOWED_IPS:-}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
-      # Широкий CORS по частным IP (RFC1918) — по умолчанию true для LAN/dev; в проде в .env задайте false.
       - CORS_ALLOW_PRIVATE_NETWORK=${CORS_ALLOW_PRIVATE_NETWORK:-true}
-      # Одинаковый секрет на gateway, tickets, notifications — защита внутренних WS от обхода gateway.
       - WS_INTERNAL_SECRET=${WS_INTERNAL_SECRET:-}
-      # Как у auth — проверка OAuth state на /api/v1/auth/azure/callback (вход в основной фронт и админку).
-      # Пустой JWT_SECRET в Portainer ломает auth и весь стек; min 32 символа — см. auth validate_production_secrets
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env or stack env (openssl rand -hex 32; same on gateway and auth)}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
@@ -51,7 +38,6 @@ services:
       - AUTH_SESSION_COOKIE_SAMESITE=${AUTH_SESSION_COOKIE_SAMESITE:-lax}
     volumes:
       - media_storage:/app/media
-    # Liveness: /live без БД. Полный /health (с users_db) — для ручной проверки; /ready — readiness
     healthcheck:
       test:
         [
@@ -185,7 +171,6 @@ services:
       - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
       - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
       - AUTH_REDIRECT_URI=${AZURE_REDIRECT_URI}
-      # Пустой JWT_SECRET в Portainer ломает auth и весь стек; min 32 символа — см. auth validate_production_secrets
       - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env or stack env (openssl rand -hex 32; same on gateway and auth)}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-1440}
@@ -196,8 +181,6 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
       - ADMIN_FRONTEND_URL=${ADMIN_FRONTEND_URL:-http://localhost:8080}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      # Временный пароль для первого входа, если в .env не задан ADMIN_PASSWORD.
-      # В production задайте в .env свой пароль; после admin-bootstrap пароль берётся из БД.
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
       - ADMIN_BOOTSTRAP_SECRET=${ADMIN_BOOTSTRAP_SECRET:-}
     healthcheck:
@@ -205,7 +188,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 8
-      # Swarm/Portainer: auth ждёт БД в lifespan до ~60 с; медленный диск — запас по health.
       start_period: 90s
     depends_on:
       users_db:
@@ -216,7 +198,6 @@ services:
       context: ./admin-panel
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Занят 8080? Задайте в .env: ADMIN_PANEL_PORT=8081
     ports:
       - "${ADMIN_PANEL_PORT:-8080}:80"
 
@@ -400,7 +381,6 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=${TIME_TRACKING_DATABASE_URL:-postgresql://time_tracking:time_tracking@time_tracking_db:5432/kosta_time_tracking}
-      # Тот же DSN, что у сервиса expenses (интеграции / отчёты по расходам)
       - EXPENSES_DATABASE_URL=${EXPENSES_DATABASE_URL:-postgresql://expenses:expenses@expenses_db:5432/kosta_expenses}
       - EXPENSES_SERVICE_URL=${EXPENSES_SERVICE_URL:-http://expenses:1242}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
@@ -431,7 +411,6 @@ services:
       timeout: 3s
       retries: 5
 
-  # Планировщик: beat → Redis → worker, авто-сдача отчётной сб-пт-недели
   time_tracking_celery_worker:
     build:
       context: .
@@ -463,7 +442,6 @@ services:
       - WEEKLY_SUBMIT_TZ=${WEEKLY_SUBMIT_TZ:-UTC}
       - WEEKLY_SUBMIT_HOUR=${WEEKLY_SUBMIT_HOUR:-6}
       - WEEKLY_SUBMIT_MINUTE=${WEEKLY_SUBMIT_MINUTE:-0}
-      # День недели: 0=вс … 6=сб (Celery crontab). Понедельник = 1
       - WEEKLY_SUBMIT_DOW=${WEEKLY_SUBMIT_DOW:-6}
     depends_on:
       redis:
@@ -487,15 +465,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # В Docker Swarm / Portainer stacks depends_on не соблюдается — приложение само ждёт БД при старте.
   expenses:
     build:
       context: .
       dockerfile: expenses/Dockerfile
     restart: unless-stopped
     environment:
-      # Без env_file: в Portainer нет файла /data/compose/.../.env — переменные задаются в UI стека или через .env при локальном compose.
-      # Локально: docker compose подставляет ${VAR} из .env в каталоге проекта.
       - DATABASE_URL=${EXPENSES_DATABASE_URL:-postgresql://expenses:expenses@expenses_db:5432/kosta_expenses}
       - MEDIA_PATH=${MEDIA_PATH:-/app/media}
       - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth:1236}
@@ -523,7 +498,6 @@ services:
     volumes:
       - media_storage:/app/media
     healthcheck:
-      # HTTP 200 даже если БД ещё не отвечает (тело: status=degraded) — см. expenses/presentation/routes/health.py
       test: ["CMD-SHELL", "curl -sf http://localhost:1242/health || exit 1"]
       interval: 15s
       timeout: 10s
@@ -549,7 +523,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Общий справочник проектов (БД kosta_projects по умолчанию).
   projects_db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -593,15 +566,12 @@ services:
       dockerfile: vacation/Dockerfile
     restart: unless-stopped
     environment:
-      # Все VACATION_DB_* из .env / Portainer (= POSTGRES_* у vacation_db). HOST/PORT не зашивать: внешняя БД — свой хост.
-      # Явный URL: VACATION_USE_EXPLICIT_DATABASE_URL=true и VACATION_DATABASE_URL=...
       - VACATION_USE_EXPLICIT_DATABASE_URL=${VACATION_USE_EXPLICIT_DATABASE_URL:-false}
       - VACATION_DB_USER=${VACATION_DB_USER:-vacation}
       - VACATION_DB_PASSWORD=${VACATION_DB_PASSWORD:-vacation}
       - VACATION_DB_NAME=${VACATION_DB_NAME:-kosta_vacation}
       - VACATION_DB_HOST=${VACATION_DB_HOST:-vacation_db}
       - VACATION_DB_PORT=${VACATION_DB_PORT:-5432}
-    # Пока lifespan ждёт БД (до ~60 с), uvicorn не принимает TCP — иначе healthcheck ловит Connection refused.
     healthcheck:
       test:
         [

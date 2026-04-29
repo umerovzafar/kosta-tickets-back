@@ -1,4 +1,4 @@
-"""Alembic: миграции схемы auth (users_db)."""
+
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from infrastructure.database import Base  # noqa: E402
-import infrastructure.models  # noqa: F401, E402
+from infrastructure.database import Base
+import infrastructure.models
 
 config = context.config
 if config.config_file_name is not None:

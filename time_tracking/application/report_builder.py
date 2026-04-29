@@ -1,8 +1,4 @@
-"""Вычисление данных отчётов: summary (KPI) и table (детализация / агрегат).
 
-Поддерживаемые report_type: time, detailed-expense, contractor, uninvoiced.
-Группировки (group) для агрегатной таблицы: clients, projects.
-"""
 
 from __future__ import annotations
 
@@ -56,11 +52,6 @@ def _hours(v: Decimal) -> float:
 
 def _money(v: Decimal) -> float:
     return float(v.quantize(_Q2, rounding=ROUND_HALF_UP))
-
-
-# ---------------------------------------------------------------------------
-# Helpers: filters → SQL conditions
-# ---------------------------------------------------------------------------
 
 
 def _base_entry_conditions(
@@ -120,7 +111,7 @@ def _voided_entry_conditions(
     client_ids: list[str] | None,
     include_fixed_fee: bool,
 ) -> list:
-    """Те же границы, что и у активных записей, но только строки, снятые менеджером (void)."""
+
     cond: list = [
         TimeEntryModel.work_date >= date_from,
         TimeEntryModel.work_date <= date_to,
@@ -149,15 +140,10 @@ def _voided_entry_conditions(
     return cond
 
 
-# ---------------------------------------------------------------------------
-# Rate resolution for billable amount
-# ---------------------------------------------------------------------------
-
-
 async def _load_user_rates(
     session: AsyncSession, user_ids: list[int] | None
 ) -> dict[int, list[UserHourlyRateModel]]:
-    """Загрузить billable ставки пользователей."""
+
     q = select(UserHourlyRateModel).where(
         UserHourlyRateModel.rate_kind == "billable"
     )
@@ -173,7 +159,7 @@ async def _load_user_rates(
 async def _load_user_cost_rates(
     session: AsyncSession, user_ids: list[int] | None
 ) -> dict[int, list[UserHourlyRateModel]]:
-    """Ставки себестоимости (cost) по пользователям."""
+
     q = select(UserHourlyRateModel).where(UserHourlyRateModel.rate_kind == "cost")
     if user_ids:
         q = q.where(UserHourlyRateModel.auth_user_id.in_(user_ids))
@@ -187,7 +173,7 @@ async def _load_user_cost_rates(
 async def _invoice_info_for_time_entries(
     session: AsyncSession, entry_ids: list[str],
 ) -> dict[str, tuple[str, str]]:
-    """time_entry_id -> (invoice_uuid, invoice_number) для неотменённых счетов."""
+
     if not entry_ids:
         return {}
     q = (
@@ -218,7 +204,7 @@ async def _invoice_info_for_time_entries(
 async def invoice_details_for_time_entries(
     session: AsyncSession, entry_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
-    """По id строки времени: счёт, признак оплаты, номер (неотменённые счета)."""
+
     if not entry_ids:
         return {}
     q = (
@@ -263,7 +249,7 @@ async def load_week_submitted_user_dates(
     date_from: date,
     date_to: date,
 ) -> set[tuple[int, date]]:
-    """Пары (user, work_date), для которых ISO-неделя сдана (status=submitted) и дата в периоде отчёта."""
+
     if not auth_user_ids:
         return set()
     q = select(WeeklyTimeSubmissionModel).where(
@@ -281,11 +267,6 @@ async def load_week_submitted_user_dates(
                 out.add((s.auth_user_id, d))
             d += timedelta(days=1)
     return out
-
-
-# ---------------------------------------------------------------------------
-# Cross-service: expense data
-# ---------------------------------------------------------------------------
 
 
 async def _fetch_expense_report_data(
@@ -333,13 +314,8 @@ def filter_expense_rows_to_tt_projects(
     rows: list[dict],
     projects_map: dict[str, Any],
 ) -> list[dict]:
-    """Оставить расходы, привязанные к проекту из справочника time manager (не иначе)."""
+
     return [r for r in rows if (str(r.get("project_id") or "")).strip() in projects_map]
-
-
-# ---------------------------------------------------------------------------
-# Lookup caches
-# ---------------------------------------------------------------------------
 
 
 async def _load_users_map(session: AsyncSession) -> dict[int, TimeTrackingUserModel]:
@@ -358,14 +334,9 @@ async def _load_clients_map(session: AsyncSession) -> dict[str, TimeManagerClien
 
 
 async def _load_tasks_map(session: AsyncSession) -> dict[str, TimeManagerClientTaskModel]:
-    """Справочник задач — для time_report_service (имена в `entries`), не для GROUP_OPTIONS."""
+
     rows = (await session.execute(select(TimeManagerClientTaskModel))).scalars().all()
     return {t.id: t for t in rows}
-
-
-# ---------------------------------------------------------------------------
-# SUMMARY
-# ---------------------------------------------------------------------------
 
 
 async def build_report_summary(
@@ -396,7 +367,7 @@ async def build_report_summary(
         exclude_invoiced_time=(report_type == "uninvoiced"),
     )
 
-    # Сводные KPI и деньги — по фактическим часам и ставкам rate_kind=billable.
+
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
@@ -481,11 +452,6 @@ async def _summary_expense(
     }
 
 
-# ---------------------------------------------------------------------------
-# TABLE
-# ---------------------------------------------------------------------------
-
-
 async def build_report_table(
     session: AsyncSession,
     *,
@@ -525,11 +491,6 @@ async def build_report_table(
     raise ValueError(f"Unsupported report_type for table: {report_type!r}")
 
 
-# ---------------------------------------------------------------------------
-# Aggregated table (time / contractor / uninvoiced)
-# ---------------------------------------------------------------------------
-
-
 async def _table_aggregated(
     session: AsyncSession,
     *,
@@ -558,7 +519,7 @@ async def _table_aggregated(
     if report_type == "uninvoiced":
         cond.append(TimeEntryModel.is_billable.is_(True))
 
-    # Агрегаты сводных отчётов — billable по ставкам пользователя.
+
     entries_q = select(TimeEntryModel).where(and_(*cond))
     entries = list((await session.execute(entries_q)).scalars().all())
 
@@ -647,11 +608,6 @@ async def _table_aggregated(
     }
 
 
-# ---------------------------------------------------------------------------
-# Detailed expense table
-# ---------------------------------------------------------------------------
-
-
 async def _table_expense(
     session: AsyncSession,
     date_from: date,
@@ -701,15 +657,10 @@ async def _table_expense(
     }
 
 
-# ---------------------------------------------------------------------------
-# Flatten table rows for snapshot / export
-# ---------------------------------------------------------------------------
-
-
 async def build_table_rows_flat(
     session: AsyncSession, **kwargs
 ) -> list[dict]:
-    """Получить все строки таблицы (без пагинации) для создания снимка."""
+
     kwargs["page"] = 1
     kwargs["page_size"] = 100_000
     result = await build_report_table(session, **kwargs)

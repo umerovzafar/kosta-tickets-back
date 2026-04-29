@@ -7,7 +7,7 @@ from infrastructure.orm_base import Base
 
 
 class ScheduleEmployee(Base):
-    """Сотрудник в годовом графике отсутствий (строка Excel)."""
+
 
     __tablename__ = "schedule_employees"
     __table_args__ = (UniqueConstraint("year", "excel_row_no", name="uq_schedule_employees_year_row"),)
@@ -26,10 +26,7 @@ class ScheduleEmployee(Base):
 
 
 class AbsenceDay(Base):
-    """
-    Отмеченный день в календаре графика.
-    kind_code по строкам легенды Excel (1 — ежегодный отпуск, 2 — болезнь, …).
-    """
+
 
     __tablename__ = "absence_days"
     __table_args__ = (UniqueConstraint("employee_id", "absence_on", name="uq_absence_employee_date"),)

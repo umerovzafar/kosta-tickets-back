@@ -1,18 +1,4 @@
-"""
-Удаление тестовых данных time tracking: клиенты, у которых имя начинается с заданного префикса
-(по умолчанию «[mock]», как в интерфейсе «Проекты»).
 
-Перед удалением клиента:
-- удаляются записи времени, привязанные к проектам этих клиентов;
-- удаляются счета (invoices) — у счётов FK на клиента с ON DELETE RESTRICT.
-
-Запуск (из каталога time_tracking/, с настроенной БД TT и переменными окружения):
-  set DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/time_tracking
-  python scripts/delete_mock_clients.py --dry-run
-  python scripts/delete_mock_clients.py --execute
-
-Переменные читаются так же, как у сервиса (см. infrastructure/config.py, .env).
-"""
 from __future__ import annotations
 
 import argparse
@@ -22,15 +8,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import delete, func, select  # noqa: E402
+from sqlalchemy import delete, func, select
 
-from infrastructure.database import async_session_factory  # noqa: E402
-from infrastructure.models import (  # noqa: E402
+from infrastructure.database import async_session_factory
+from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
     TimeManagerClientProjectModel,
 )
-from infrastructure.models_invoices import InvoiceModel  # noqa: E402
+from infrastructure.models_invoices import InvoiceModel
 
 
 async def _run(*, prefix: str, dry_run: bool) -> int:

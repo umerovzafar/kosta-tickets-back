@@ -1,4 +1,4 @@
-"""Зона видимости менеджера учёта времени (общие проекты) — запрос к сервису time_tracking."""
+
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from infrastructure.config import get_settings
 
 
 async def fetch_managed_scope_user_ids(manager_auth_user_id: int) -> set[int]:
-    """auth_user_id: менеджер и пользователи с доступом к тем же проектам."""
+
     base = (get_settings().time_tracking_service_url or "").strip().rstrip("/")
     if not base:
         return {int(manager_auth_user_id)}

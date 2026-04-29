@@ -1,4 +1,4 @@
-"""Точность часов в записях учёта времени (секунды в долях часа)."""
+
 
 from decimal import Decimal
 
@@ -8,7 +8,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from infrastructure.repository_shared import normalize_time_entry_hours  # noqa: E402
+from infrastructure.repository_shared import normalize_time_entry_hours
 
 
 def test_ten_seconds_nonzero():
@@ -19,7 +19,7 @@ def test_ten_seconds_nonzero():
 
 
 def test_subsecond_fraction():
-    h = Decimal("1") / Decimal("3600")  # 1 second
+    h = Decimal("1") / Decimal("3600")
     n = normalize_time_entry_hours(h)
     assert n == Decimal("0.000278")
 

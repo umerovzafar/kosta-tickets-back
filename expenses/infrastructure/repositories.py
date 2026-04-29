@@ -64,7 +64,7 @@ class ExpenseRepository:
         return int(r.scalar() or 0)
 
     async def attachment_kind_metrics(self, expense_request_id: str) -> tuple[int, int, int]:
-        """(payment_document_count, payment_receipt_count, untyped_count)."""
+
         q = select(ExpenseAttachmentModel).where(
             ExpenseAttachmentModel.expense_request_id == expense_request_id
         )
@@ -234,7 +234,7 @@ class ExpenseRepository:
         if expense_date is not None:
             row.expense_date = expense_date
         if payment_deadline is not _MISSING:
-            row.payment_deadline = payment_deadline  # type: ignore[assignment]
+            row.payment_deadline = payment_deadline
         if amount_uzs is not None:
             row.amount_uzs = amount_uzs
         if exchange_rate is not None:
@@ -356,7 +356,6 @@ class ExpenseRepository:
         except Exception:
             return False
 
-    # --- reference ---
 
     async def aggregate_expenses_for_project(
         self,
@@ -364,7 +363,7 @@ class ExpenseRepository:
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> dict:
-        """Суммы расходов по проекту — те же статусы, что и список `view=timeTracking` / `scope=registry` (реестр §10)."""
+
         from application.expense_service import REGISTRY_STATUSES
 
         statuses = tuple(REGISTRY_STATUSES)
@@ -395,7 +394,7 @@ class ExpenseRepository:
         user_ids: list[int] | None = None,
         project_ids: list[str] | None = None,
     ) -> list[ExpenseRequestModel]:
-        """Строки расходов для модуля отчётов TT (см. REPORT_INCLUSION_STATUSES в expense_service)."""
+
         from application.expense_service import REPORT_INCLUSION_STATUSES
 
         statuses = tuple(REPORT_INCLUSION_STATUSES)
@@ -408,7 +407,7 @@ class ExpenseRepository:
             conds.append(ExpenseRequestModel.created_by_user_id.in_(user_ids))
         if project_ids:
             conds.append(ExpenseRequestModel.project_id.in_(project_ids))
-        # Отчёты time tracking — только расходы с привязкой к проекту (без пустого project_id).
+
         conds.append(ExpenseRequestModel.project_id.isnot(None))
         conds.append(ExpenseRequestModel.project_id != "")
         q = (
@@ -441,7 +440,7 @@ class ExpenseRepository:
 
 
 async def seed_reference_data(session: AsyncSession) -> None:
-    """Идемпотентное заполнение справочников (ТЗ §4)."""
+
     types_ = [
         ("transport", "Транспорт", 10),
         ("food", "Питание", 20),
@@ -468,7 +467,7 @@ async def seed_reference_data(session: AsyncSession) -> None:
         if not await session.get(ProjectModel, pid):
             session.add(ProjectModel(id=pid, name=name))
 
-    # Курс на дату (пример): UZS за 1 условную единицу для эквивалента
+
     r = await session.execute(select(ExchangeRateModel).where(ExchangeRateModel.rate_date == date.today()))
     if r.scalars().one_or_none() is None:
         session.add(

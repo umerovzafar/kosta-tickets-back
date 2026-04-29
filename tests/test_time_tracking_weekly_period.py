@@ -1,4 +1,4 @@
-"""Отчётная неделя сб..пт (weekly_period) и сдача в субботу 9:00."""
+
 
 from datetime import date, datetime, timezone
 
@@ -6,7 +6,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from application.weekly_period import (  # noqa: E402
+from application.weekly_period import (
     is_work_week_edit_deadline_passed,
     monday_of_same_iso_week,
     previous_closed_iso_week_range,
@@ -34,7 +34,7 @@ def test_previous_closed_when_anchor_is_saturday() -> None:
 
 
 def test_saturday_nine_utc_closing() -> None:
-    """С границей 9:00 в той же зоне, что WEEKLY_SUBMIT_TZ (в прод: Asia/Tashkent)."""
+
     c = work_week_saturday_nine_closing_aware(
         date(2024, 1, 6),
         tz_name="UTC",
@@ -52,7 +52,6 @@ def test_deadline_passed_around_saturday_nine_utc() -> None:
     assert is_work_week_edit_deadline_passed(wd, now=after, submit_tz="UTC")
 
 
-# ISO Mon-Sun: сохраняем ожидаемое старого API (миграция сторонних ссылок)
 def test_monday_of_iso_week_wednesday_jan_2024() -> None:
     assert monday_of_same_iso_week(date(2024, 1, 10)) == date(2024, 1, 8)
 

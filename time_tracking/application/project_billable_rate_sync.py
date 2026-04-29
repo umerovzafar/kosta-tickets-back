@@ -1,4 +1,4 @@
-"""Ставка «по проекту»: копия суммы в почасовые billable-ставки сотрудников с доступом к проекту."""
+
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _d(v: Any) -> Decimal:
 
 
 def is_per_project_billable_rate(billable_rate_type: str | None) -> bool:
-    """UI: режим, при котором одна числовая ставка задана на проект и копируется сотрудникам."""
+
     t = (billable_rate_type or "").strip().casefold()
     return t in {
         "project",
@@ -33,7 +33,7 @@ def is_per_project_billable_rate(billable_rate_type: str | None) -> bool:
         "проект",
         "ставка_по_проекту",
         "project_rate",
-        "project_billable_rate",  # SPA (tickets-front): «Ставка проекта»
+        "project_billable_rate",
     }
 
 
@@ -49,7 +49,7 @@ def project_uses_shared_billable(project_row: Any) -> bool:
 
 
 async def delete_billable_rates_scoped_to_project(session: AsyncSession, project_id: str) -> None:
-    """Удаляет все ставки с applies_to_project_id (например при смене режима)."""
+
     pid = (project_id or "").strip()
     if not pid:
         return
@@ -62,10 +62,7 @@ async def sync_project_billable_rates_to_assigned_users(
     session: AsyncSession,
     project_id: str,
 ) -> None:
-    """
-    Для проекта в режиме «ставка по проекту» с ненулевой project_billable_rate_amount
-    гарантирует на каждом пользователе с доступом к проекту billable-запись с applies_to_project_id.
-    """
+
     cpr = ClientProjectRepository(session)
     proj = await cpr.get_by_id_global(project_id)
     if not proj or not project_uses_shared_billable(proj):
@@ -108,9 +105,7 @@ async def reapply_project_billable_mode(
     project_id: str,
     project_row: Any,
 ) -> None:
-    """
-    После смены полей проекта: либо синхронизировать ставки на сотрудников, либо снять привязку.
-    """
+
     if not (project_id and str(project_id).strip()):
         return
     pid = str(project_id).strip()

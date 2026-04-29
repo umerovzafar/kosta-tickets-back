@@ -1,4 +1,4 @@
-"""Прокси к сервису vacation (график отсутствий). Требует аутентификации."""
+
 
 import logging
 from typing import Optional
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/vacations", tags=["vacations"])
 
 async def vacation_access(request: Request, authorization: Optional[str] = Header(None, alias="Authorization")):
-    """GET — просмотр (широкий список ролей); POST/PATCH/DELETE — только управление графиком."""
+
     user = await verify_bearer_and_get_user(request, authorization)
     role = (user.get("role") or "").strip()
     method = request.method.upper()
@@ -94,7 +94,7 @@ async def proxy_vacation_schedule_import(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(vacation_access),
 ):
-    """Загрузка Excel графика отсутствий (multipart). Прокси на vacation POST /schedule/import."""
+
     return await _forward(request, "schedule/import", authorization, timeout=120.0)
 
 

@@ -27,7 +27,7 @@ from infrastructure.repository_shared import (
 
 
 class ClientRepository:
-    """Клиенты time manager (настройки биллинга)."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -122,7 +122,7 @@ class ClientRepository:
             updated_at=None,
         )
         self._session.add(row)
-        # Иначе последующие INSERT (категории расходов, задачи) падают по FK: клиент ещё не в БД до flush/commit.
+
         await self._session.flush()
         return row
 
@@ -176,7 +176,7 @@ class ClientRepository:
 
 
 class ClientContactRepository:
-    """Дополнительные контакты клиента."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -253,7 +253,7 @@ class ClientContactRepository:
 
 
 class ClientTaskRepository:
-    """Задачи клиента time manager."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -333,7 +333,7 @@ class ClientTaskRepository:
 
 
 class ClientExpenseCategoryRepository:
-    """Категории расходов по клиенту time manager."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -455,7 +455,7 @@ class ClientExpenseCategoryRepository:
 
 
 class ClientProjectRepository:
-    """Проекты клиента time manager."""
+
 
     def __init__(self, session: AsyncSession):
         self._session = session

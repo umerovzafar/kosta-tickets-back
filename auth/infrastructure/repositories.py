@@ -202,7 +202,7 @@ class UserRepository(UserRepositoryPort):
         return await self.get_by_id(user_id)
 
     async def get_local_admin_credentials(self) -> Optional[tuple[str, str]]:
-        """Если bootstrap выполнен: (username, bcrypt_hash)."""
+
         result = await self._session.execute(
             select(LocalAdminCredentialModel).where(LocalAdminCredentialModel.id == 1)
         )

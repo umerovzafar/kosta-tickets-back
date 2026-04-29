@@ -27,10 +27,7 @@ async def health(uc: GetHealthUseCase = Depends(get_health_use_case)):
 
 @router.get("/todos", summary="Проверка доступности микросервиса todos с gateway")
 async def health_todos():
-    """
-    Помогает отладить 503 на /api/v1/todos/*: показывает TODOS_SERVICE_URL и результат GET .../health у todos.
-    Не требует авторизации (как /health).
-    """
+
     base = (get_settings().todos_service_url or "").rstrip("/")
     if not base:
         return JSONResponse(

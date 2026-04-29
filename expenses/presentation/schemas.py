@@ -40,9 +40,6 @@ class HealthResponse(BaseModel):
     timestamp: datetime
 
 
-# --- Вложения / история / аудит ---
-
-
 class AttachmentOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -83,7 +80,7 @@ class AuditLogOut(BaseModel):
 
 
 class ExpenseAuthorSnippet(BaseModel):
-    """Кто подал заявку (из auth)."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 

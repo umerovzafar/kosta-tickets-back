@@ -1,4 +1,4 @@
-"""Пока create_all не завершён, ответ 503 вместо 500 на /schedule/*."""
+
 
 from __future__ import annotations
 

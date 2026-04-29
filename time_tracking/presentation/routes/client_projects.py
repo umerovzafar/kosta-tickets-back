@@ -1,4 +1,4 @@
-"""Проекты клиента time manager."""
+
 
 import csv
 import json
@@ -49,15 +49,13 @@ def _positive_budget_amount(v) -> bool:
 
 
 def _out_fixed_fee_amount_for_api(row) -> object:
-    """Сумма фикс-контракта: приоритет budgetAmount; иначе legacy fixed_fee_amount в БД."""
+
     if getattr(row, "project_type", None) != "fixed_fee":
         return row.fixed_fee_amount
     if _positive_budget_amount(getattr(row, "budget_amount", None)):
         return row.budget_amount
     return row.fixed_fee_amount
 
-
-# --- Глобальный список проектов (все клиенты) для формы расходов ---
 
 _global_projects_router = APIRouter(tags=["projects_global"])
 
@@ -69,7 +67,7 @@ async def list_all_projects_for_expenses(
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ):
-    """Плоский список проектов всех клиентов для справочника расходов (id + name + clientName)."""
+
     repo = ClientProjectRepository(session)
     from infrastructure.repositories import ClientRepository
 
@@ -109,7 +107,7 @@ async def list_time_tracking_assignees_for_project(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> ProjectTimeTrackingAssigneesListOut:
-    """Список auth user id, которым выдан доступ к проекту; для UI выбора сотрудника при создании записи времени."""
+
     await ensure_can_list_project_assignees(session, viewer, project_id)
     par = UserProjectAccessRepository(session)
     uids = await par.list_auth_user_ids_for_project(project_id.strip())
@@ -147,7 +145,7 @@ async def list_expense_categories_for_project(
     include_archived: bool = Query(False, alias="includeArchived"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Категории расходов клиента, к которому относится проект (для формы расхода)."""
+
     repo = ClientProjectRepository(session)
     row = await repo.get_by_id_global(project_id)
     if not row:
@@ -384,7 +382,7 @@ async def get_client_project_dashboard(
     date_from: str | None = Query(None, description="YYYY-MM-DD"),
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
 ):
-    """Агрегаты для UI деталей проекта: часы из time entries (billable / non-billable по is_billable)."""
+
     await _require_client(session, client_id)
     df = _parse_dashboard_date(date_from)
     dt = _parse_dashboard_date(date_to)
@@ -412,7 +410,7 @@ async def get_project_team_workload(
     include_archived: bool = Query(False, alias="includeArchived"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Загрузка команды по проекту (карточки + таблица): часы только по этому project_id."""
+
     if date_to < date_from:
         raise HTTPException(status_code=400, detail="Параметр to не может быть раньше from")
     await _require_client(session, client_id)

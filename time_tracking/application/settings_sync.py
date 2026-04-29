@@ -1,12 +1,4 @@
-"""Одноразовая ренормализация записей времени: квантование duration_seconds до целых минут.
 
-Выполняется на старте сервиса одним SQL-UPDATE. После миграции на minute-квант:
-  * duration_seconds ВСЕГДА кратно 60 (HALF_UP: 30 секунд → +1 минута),
-  * hours = duration_seconds / 3600 (NUMERIC(16,6)),
-  * rounded_hours = hours (устаревшее поле сохранено ради совместимости схемы).
-
-UPDATE идемпотентен: фильтр WHERE отсекает уже нормализованные строки.
-"""
 
 from __future__ import annotations
 
@@ -15,12 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def renormalize_time_entries_to_minute(session: AsyncSession) -> int:
-    """Квантует duration_seconds до целых минут и приводит hours / rounded_hours в согласованное состояние.
 
-    Возвращает количество затронутых строк. Выставленные счета не трогаются (поля в invoice_line_items
-    хранятся независимо). Записи, которые уже кратны 60 и имеют согласованные hours/rounded_hours, —
-    пропускаются благодаря фильтру в WHERE.
-    """
     sql = text(
         """
         WITH src AS (

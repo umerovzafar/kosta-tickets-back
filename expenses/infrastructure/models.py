@@ -1,4 +1,4 @@
-"""Модели БД модуля расходов (kosta_expenses)."""
+
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -10,7 +10,7 @@ from infrastructure.database import Base
 
 
 class ExpenseKlSequenceModel(Base):
-    """Одна строка: счётчик для id вида KL000001."""
+
 
     __tablename__ = "expense_kl_sequence"
 

@@ -1,4 +1,4 @@
-"""Расписание звонков: календари и события ящика info@ (Microsoft Graph, без БД)."""
+
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ router = APIRouter(tags=["call_schedule"])
 
 
 def _graph_client_error_message(e: httpx.HTTPStatusError) -> str:
-    """Сообщение для фронта/логов: статус Graph + error.code (если есть) + подсказка при 403."""
+
     status = e.response.status_code
     code = None
     try:
@@ -125,7 +125,7 @@ async def get_events(
 
 
 class CreateCallBody(BaseModel):
-    """Создать слот (звонок) в календаре ящика."""
+
 
     model_config = {"populate_by_name": True}
 

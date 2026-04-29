@@ -1,4 +1,4 @@
-"""Личная Kanban-доска пользователя (колонки, карточки, фон)."""
+
 
 from datetime import datetime
 from typing import Annotated
@@ -289,7 +289,7 @@ async def get_board(
     user_id: Annotated[int, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_session),
 ):
-    """Возвращает доску; при первом обращении создаёт доску с колонками по умолчанию (как на макете)."""
+
     repo = KanbanRepository(session)
     await repo.ensure_board(user_id)
     await session.commit()

@@ -8,7 +8,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("", response_model=HealthResponse)
 async def health():
-    """Проверка доступности сервиса (без БД)."""
+
     settings = get_settings()
     return HealthResponse(
         status="healthy",

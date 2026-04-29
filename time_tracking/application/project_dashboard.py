@@ -1,4 +1,4 @@
-"""Агрегаты дашборда проекта: часы, деньги по ставкам, прогресс по неделям, расходы, счета."""
+
 
 from __future__ import annotations
 
@@ -39,12 +39,12 @@ _ZERO = Decimal(0)
 
 
 def _hours_json(d: Decimal) -> float:
-    """В JSON не терять доли часа меньше минуты (таймеры)."""
+
     return float(d.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP))
 
 
 def _week_start_monday(d: date) -> date:
-    """Согласовано с `date_trunc('week', …)` в Postgres (неделя с понедельника)."""
+
     return d - timedelta(days=d.weekday())
 
 
@@ -92,7 +92,7 @@ async def build_client_project_dashboard(
     user_cost: defaultdict[int, Decimal] = defaultdict(lambda: Decimal(0))
 
     for e in entries:
-        # Дашборд считает суммы и биллинг по фактическим часам (minute-квант).
+
         h = _d(e.hours)
         uid = e.auth_user_id
         tid = (
@@ -246,8 +246,7 @@ async def build_client_project_dashboard(
             }
         )
 
-    # Бюджет: часы считаем по всем списаниям в периоде (согласовано с отчётом project-budget);
-    # сумма — по billable (как раньше для денежного лимита).
+
     hours_map = {project_id: tot}
     money_map = {project_id: total_bill}
     b_mode = budget_mode(proj_row)
@@ -289,7 +288,7 @@ async def build_client_project_dashboard(
         budget_out["budget"] = float(_money(lim_m))
         budget_out["spent"] = float(_money(spent_m))
         budget_out["remaining"] = float(_money(rem_m))
-    else:  # hours_and_money
+    else:
         budget_out["percentUsedHours"] = _pct(spent_h, lim_h)
         budget_out["percentUsedMoney"] = _pct(spent_m, lim_m)
         _pu_vals = [

@@ -30,7 +30,7 @@ from presentation.schemas.ticket_schemas import (
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
 
-# Просмотр и правки по любому тикету (не только свои): офис-менеджер — как операционный доступ.
+
 ROLES_FULL_ACCESS = {
     "IT отдел",
     "Администратор",
@@ -44,13 +44,13 @@ async def get_current_user(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Текущий пользователь из auth. 401 если нет токена или токен невалиден."""
+
     user = await verify_bearer_and_get_user(request, authorization)
     return {"id": user["id"], "role": (user.get("role") or "Сотрудник").strip()}
 
 
 async def _tickets_get(path: str, params: Optional[dict] = None):
-    """Прокси GET в сервис тикетов. При недоступности сервиса — 503."""
+
     settings = get_settings()
     url = f"{settings.tickets_service_url}/tickets{path}"
     try:
@@ -131,7 +131,7 @@ async def list_tickets(
         params["priority"] = priority
     if category is not None:
         params["category"] = category
-    # IT, админы и офис-менеджер видят все тикеты; для остальных — только свои
+
     if current_user["role"] not in ROLES_FULL_ACCESS:
         params["created_by_user_id"] = current_user["id"]
     return await _tickets_get("", params=params)
@@ -139,7 +139,7 @@ async def list_tickets(
 
 @router.get("/ws-url")
 async def get_tickets_ws_url():
-    """Возвращает URL для подключения к WebSocket тикетов. Используйте один и тот же хост, что и для REST (gateway)."""
+
     settings = get_settings()
     base = settings.gateway_base_url or "http://localhost:1234"
     ws_base = base.rstrip("/").replace("https://", "wss://").replace("http://", "ws://")
@@ -161,7 +161,7 @@ async def get_ticket_attachment(filename: str):
 
 
 def _same_user_id(a, b) -> bool:
-    """Сравнение id пользователя из разных источников (int / str из JSON)."""
+
     try:
         return int(a) == int(b)
     except (TypeError, ValueError):
@@ -169,24 +169,21 @@ def _same_user_id(a, b) -> bool:
 
 
 def _can_access_ticket(ticket: dict, current_user: dict) -> bool:
-    """Проверка доступа: свои тикеты или роль IT / администраторы / офис-менеджер."""
+
     if current_user["role"] in ROLES_FULL_ACCESS:
         return True
     return _same_user_id(ticket.get("created_by_user_id"), current_user.get("id"))
 
 
-# Действия WS, для которых в payload есть ticket_uuid и нужна проверка как у REST.
 _WS_ACTIONS_WITH_TICKET_UUID = frozenset(
     {"get_ticket", "update_ticket", "archive_ticket", "list_comments", "add_comment"}
 )
-# Справочники без привязки к тикету — без токена (как публичные GET /statuses, /priorities).
+
 _WS_PUBLIC_ACTIONS = frozenset({"list_statuses", "list_priorities"})
 
 
 async def _ws_precheck_ticket_access(settings, ticket_uuid: str, ws_user: dict) -> str | None:
-    """
-    None — доступ есть; иначе код ошибки для клиента WS.
-    """
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(f"{settings.tickets_service_url}/tickets/{ticket_uuid}")
@@ -274,7 +271,6 @@ async def archive_ticket(
     return r.json()
 
 
-
 @router.get("/{ticket_uuid}/comments", response_model=list[CommentResponse])
 async def list_comments(ticket_uuid: str, current_user: dict = Depends(get_current_user)):
     await _get_ticket_and_check_access(ticket_uuid, current_user)
@@ -328,7 +324,7 @@ async def update_comment(
 
 
 async def _get_ws_user(websocket: WebSocket) -> Optional[dict]:
-    """Пользователь: ?token= / ?access_token= или HttpOnly-cookie сессии (тот же хост, что gateway)."""
+
     import urllib.parse
 
     query = (websocket.scope.get("query_string") or b"").decode()

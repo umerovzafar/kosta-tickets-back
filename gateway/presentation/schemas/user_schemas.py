@@ -60,7 +60,7 @@ class ArchiveUserRequest(BaseModel):
 
 
 class TimeTrackingRoleRequest(BaseModel):
-    """Роль в модуле учёта времени: user — ведение учёта, manager — управление списком пользователей."""
+
 
     time_tracking_role: Optional[str] = None
     position: Optional[str] = Field(
@@ -70,12 +70,12 @@ class TimeTrackingRoleRequest(BaseModel):
 
 
 class SetPositionRequest(BaseModel):
-    """Должность пользователя."""
+
 
     position: Optional[str] = None
 
 
 class WeeklyCapacityPatchBody(BaseModel):
-    """Норма часов в неделю для блока «Нагрузка» в профиле."""
+
 
     weekly_capacity_hours: Decimal = Field(..., gt=0, le=168)

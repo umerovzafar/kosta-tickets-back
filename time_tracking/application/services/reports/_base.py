@@ -1,4 +1,4 @@
-"""Общие вспомогательные функции и построитель стандартного ответа для модуля отчётов."""
+
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _money(v: Decimal) -> float:
 
 
 def _percent_billable(total: Decimal, billable: Decimal) -> float:
-    """Процент оплачиваемых часов от всех: 0..100, 1 десятичный, при total=0 — 0.0."""
+
     t = _d(total)
     if t <= 0:
         return 0.0
@@ -44,7 +44,7 @@ def build_response(
     date_from: date,
     date_to: date,
 ) -> dict:
-    """Построить стандартный JSON-ответ согласно ТЗ: {results, pagination, meta}."""
+
     if total_entries > 0:
         total_pages = (total_entries + per_page - 1) // per_page
     else:

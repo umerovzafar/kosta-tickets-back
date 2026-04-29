@@ -1,7 +1,4 @@
-"""
-Алиасы почасовых ставок под префиксом /api/v1/users/... — тот же прокси, что и
-/api/v1/time-tracking/users/... (нужно, если nginx проксирует только /api/v1/users).
-"""
+
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from starlette.responses import Response

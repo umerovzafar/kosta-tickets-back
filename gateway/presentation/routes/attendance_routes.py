@@ -1,4 +1,4 @@
-"""Прокси к сервису attendance (Hikvision). Требует аутентификации."""
+
 
 import asyncio
 from datetime import date, datetime, time, timedelta
@@ -34,7 +34,7 @@ class AttendanceExplanationUpsertBody(BaseModel):
     app_user_id: Optional[int] = None
 
 router = APIRouter(prefix="/api/v1/attendance", tags=["attendance"])
-router_compat = APIRouter(tags=["attendance-compat"])  # /hikvision/attendance для старого фронта
+router_compat = APIRouter(tags=["attendance-compat"])
 
 ROLES_CAN_VIEW = {
     "Главный администратор",
@@ -46,7 +46,7 @@ ROLES_CAN_VIEW = {
     "Сотрудник",
 }
 
-# Как права на раздел «Расходы»: IT может вести операционные настройки; офис-менеджер — операционный день офиса.
+
 ROLES_CAN_UPDATE_WORKDAY_SETTINGS = {
     "Главный администратор",
     "Администратор",
@@ -56,7 +56,7 @@ ROLES_CAN_UPDATE_WORKDAY_SETTINGS = {
     "Офис-менеджер",
 }
 
-# Привязка сотрудников камеры к учётным записям — админы, партнёр, офис-менеджер.
+
 ROLES_CAN_MANAGE_HIKVISION_MAPPINGS = {
     "Главный администратор",
     "Администратор",
@@ -81,7 +81,7 @@ async def get_current_user(
 
 
 def _allowed_camera_ips() -> list[str]:
-    """IP камер из конфигурации — клиент не может указывать произвольные IP (защита от SSRF)."""
+
     s = get_settings()
     allowed = (s.attendance_hikvision_allowed_ips or "").strip()
     return [h.strip() for h in allowed.split(",") if h.strip()]
@@ -119,7 +119,7 @@ async def get_hikvision_attendance(
     attendance_status: Optional[str] = Query(None),
     _: dict = Depends(get_current_user),
 ):
-    """Прокси к Hikvision attendance. camera_ip берётся только из конфигурации (ATTENDANCE_HIKVISION_ALLOWED_IPS)."""
+
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
     if not base:
@@ -154,7 +154,7 @@ async def get_hikvision_users(
     employee_no: Optional[str] = Query(None),
     _: dict = Depends(get_current_user),
 ):
-    """Прокси к Hikvision users/persons. camera_ip берётся только из конфигурации (ATTENDANCE_HIKVISION_ALLOWED_IPS)."""
+
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
     if not base:
@@ -372,7 +372,7 @@ async def get_hikvision_attendance_compat(
     attendance_status: Optional[str] = Query(None),
     _: dict = Depends(get_current_user),
 ):
-    """Совместимость: фронт вызывает /hikvision/attendance вместо /api/v1/attendance/hikvision/attendance."""
+
     return await get_hikvision_attendance(
         date_from=date_from,
         date_to=date_to,
@@ -388,7 +388,7 @@ async def get_hikvision_attendance_compat(
 
 @router.get("/settings/workday")
 async def get_workday_settings(_: dict = Depends(get_current_user)):
-    """Прокси к настройкам рабочего дня."""
+
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
     if not base:
@@ -408,18 +408,7 @@ async def get_daily_attendance_report(
     day: Optional[str] = Query(None, description="Дата отчёта в формате YYYY-MM-DD. По умолчанию сегодня."),
     _: dict = Depends(get_current_user),
 ):
-    """
-    Сводный дневной отчёт посещаемости:
-    - present_on_time: пришёл вовремя
-    - late: опоздал
-    - absent: не пришёл
 
-    Источник:
-    - события Hikvision за день
-    - настройки рабочего дня (start/end/late threshold)
-    - привязки camera_employee_no -> app_user_id
-    - пользователи auth (/users)
-    """
     report_day = _parse_iso_date(day)
     settings = get_settings()
     base = (settings.attendance_service_url or "").rstrip("/")
@@ -454,7 +443,7 @@ async def get_daily_attendance_report(
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Attendance service unavailable")
 
-    # Bearer из HttpOnly-cookie подставляет IncomingAuthorizationMiddleware (см. merge_upstream_headers).
+
     auth_headers = merge_upstream_headers({}) or {}
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -501,7 +490,7 @@ async def get_daily_attendance_report(
     late_threshold = int(workday.get("late_threshold_minutes", 0) or 0)
     late_border_dt = datetime.combine(report_day, start_val) + timedelta(minutes=late_threshold)
 
-    # flatten camera events
+
     flat_events: list[dict] = []
     for dev in events_devices:
         for rec in (dev.get("records") or []):
@@ -509,7 +498,7 @@ async def get_daily_attendance_report(
             item["camera_ip"] = dev.get("camera_ip")
             flat_events.append(item)
 
-    # earliest event per Hikvision employee_no
+
     first_event_by_employee_no: dict[str, dict] = {}
     for rec in flat_events:
         employee_no = (rec.get("person_id") or "").strip()
@@ -522,7 +511,7 @@ async def get_daily_attendance_report(
         if not prev or dt < prev["dt"]:
             first_event_by_employee_no[employee_no] = {"dt": dt, "record": rec}
 
-    # roster: все пользователи из Hikvision (даже без привязки к app user).
+
     roster_by_employee_no: dict[str, dict] = {}
     for dev in hikvision_users_devices:
         camera_ip = dev.get("camera_ip")
@@ -550,7 +539,7 @@ async def get_daily_attendance_report(
         uid = mapping.get("app_user_id") if mapping else None
         app_user = app_users_by_id.get(uid) if uid is not None else None
 
-        # Если привязка есть — имя берём из аккаунта приложения.
+
         display_name = (
             (app_user or {}).get("display_name")
             or (app_user or {}).get("email")
@@ -592,7 +581,7 @@ async def get_daily_attendance_report(
             }
         )
 
-    # отдельный список необработанных/непривязанных событий
+
     unmapped_events = [e for e in flat_events if not e.get("mapped_app_user_id")]
 
     return {
@@ -621,7 +610,7 @@ async def update_workday_settings(
     body: WorkdaySettingsUpdateBody,
     _: dict = Depends(get_current_user),
 ):
-    """Прокси к обновлению настроек рабочего дня. Роли: см. ROLES_CAN_UPDATE_WORKDAY_SETTINGS."""
+
     user = _
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_UPDATE_WORKDAY_SETTINGS:

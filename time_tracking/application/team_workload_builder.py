@@ -1,4 +1,4 @@
-"""Shared builders for team workload members and summary."""
+
 
 from __future__ import annotations
 

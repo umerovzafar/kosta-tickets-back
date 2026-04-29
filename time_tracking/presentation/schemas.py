@@ -13,7 +13,7 @@ class HealthResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """Пользователь для списка учёта времени (совместимо с gateway UserResponse)."""
+
 
     model_config = ConfigDict(ser_json_exclude_none=False)
 
@@ -40,13 +40,13 @@ class UserResponse(BaseModel):
 
 
 class WeeklyCapacityPatchBody(BaseModel):
-    """Только норма часов в неделю (для профиля / gateway)."""
+
 
     weekly_capacity_hours: Decimal = Field(..., gt=0, le=168, description="Часов в неделю (ёмкость)")
 
 
 class UserUpsertBody(BaseModel):
-    """Тело запроса для создания/обновления пользователя (синхронизация из auth)."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -54,7 +54,7 @@ class UserUpsertBody(BaseModel):
     email: str
     display_name: Optional[str] = Field(None, alias="displayName")
     picture: Optional[str] = None
-    position: Optional[str] = None  # должность; не передавать — не менять в БД при обновлении
+    position: Optional[str] = None
     role: str = ""
     is_blocked: bool = Field(False, alias="isBlocked")
     is_archived: bool = Field(False, alias="isArchived")
@@ -63,8 +63,7 @@ class UserUpsertBody(BaseModel):
         alias="weeklyCapacityHours",
         description="Норма часов в неделю; по умолчанию 35 при создании",
     )
-    # Должность (position) для ролей user/manager задаётся в auth; здесь не валидируем — иначе 422 при
-    # POST /users без position (синхронизация, миграции, старые клиенты).
+
 
 class RateKind(str, Enum):
     billable = "billable"
@@ -72,7 +71,7 @@ class RateKind(str, Enum):
 
 
 class HourlyRateOut(BaseModel):
-    """Почасовая ставка по умолчанию (оплачиваемая или себестоимость)."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -150,11 +149,11 @@ class TimeEntryOut(BaseModel):
     id: str
     auth_user_id: int
     work_date: date
-    # Источник истины — целое число секунд (устраняет «1 секунду» на round-trip).
+
     duration_seconds: int = Field(..., alias="durationSeconds")
-    # Фактические часы (для детальных экранов/экспорта).
+
     hours: Decimal
-    # Округлённые часы (для сводных отчётов и счетов).
+
     rounded_hours: Decimal = Field(..., alias="roundedHours")
     is_billable: bool
     project_id: Optional[str] = None
@@ -185,11 +184,7 @@ class TimeEntryOut(BaseModel):
 
 
 class TimeEntryCreateBody(BaseModel):
-    """Тело POST; camelCase как на фронте (через gateway).
 
-    Фронт должен присылать `durationSeconds` (источник истины). `hours` оставлено для обратной
-    совместимости: если прислали только его, сервер сам посчитает секунды (round HALF_UP).
-    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -234,10 +229,7 @@ class TimeEntryPatchBody(BaseModel):
 
 
 class TimeEntryDeleteBody(BaseModel):
-    """Опционально на DELETE, только если снимает с учёта менеджер (не владелец).
 
-    `rejected` — не принято / отклонено; `reallocated` — перенос к другим часам/проекту (якорь для маркера на UI).
-    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -248,7 +240,7 @@ class TimeEntryDeleteBody(BaseModel):
 
 
 class ProjectTimeTrackingAssigneeOut(BaseModel):
-    """Сотрудник с доступом к проекту для списания времени (селектор «на кого поставить часы»)."""
+
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -267,7 +259,7 @@ class ProjectTimeTrackingAssigneesListOut(BaseModel):
 
 
 class ProjectAccessOut(BaseModel):
-    """Список id проектов, доступных пользователю для списания времени."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -275,7 +267,7 @@ class ProjectAccessOut(BaseModel):
 
 
 class ProjectAccessPutBody(BaseModel):
-    """Полная замена списка проектов с доступом (пустой список — ни один проект недоступен)."""
+
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -288,7 +280,7 @@ class ProjectAccessPutBody(BaseModel):
 
 
 class TimeManagerClientContactOut(BaseModel):
-    """Дополнительное контактное лицо клиента."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -303,7 +295,7 @@ class TimeManagerClientContactOut(BaseModel):
 
 
 class TimeManagerClientOut(BaseModel):
-    """Клиент time manager (настройки биллинга)."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -394,7 +386,7 @@ class TimeManagerClientContactPatchBody(BaseModel):
 
 
 class TimeManagerClientTaskOut(BaseModel):
-    """Задача клиента (справочник для отчётов и форм)."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -430,7 +422,7 @@ class TimeManagerClientTaskPatchBody(BaseModel):
 
 
 class TimeManagerClientExpenseCategoryOut(BaseModel):
-    """Категория расхода клиента (справочник)."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -469,7 +461,7 @@ class ProjectReportVisibility(str, Enum):
 
 
 class ProjectType(str, Enum):
-    """Тип биллинга проекта (вкладки на UI)."""
+
 
     time_and_materials = "time_and_materials"
     fixed_fee = "fixed_fee"
@@ -477,17 +469,17 @@ class ProjectType(str, Enum):
 
 
 class ProjectCurrency(str, Enum):
-    """Поддерживаемые валюты проекта."""
 
-    USD = "USD"   # Доллар США ($)
-    UZS = "UZS"   # Узбекский сум (сўм)
-    EUR = "EUR"   # Евро (€)
-    RUB = "RUB"   # Российский рубль (₽)
-    GBP = "GBP"   # Британский фунт (£)
+
+    USD = "USD"
+    UZS = "UZS"
+    EUR = "EUR"
+    RUB = "RUB"
+    GBP = "GBP"
 
 
 class TimeManagerClientProjectOut(BaseModel):
-    """Проект клиента time manager."""
+
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -636,7 +628,7 @@ class TimeManagerClientProjectPatchBody(BaseModel):
 
 
 class TimeManagerClientProjectCodeHintOut(BaseModel):
-    """Подсказка для поля кода проекта (последний код и простой следующий)."""
+
 
     last_code: Optional[str] = None
     suggested_next: Optional[str] = None

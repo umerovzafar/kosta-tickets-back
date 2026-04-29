@@ -1,4 +1,4 @@
-"""Категории расходов по умолчанию для каждого клиента time manager."""
+
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ async def _unarchive_matching_defaults(
     *,
     client_id: str | None,
 ) -> None:
-    """Вернуть из архива категории с именами из списка (если были заархивированы)."""
+
     cond = [
         func.lower(func.trim(TimeManagerClientExpenseCategoryModel.name)).in_(_names_lower()),
         TimeManagerClientExpenseCategoryModel.is_archived.is_(True),
@@ -40,7 +40,7 @@ async def _unarchive_matching_defaults(
 
 
 async def _insert_missing_categories(session: AsyncSession, client_id: str) -> None:
-    """Создать отсутствующие категории (по имени, без учёта регистра)."""
+
     r = await session.execute(
         select(TimeManagerClientExpenseCategoryModel.name).where(
             TimeManagerClientExpenseCategoryModel.client_id == client_id,
@@ -62,13 +62,13 @@ async def _insert_missing_categories(session: AsyncSession, client_id: str) -> N
 
 
 async def seed_default_expense_categories_for_client(session: AsyncSession, client_id: str) -> None:
-    """Один клиент: разархивировать совпадающие категории и добавить недостающие."""
+
     await _unarchive_matching_defaults(session, client_id=client_id)
     await _insert_missing_categories(session, client_id)
 
 
 async def seed_default_expense_categories_for_all_clients(session: AsyncSession) -> None:
-    """Все клиенты: глобально разархивировать совпадающие имена, затем INSERT недостающих по каждому."""
+
     await _unarchive_matching_defaults(session, client_id=None)
     r = await session.execute(select(TimeManagerClientModel.id))
     for cid in r.scalars().all():

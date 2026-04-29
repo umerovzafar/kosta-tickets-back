@@ -11,7 +11,7 @@ def get_expenses_upload_dir(expense_request_id: str) -> Path:
 
 
 def save_attachment(expense_request_id: str, filename: str, content: bytes) -> tuple[str, str]:
-    """Возвращает (storage_key относительно media_path, безопасное имя файла)."""
+
     max_bytes = get_settings().max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise ValueError(f"File size exceeds {get_settings().max_upload_mb}MB")

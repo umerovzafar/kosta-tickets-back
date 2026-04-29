@@ -1,4 +1,4 @@
-"""Прокси к сервису расходов (expenses). Требует аутентификации."""
+
 
 import logging
 from typing import Optional
@@ -82,20 +82,14 @@ async def _forward(
     return Response(content=r.content, status_code=r.status_code, headers=resp_headers)
 
 
-# --- Админ: сброс БД модуля расходов (только главный администратор) ---
-
-
 @router.post("/admin/expenses-database/reset")
 async def proxy_expenses_database_reset(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_main_admin),
 ):
-    """Прокси на expenses: POST /admin/expenses-database/reset."""
+
     return await _forward(request, "admin/expenses-database/reset", authorization, timeout=300.0)
-
-
-# --- Заявки /expenses ---
 
 
 @router.get("/expenses/{expense_id}/email-action")
@@ -103,7 +97,7 @@ async def proxy_expense_email_action_public(
     expense_id: str,
     request: Request,
 ):
-    """Публичная ссылка из письма (токен в query) — без Authorization."""
+
     return await _forward(request, f"expenses/{expense_id}/email-action", None, timeout=60.0)
 
 
@@ -113,7 +107,7 @@ async def proxy_expense_attachment_email_file(
     attachment_id: str,
     request: Request,
 ):
-    """Просмотр вложения по токену из письма — без Authorization."""
+
     return await _forward(
         request,
         f"expenses/{expense_id}/attachments/{attachment_id}/email-file",
@@ -141,9 +135,6 @@ async def proxy_expenses_subpath(
     return await _forward(request, f"expenses/{path}", authorization, timeout=120.0)
 
 
-# --- Справочники (корень сервиса expenses) ---
-
-
 @router.get("/expense-types")
 async def proxy_expense_types(
     request: Request,
@@ -168,7 +159,7 @@ async def proxy_projects(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(get_current_user),
 ):
-    """Возвращает список проектов из TT (канонический справочник), а не из seed expense_projects."""
+
     settings = get_settings()
     tt_base = (settings.time_tracking_service_url or "").rstrip("/")
     if tt_base:

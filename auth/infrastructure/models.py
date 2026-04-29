@@ -5,11 +5,11 @@ from infrastructure.database import Base
 
 
 class LocalAdminCredentialModel(Base):
-    """Один раз при bootstrap: логин и bcrypt-хеш пароля локального админа (azure_oid=local-admin)."""
+
 
     __tablename__ = "local_admin_credentials"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # всегда 1
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(128), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -43,11 +43,11 @@ class UserModel(Base):
     display_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     picture: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     role: Mapped[str] = mapped_column(String(64), nullable=False, default="Сотрудник")
-    position: Mapped[str | None] = mapped_column(String(256), nullable=True)  # должность
+    position: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    time_tracking_role: Mapped[str | None] = mapped_column(String(32), nullable=True)  # user | manager
-    desktop_background: Mapped[str | None] = mapped_column(String(512), nullable=True)  # путь к фону рабочего стола
+    time_tracking_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    desktop_background: Mapped[str | None] = mapped_column(String(512), nullable=True)
     active_session_jti: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

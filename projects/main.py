@@ -1,4 +1,4 @@
-"""Точка входа: uvicorn main:app."""
+
 
 from presentation.api import app
 

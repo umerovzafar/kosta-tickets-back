@@ -1,6 +1,4 @@
-"""
-Публичные GET по ссылкам из письма: согласование без Bearer, просмотр вложения по токену.
-"""
+
 
 from __future__ import annotations
 
@@ -22,7 +20,7 @@ from infrastructure.repositories import ExpenseRepository
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
-# В audit / history: действие по ссылке из письма (нет user id модератора)
+
 _EMAIL_ACTION_USER_ID = 0
 
 
@@ -43,10 +41,7 @@ def _final_action_url_public(
     token: str,
     request: Request,
 ) -> str:
-    """
-    Публичный URL для второго шага (после confirm=1).
-    Нельзя брать request.url: за gateway приходит http://expenses:1242/... — в браузере не откроется.
-    """
+
     final_q = f"token={quote(token, safe='')}"
     pub = (settings.public_api_base_url or "").strip().rstrip("/")
     if pub:

@@ -1,4 +1,4 @@
-"""Единые вызовы auth-сервиса из gateway (токен, прокси к /users, /roles, …)."""
+
 
 from __future__ import annotations
 
@@ -54,13 +54,13 @@ async def verify_bearer_and_get_user(
     request: Request,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
 ) -> dict:
-    """GET /users/me — Bearer, HttpOnly-cookie (AUTH_SESSION_COOKIE_NAME) или 401/503."""
+
     token = access_token_from_request(request, authorization)
     return await _fetch_user_me_with_bearer_token(token)
 
 
 async def verify_access_token_plain(token: str) -> dict:
-    """Токен без префикса Bearer (например WebSocket ?token=...)."""
+
     return await _fetch_user_me_with_bearer_token(token)
 
 
@@ -72,7 +72,7 @@ async def auth_service_request(
     timeout: float = 30.0,
     **kwargs: Any,
 ) -> httpx.Response:
-    """HTTP-запрос к auth. path с ведущим слэшем, например /users или /roles/1."""
+
     base = auth_service_base()
     if not path.startswith("/"):
         path = "/" + path

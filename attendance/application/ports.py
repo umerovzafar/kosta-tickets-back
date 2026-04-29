@@ -14,7 +14,7 @@ class HealthRepositoryPort(ABC):
 class WorkdaySettingsRepositoryPort(ABC):
     @abstractmethod
     async def get(self) -> Optional[WorkdaySettings]:
-        """Получить текущие настройки рабочего дня (или None, если не заданы)."""
+
         pass
 
     @abstractmethod
@@ -25,5 +25,5 @@ class WorkdaySettingsRepositoryPort(ABC):
         late_threshold_minutes: int,
         daily_hours_norm: int,
     ) -> WorkdaySettings:
-        """Создать или обновить настройки рабочего дня (хранится одна запись)."""
+
         pass

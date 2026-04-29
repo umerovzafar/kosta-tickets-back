@@ -1,11 +1,11 @@
-"""Идемпотентные правки схемы БД (PostgreSQL) для уже существующих инсталляций."""
+
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 
 async def apply_todo_board_columns_collapsed_patch(conn: AsyncConnection) -> None:
-    """Колонка доски: признак «свёрнута» для UI."""
+
     await conn.execute(
         text(
             """
@@ -17,7 +17,7 @@ async def apply_todo_board_columns_collapsed_patch(conn: AsyncConnection) -> Non
 
 
 async def apply_todo_kanban_extended_patch(conn: AsyncConnection) -> None:
-    """Карточки: дедлайн, выполнено, архив; метки, чеклист, участники, вложения, комментарии."""
+
     for stmt in (
         "ALTER TABLE todo_board_cards ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ",
         (
@@ -30,7 +30,7 @@ async def apply_todo_kanban_extended_patch(conn: AsyncConnection) -> None:
         ),
     ):
         await conn.execute(text(stmt))
-    # asyncpg: один execute() — одна команда; несколько DDL в одной строке даёт ошибку.
+
     ddl = (
         """
         CREATE TABLE IF NOT EXISTS todo_board_labels (

@@ -116,7 +116,7 @@ def get_role_repo(session: AsyncSession = Depends(get_session)) -> RoleRepositor
 
 @router.get("/roles")
 async def list_roles(role_repo: RoleRepositoryPort = Depends(get_role_repo)):
-    """Список ролей из БД (при первом запуске заполняется из enum по умолчанию)."""
+
     roles = await role_repo.list_all()
     return [RoleItem(value=r["name"], label=r["name"]) for r in roles]
 
@@ -136,7 +136,7 @@ async def login(
         state_token = create_oauth_state_token(
             jwt_secret=settings.jwt_secret,
             jwt_algorithm=settings.jwt_algorithm,
-            target=t,  # type: ignore[arg-type]
+            target=t,
         )
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
@@ -237,7 +237,7 @@ async def admin_login(
     uc: AdminLoginUseCase = Depends(get_admin_login_use_case),
     session: AsyncSession = Depends(get_session),
 ):
-    """Вход для админ-панели по логину и паролю (без Microsoft)."""
+
     token = await uc.execute(body.username, body.password)
     if not token:
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -262,7 +262,7 @@ def get_bootstrap_admin_use_case(
 async def admin_bootstrap_status(
     user_repo: UserRepositoryPort = Depends(get_user_repo),
 ):
-    """Проверка, доступна ли первичная настройка (без авторизации)."""
+
     settings = get_settings()
     has_secret = bool((settings.admin_bootstrap_secret or "").strip())
     creds = await user_repo.get_local_admin_credentials()
@@ -280,11 +280,7 @@ async def admin_bootstrap(
     user_repo: UserRepositoryPort = Depends(get_user_repo),
     session: AsyncSession = Depends(get_session),
 ):
-    """
-    Одноразовая генерация логина и пароля для входа в админ-панель.
-    На сервере должен быть задан ADMIN_BOOTSTRAP_SECRET; в теле запроса — тот же секрет.
-    После успеха пароль хранится в БД (bcrypt), пользователь local-admin — «Главный администратор».
-    """
+
     settings = get_settings()
     if not (settings.admin_bootstrap_secret or "").strip():
         raise HTTPException(
@@ -338,7 +334,7 @@ async def logout_invalidate_session(
     token_service: TokenServicePort = Depends(get_token_service),
     session: AsyncSession = Depends(get_session),
 ):
-    """Инвалидировать серверную сессию (все JWT пользователя недействительны). HttpOnly-cookie сбрасывается при AUTH_SET_SESSION_COOKIE."""
+
     token = access_token_from_request(request, authorization)
     if not token:
         raise HTTPException(status_code=401, detail="Authorization required")

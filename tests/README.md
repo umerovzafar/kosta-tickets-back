@@ -3,19 +3,16 @@
 ## Установка
 
 ```bash
-# Зависимости сервисов (gateway, auth, tickets минимум)
 pip install -r gateway/requirements.txt
 pip install -r auth/requirements.txt
 pip install -r tickets/requirements.txt
 
-# Тестовые зависимости
 pip install -r requirements-dev.txt
 ```
 
 ## Запуск
 
 ```bash
-# Все тесты (12 passed, 13 skipped)
 pytest tests/ -v
 ```
 

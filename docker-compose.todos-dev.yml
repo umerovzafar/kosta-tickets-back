@@ -1,11 +1,3 @@
-# Проброс порта todos (1240) на хост — см. docs/TODOS.md → «Быстрый запуск через Docker Desktop».
-# Удобно вместе со scripts/todos_dev_up.ps1 (Windows + Docker Desktop).
-#
-# Ручной запуск минимального набора:
-#   docker compose -f docker-compose.yml -f docker-compose.todos-dev.yml up -d users_db todos_db auth todos
-# Проверка: GET http://127.0.0.1:1240/health
-#
-# Полный API todos — через gateway (/api/v1/todos/...): нужен gateway с TODOS_SERVICE_URL=http://todos:1240.
 
 services:
   todos:

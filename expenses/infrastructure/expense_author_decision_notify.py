@@ -1,4 +1,4 @@
-"""Уведомление автора заявки по email после утверждения или отклонения."""
+
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ async def run_author_decision_notification_safe(
     decision: Literal["approved", "rejected"],
     reject_reason: str | None,
 ) -> None:
-    """Таймаут и логирование — ошибки не пробрасываются (ответ API уже успешен)."""
+
     try:
         await asyncio.wait_for(
             _run_author_decision_notification(
@@ -172,7 +172,7 @@ async def run_expense_paid_notification_safe(
     paid_by_display_name: str | None,
     paid_by_email: str | None,
 ) -> None:
-    """Таймаут и логирование — ошибки не пробрасываются (ответ API уже успешен)."""
+
     try:
         await asyncio.wait_for(
             _run_expense_paid_notification(

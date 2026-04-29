@@ -1,4 +1,4 @@
-"""Эндпоинты интеграции с календарём Microsoft Outlook."""
+
 
 import logging
 from datetime import datetime, timezone
@@ -77,11 +77,7 @@ async def _get_valid_token(
 async def calendar_connect(
     user_id: Annotated[int, Depends(get_current_user_id)],
 ):
-    """
-    Возвращает URL входа Microsoft. Всегда JSON — не HTTP-редирект: иначе fetch() на
-    фронте следует за 302 на login.microsoftonline.com и падает по CORS.
-    Редирект браузера выполняет клиент: window.location = data.url.
-    """
+
     settings = get_settings()
     cid = (settings.microsoft_client_id or "").strip()
     ruri = (settings.microsoft_redirect_uri or "").strip()
@@ -123,7 +119,7 @@ async def calendar_callback(
     error: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    """Принимает code от Microsoft, сохраняет токены, редирект на фронт."""
+
     if error or not code or not state:
         redirect_url = get_settings().calendar_connected_redirect_url or "/"
         return RedirectResponse(url=f"{redirect_url}?calendar=error")
@@ -153,7 +149,7 @@ async def calendar_status(
     user_id: Annotated[int, Depends(get_current_user_id)],
     session: AsyncSession = Depends(get_session),
 ):
-    """Проверка, подключён ли календарь Outlook для текущего пользователя. Всегда JSON."""
+
     try:
         repo = OutlookCalendarTokenRepository(session)
         row = await repo.get_by_user_id(user_id)
@@ -162,7 +158,7 @@ async def calendar_status(
         raise
     except Exception as e:
         _log.warning("calendar status: DB or query failed: %s", e, exc_info=True)
-        # Не отдаём 500: фронт может опросить статус до готовности БД
+
         return JSONResponse(
             status_code=503,
             content={"connected": False, "error": "unavailable", "detail": str(e)[:500]},
@@ -183,7 +179,7 @@ async def list_events(
     start: datetime | None = Query(None, description="Начало периода"),
     end: datetime | None = Query(None, description="Конец периода"),
 ):
-    """Возвращает события из календаря Outlook за период (если указаны start/end)."""
+
     try:
         repo = OutlookCalendarTokenRepository(session)
         row = await _get_valid_token(repo, user_id, session)
@@ -208,7 +204,7 @@ async def create_event(
     body: CreateCalendarEventBody,
     session: AsyncSession = Depends(get_session),
 ):
-    """Создаёт событие в календаре Outlook текущего пользователя."""
+
     repo = OutlookCalendarTokenRepository(session)
     row = await _get_valid_token(repo, user_id, session)
     if not row:

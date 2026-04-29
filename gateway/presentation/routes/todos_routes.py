@@ -1,4 +1,4 @@
-"""Прокси запросов к сервису todos (календарь Outlook и др.)."""
+
 
 import sys
 
@@ -48,8 +48,6 @@ def _todos_upstream_503(
     return JSONResponse(status_code=503, content=payload)
 
 
-# Заголовки входящего запроса, которые нельзя копировать при прокси с уже прочитанным body
-# (иначе multipart и Content-Length могут не совпасть с тем, что отправляет httpx).
 _HOP_REQUEST_TO_UPSTREAM = frozenset(
     {
         "host",
@@ -77,7 +75,7 @@ def _request_headers_for_todos_upstream(request: Request) -> dict[str, str]:
 
 
 def _strip_hop_and_cors(headers: dict) -> dict:
-    """Убираем hop-by-hop и CORS — их выставит gateway."""
+
     skip = {
         "transfer-encoding",
         "content-encoding",
@@ -94,10 +92,7 @@ def _strip_hop_and_cors(headers: dict) -> dict:
 
 @router.get("/calendar/connect", summary="Outlook: URL авторизации (всегда JSON для фронта)")
 async def todos_calendar_connect(request: Request):
-    """
-    Фронт ожидает JSON {"url": "..."}, без HTTP-редиректа (иначе fetch уходит на login.microsoft и ломается по CORS).
-    Явный маршрут гарантирует 200 + JSON даже если общий прокси когда-либо пробросил бы редирект.
-    """
+
     base = _todos_base()
     if not base:
         return JSONResponse(
@@ -110,7 +105,7 @@ async def todos_calendar_connect(request: Request):
     url = f"{base}/api/v1/todos/calendar/connect"
     if request.url.query:
         url = f"{url}?{request.url.query}"
-    # Bearer из HttpOnly-cookie подставляет IncomingAuthorizationMiddleware (get_incoming_authorization).
+
     headers = merge_upstream_headers({}) or {}
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
@@ -159,10 +154,7 @@ async def todos_calendar_connect(request: Request):
 
 @router.get("/calendar/status", summary="Outlook: статус подключения календаря (всегда JSON)")
 async def todos_calendar_status(request: Request):
-    """
-    Явный маршрут до catch-all: фронт ожидает JSON {\"connected\": true|false}.
-    Общий прокси мог бы вернуть не тот Content-Type при ошибке upstream.
-    """
+
     base = _todos_base()
     if not base:
         return JSONResponse(
@@ -238,7 +230,7 @@ async def todos_calendar_status(request: Request):
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_todos(request: Request, path: str):
-    """Проксирование запросов к сервису todos."""
+
     base = _todos_base()
     if not base:
         return JSONResponse(
@@ -252,7 +244,7 @@ async def proxy_todos(request: Request, path: str):
     if request.url.query:
         url = f"{url}?{request.url.query}"
     raw_headers = _request_headers_for_todos_upstream(request)
-    # Подставить Bearer из cookie (IncomingAuthorizationMiddleware), иначе todos не увидит сессию.
+
     headers = merge_upstream_headers(raw_headers) or raw_headers
     try:
         body = await request.body()

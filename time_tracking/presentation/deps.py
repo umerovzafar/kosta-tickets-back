@@ -1,4 +1,4 @@
-"""Зависимости FastAPI: валидация Bearer через auth-сервис."""
+
 
 from __future__ import annotations
 
@@ -13,10 +13,7 @@ from infrastructure.config import get_settings
 async def require_bearer_user(
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> dict[str, Any]:
-    """
-    Текущий пользователь по JWT (GET {auth}/users/me).
-    Без настроенного auth_service_url в dev можно отключить проверку (не для production).
-    """
+
     settings = get_settings()
     base = (settings.auth_service_url or "").strip().rstrip("/")
     if not base:

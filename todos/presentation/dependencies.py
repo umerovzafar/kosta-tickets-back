@@ -1,4 +1,4 @@
-"""Зависимости для аутентификации через auth-сервис."""
+
 
 from typing import Annotated
 
@@ -12,7 +12,7 @@ async def get_current_user_id(
     request: Request,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> int:
-    """Возвращает id текущего пользователя по Bearer-токену через auth-сервис."""
+
     if not authorization or not authorization.strip():
         raise HTTPException(status_code=401, detail="Authorization required")
     settings = get_settings()

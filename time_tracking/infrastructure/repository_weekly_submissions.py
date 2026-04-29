@@ -1,4 +1,4 @@
-"""Сдача недель (блокировка дат)."""
+
 
 from __future__ import annotations
 

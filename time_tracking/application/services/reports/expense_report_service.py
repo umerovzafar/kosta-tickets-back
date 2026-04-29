@@ -1,10 +1,4 @@
-"""Expense Report Service — агрегированные отчёты по расходам.
 
-Группировки: clients, projects, categories, team.
-
-Для группировок clients / projects / categories каждая строка содержит поле `users` —
-список пользователей, вносивших расходы в этот бакет.
-"""
 
 from __future__ import annotations
 
@@ -64,7 +58,7 @@ async def get_expense_report(
             if _get_client_id_for_expense(e, projects_map) in client_ids_set
         ]
 
-    # Бакеты: gid -> {total, billable, currency, user_buckets}
+
     buckets: dict[Any, dict] = {}
     for e in raw_expenses:
         gid = _get_group_id(e, group_by, projects_map)
@@ -72,14 +66,14 @@ async def get_expense_report(
             "total": _ZERO,
             "billable": _ZERO,
             "currency": "USD",
-            "user_buckets": {},  # uid -> {total, billable}
+            "user_buckets": {},
         })
         amt = _d(e.get("equivalent_amount", 0) or e.get("amount_uzs", 0))
         bkt["total"] += amt
         if e.get("is_reimbursable"):
             bkt["billable"] += amt
 
-        # Трекинг пользователя-автора расхода
+
         uid = e.get("created_by_user_id")
         if uid is not None:
             ubkt = bkt["user_buckets"].setdefault(uid, {"total": _ZERO, "billable": _ZERO})
@@ -119,11 +113,6 @@ async def get_expense_report_all_rows(
     return result.get("results", [])
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _get_client_id_for_expense(e: dict, projects_map: dict) -> str | None:
     p = projects_map.get(e.get("project_id")) if e.get("project_id") else None
     return p.client_id if p else None
@@ -136,7 +125,7 @@ def _get_group_id(e: dict, group_by: str, projects_map: dict) -> Any:
         return _get_client_id_for_expense(e, projects_map)
     elif group_by == "categories":
         return e.get("expense_category_id")
-    else:  # team
+    else:
         return e.get("created_by_user_id")
 
 
@@ -191,7 +180,7 @@ def _build_row(
         row["expense_category_name"] = cat.name if cat else None
         row["users"] = _build_users_list(bkt["user_buckets"], users_map)
 
-    else:  # team — строка сама является пользователем
+    else:
         u = users_map.get(gid) if gid else None
         row["user_id"] = gid
         row["user_name"] = (u.display_name or u.email) if u else str(gid or "")

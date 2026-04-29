@@ -1,4 +1,4 @@
-"""Доступ пользователей учёта времени к проектам (назначение менеджером)."""
+
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

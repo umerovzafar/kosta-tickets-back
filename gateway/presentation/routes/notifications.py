@@ -13,7 +13,7 @@ WRITE_ACTIONS = {"create_notification", "update_notification", "delete_notificat
 
 
 async def get_user_from_token(token: str | None, websocket: WebSocket) -> dict | None:
-    """Bearer из сообщения или HttpOnly-cookie сессии на том же хосте, что gateway."""
+
     raw = (token or "").replace("Bearer ", "").strip()
     if not raw:
         name = (get_settings().auth_session_cookie_name or "").strip()
@@ -29,7 +29,7 @@ async def get_user_from_token(token: str | None, websocket: WebSocket) -> dict |
 
 
 async def forward_to_notifications_service(message: dict) -> dict:
-    """Отправить одно сообщение в сервис уведомлений по WebSocket, получить один ответ."""
+
     settings = get_settings()
     base = settings.notifications_service_url
     ws_base = base.replace("https://", "wss://").replace("http://", "ws://")

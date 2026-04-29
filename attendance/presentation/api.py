@@ -14,7 +14,7 @@ from presentation.routes import health, hikvision, settings
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Lightweight runtime migration for explanations table.
+
         await conn.execute(
             text(
                 "ALTER TABLE IF EXISTS attendance_explanations "

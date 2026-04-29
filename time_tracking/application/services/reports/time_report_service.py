@@ -1,18 +1,4 @@
-"""Time Report Service — отчёты по времени (группировка clients / projects).
 
-- **group_by=projects:** строка = один проект; `users[].entries` — по строке на каждую time entry.
-- **group_by=clients:** строка = **клиент + валюта проекта** (`(client_id, currency)`), как в ТЗ: один
-  и тот же клиент в разных валютах — разные строки, суммы **не** смешиваем.
-  В `users[]` — разрез по сотруднику; `projectBreakdown` — (сотрудник → проект) без `entries` по
-  единичным line items.
-
-- В каждой **агрегатной** строке: `total_hours`, `billable_hours`, `billable_percent` (доля
-  оплачиваемых в «всех часах»), `billable_amount` (только по billable, в `currency` среза),
-  `source_entry_count` (число time entries), `last_recorded_at`.
-
-Плоский **export** `detail` (по умол.): time entry или агрегат сотрудник+проект (`clients`) /
-по entry (`projects`). `export=summary` — одна строка = одна агрегатная группа, как в превью.
-"""
 
 from __future__ import annotations
 
@@ -52,10 +38,10 @@ from application.services.reports._base import (
 
 TIME_GROUP_OPTIONS = frozenset({"clients", "projects"})
 
-# Срез вложенного списка записей на группу/пользователя (анти-перегруз JSON).
+
 MAX_ENTRY_LOG_ROWS = 100_000
 
-# Порядок колонок CSV/XLSX (см. export_service).
+
 TIME_REPORT_FLAT_COLUMNS: tuple[str, ...] = (
     "work_date",
     "recorded_at",
@@ -108,7 +94,7 @@ def _time_entry_line_snake(
     invoice_by_entry: dict[str, dict[str, Any]],
     week_submitted: set[tuple[int, date]],
 ) -> dict[str, Any]:
-    """Одна строка отчёта: все обязательные меры (None где неприменимо)."""
+
     p = projects_map.get(e.project_id) if e.project_id else None
     c = clients_map.get(p.client_id) if p and p.client_id else None
     t = tasks_map.get(e.task_id) if e.task_id else None
@@ -187,7 +173,7 @@ def _aggregate_entries_to_snake_line(
     entries: list[TimeEntryModel],
     line_ctx: dict[str, Any],
 ) -> dict[str, Any]:
-    """Одна строка на (сотрудник, проект): суммы часов и денег, период по min/max датам записей."""
+
     if not entries:
         return {}
     projects_map: dict = line_ctx["projects_map"]
@@ -316,7 +302,7 @@ def _aggregate_entries_to_snake_line(
 
 
 def _line_snake_to_api_json(line: dict[str, Any]) -> dict[str, Any]:
-    """camelCase + поля для UI; сохраняем часть старых имён (projectId, description, …)."""
+
     out: dict[str, Any] = {
         "timeEntryId": line.get("time_entry_id"),
         "workDate": line["work_date"],
@@ -353,7 +339,7 @@ def _line_snake_to_api_json(line: dict[str, Any]) -> dict[str, Any]:
         "voidedByName": line.get("voided_by_name"),
         "voidKind": line.get("void_kind"),
     }
-    # обратная совместимость с прежними вложенными `entries`
+
     eid = line.get("time_entry_id")
     out["id"] = eid
     out["time_entry_id"] = eid
@@ -547,7 +533,7 @@ async def get_time_report(
 async def get_time_report_all_rows(
     session: AsyncSession, **kwargs: Any
 ) -> list[dict]:
-    """Получить все **агрегированные** строки без пагинации (устар. для API)."""
+
     kwargs["page"] = 1
     kwargs["per_page"] = 100_000
     result = await get_time_report(session, **kwargs)
@@ -567,7 +553,7 @@ async def get_time_report_flat_entries(
     is_billable: bool | None = None,
     include_fixed_fee: bool = True,
 ) -> list[dict[str, Any]]:
-    """Плоский CSV/XLSX: при group_by=projects — одна строка = одна запись; при clients — (сотр., проект)."""
+
     cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
@@ -676,13 +662,8 @@ async def get_time_report_flat_entries(
 
 
 def _row_for_export(r: dict[str, Any]) -> dict[str, Any]:
-    """Фиксированный порядок и набор полей (одинаковые ключи в каждой строке)."""
+
     return {k: r.get(k) for k in TIME_REPORT_FLAT_COLUMNS}
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _get_group_id(e: Any, group_by: str, projects_map: dict) -> Any:
@@ -711,7 +692,7 @@ def _entry_log_payload(
         if line_ctx and pbg:
             def _project_name_key(pid: str) -> str:
                 if not pid:
-                    return "\uffff"  # без проекта — в конец при сортировке по возрастанию
+                    return "\uffff"
                 pr = line_ctx["projects_map"].get(pid)
                 return (pr.name or "").lower() if pr else (pid or "")
 
@@ -839,7 +820,7 @@ def _build_row(
 
 
 def _row_time_report_summary_for_export(r: dict[str, Any], *, group_by: str) -> dict[str, Any]:
-    """Плоская строка как в превью: без вложенного `users`."""
+
     if group_by == "clients":
         keys = (
             "client_id",
@@ -887,7 +868,7 @@ async def get_time_report_summary_for_export(
     is_billable: bool | None = None,
     include_fixed_fee: bool = True,
 ) -> list[dict[str, Any]]:
-    """Одна строка = одна агрегатная группа (как JSON GET /reports/time/...), для Excel/CSV «как на экране»."""
+
     rows = await get_time_report_all_rows(
         session,
         group_by=group_by,

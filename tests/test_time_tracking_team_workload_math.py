@@ -1,4 +1,4 @@
-"""Ёмкость и процент загрузки (team_workload_math)."""
+
 
 from datetime import date
 from decimal import Decimal
@@ -9,7 +9,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from application.team_workload_math import (  # noqa: E402
+from application.team_workload_math import (
     capacity_for_period,
     period_days_inclusive,
     workload_percent,
@@ -28,7 +28,7 @@ def test_period_days_rejects_inverted() -> None:
 
 def test_capacity_for_period_one_iso_week() -> None:
     c = capacity_for_period(Decimal("35"), date(2024, 1, 1), date(2024, 1, 7))
-    assert c == Decimal("35")  # 7/7 * 35
+    assert c == Decimal("35")
 
 
 def test_workload_percent_clamped() -> None:

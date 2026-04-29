@@ -1,4 +1,4 @@
-"""Common logging bootstrap for backend services."""
+
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def _normalize_level(raw: str | None) -> int:
 
 
 def configure_logging(service_name: str) -> None:
-    """Apply a sane default logging setup once per process."""
+
     root = logging.getLogger()
     level = _normalize_level(os.getenv("LOG_LEVEL") or os.getenv("UVICORN_LOG_LEVEL"))
     if not root.handlers:

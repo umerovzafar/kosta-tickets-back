@@ -22,7 +22,7 @@ class AzureLoginUseCase:
         picture: Optional[str],
         role: str = Role.EMPLOYEE.value,
     ) -> tuple[User, str]:
-        # Сначала ищем по azure_oid — дубликатов не создаём, даже если база уже заполнена
+
         user = await self._user_repo.get_by_azure_oid(azure_oid)
         if not user:
             user = await self._user_repo.create(
@@ -93,7 +93,7 @@ class AdminLoginUseCase:
 
 
 class BootstrapAdminUseCase:
-    """Одноразовая выдача логина/пароля при первом деплое (секрет из env)."""
+
 
     def __init__(
         self,
@@ -106,10 +106,7 @@ class BootstrapAdminUseCase:
         self._bootstrap_secret = (bootstrap_secret or "").strip()
 
     async def execute(self, secret: str) -> tuple[str, str] | None:
-        """
-        Успех: (username, plain_password).
-        None: отключено, неверный секрет или уже выполнен bootstrap.
-        """
+
         if not self._bootstrap_secret:
             return None
         if (secret or "").strip() != self._bootstrap_secret:
@@ -157,14 +154,14 @@ class GetCurrentUserUseCase:
             if not token_jti or token_jti != stored:
                 return None
         else:
-            # Старые строки без jti в БД: принимаем только JWT без claim jti
+
             if token_jti:
                 return None
         return user
 
 
 class InvalidateSessionUseCase:
-    """Сброс серверной сессии (все выданные JWT для пользователя перестают действовать)."""
+
 
     def __init__(self, user_repo: UserRepositoryPort):
         self._user_repo = user_repo

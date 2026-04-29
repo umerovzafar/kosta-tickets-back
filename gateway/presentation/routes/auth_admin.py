@@ -17,14 +17,12 @@ def _auth_base() -> str:
     return service_base_url(get_settings().auth_service_url, "Auth")
 
 
-
-# Rate limit: 5 попыток за 15 минут на IP
 _ADMIN_LOGIN_LIMIT = 5
-_ADMIN_LOGIN_WINDOW = 900  # 15 min
+_ADMIN_LOGIN_WINDOW = 900
 _admin_login_attempts: dict[str, list[float]] = defaultdict(list)
 
 _BOOTSTRAP_LIMIT = 3
-_BOOTSTRAP_WINDOW = 86400  # 24 h
+_BOOTSTRAP_WINDOW = 86400
 _bootstrap_attempts: dict[str, list[float]] = defaultdict(list)
 
 
@@ -59,7 +57,7 @@ class AdminLoginBody(BaseModel):
 
 @router.post("/login")
 async def admin_login(body: AdminLoginBody, request: Request):
-    """Вход в админ-панель по логину и паролю (без Microsoft)."""
+
     client_ip = request.client.host if request.client else "unknown"
     _check_admin_rate_limit(client_ip)
     r = await send_upstream_request(
@@ -83,7 +81,7 @@ async def admin_login(body: AdminLoginBody, request: Request):
 
 @router.get("/bootstrap/status")
 async def admin_bootstrap_status():
-    """Доступна ли первичная настройка входа в админ-панель (прокси к auth)."""
+
     r = await send_upstream_request(
         "GET",
         f"{_auth_base()}/auth/admin-bootstrap/status",
@@ -97,7 +95,7 @@ async def admin_bootstrap_status():
 
 @router.post("/bootstrap")
 async def admin_bootstrap(request: Request, body: dict = Body(...)):
-    """Одноразовая генерация логина/пароля (тело: {\"secret\": \"...\"})."""
+
     client_ip = request.client.host if request.client else "unknown"
     _check_bootstrap_rate_limit(client_ip)
     r = await send_upstream_request(

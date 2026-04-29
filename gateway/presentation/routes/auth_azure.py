@@ -55,7 +55,7 @@ async def azure_login(
 
 @router.post("/session/logout", status_code=204, summary="Сброс серверной сессии (инвалидация JWT)")
 async def session_logout(request: Request):
-    """Прокси к POST /auth/logout в auth-сервисе (Bearer или HttpOnly-cookie)."""
+
     settings = get_settings()
     url = f"{settings.auth_service_url.rstrip('/')}/auth/logout"
     headers: dict[str, str] = {}

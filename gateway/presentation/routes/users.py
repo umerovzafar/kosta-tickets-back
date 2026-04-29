@@ -59,7 +59,7 @@ async def require_auth(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Любой авторизованный пользователь (только проверка токена)."""
+
     return await _get_current_user_optional(request, authorization)
 
 
@@ -67,7 +67,7 @@ async def require_admin(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Главный администратор, Администратор или Партнер — управление пользователями (блок, архив, роль в учёте времени)."""
+
     user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_MANAGE_USERS:
@@ -82,7 +82,7 @@ async def require_main_admin(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Только Главный администратор — назначение ролей пользователям."""
+
     user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role != MAIN_ADMIN_ROLE:
@@ -97,7 +97,7 @@ async def require_main_admin_or_administrator(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Главный администратор или Администратор — назначение ролей (см. auth: роль «Главный администратор» только у Главного)."""
+
     user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in (MAIN_ADMIN_ROLE, ADMIN_ROLE):
@@ -112,7 +112,7 @@ async def require_admin_or_it(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Администратор, Партнёр, IT или офис-менеджер — просмотр списка и деталей пользователей."""
+
     user = await _get_current_user_optional(request, authorization)
     role = (user.get("role") or "").strip()
     if role not in ROLES_CAN_VIEW_USERS:
@@ -128,7 +128,7 @@ async def verify_user_detail_access(
     request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
-    """Свой профиль или роли из ROLES_CAN_VIEW_USERS."""
+
     user = await verify_bearer_and_get_user(request, authorization)
     role = (user.get("role") or "").strip()
     rid = user.get("id")
@@ -178,7 +178,7 @@ async def upload_desktop_background(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
-    """Загрузить или заменить фон рабочего стола. Изображение: jpg, png, gif, webp, макс. 5 МБ."""
+
     user = await _get_current_user_optional(request, authorization)
     user_id = user.get("id")
     if not user_id:
@@ -236,7 +236,7 @@ async def delete_desktop_background(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
-    """Удалить фон рабочего стола."""
+
     user = await _get_current_user_optional(request, authorization)
     user_id = user.get("id")
     old_path = user.get("desktop_background")
@@ -294,7 +294,7 @@ async def patch_me_weekly_capacity(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_auth),
 ):
-    """Норма часов в неделю (блок «Нагрузка»). Создаёт запись в time_tracking при первом сохранении."""
+
     user = await verify_bearer_and_get_user(request, authorization)
     uid = user.get("id")
     if not uid:
@@ -461,7 +461,7 @@ async def set_time_tracking_role(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    """Назначить роль в учёте времени (user / manager). Главный администратор или Администратор."""
+
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/time-tracking-role",
@@ -485,7 +485,7 @@ async def set_position(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     _: dict = Depends(require_admin),
 ):
-    """Установить должность пользователя. Главный администратор, Администратор или Партнер."""
+
     r = await auth_service_request(
         "PATCH",
         f"/users/{user_id}/position",

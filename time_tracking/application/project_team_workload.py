@@ -1,4 +1,4 @@
-"""Загрузка команды за период, отфильтрованная по одному проекту (часы только с project_id)."""
+
 
 from datetime import date
 
@@ -24,13 +24,7 @@ async def compute_project_team_workload(
     date_to: date,
     include_archived: bool,
 ) -> TeamWorkloadOut | None:
-    """
-    Участники строки таблицы:
-    - все с записью в time_tracking_user_project_access на этот project_id;
-    - плюс все, у кого за период есть time entry с этим project_id (даже без строки доступа).
 
-    Ёмкость и % загрузки — как у глобального /team-workload (weekly_capacity × дни/7).
-    """
     proj_repo = ClientProjectRepository(session)
     row = await proj_repo.get_by_id(client_id, project_id)
     if not row:

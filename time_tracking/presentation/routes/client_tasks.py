@@ -1,4 +1,4 @@
-"""Задачи клиента time manager (отдельный список на каждого клиента)."""
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -16,6 +16,5 @@
     document.getElementById('metric-cameras-users').textContent = String(hk.users.length);
     document.getElementById('metric-cameras-total').textContent = String(hk.camera_count);
   }).catch(function () {
-    // Keep zero values on dashboard when unavailable.
   });
 })();

@@ -182,8 +182,6 @@ async def get_ticket(
     return _ticket_to_response(ticket)
 
 
-# --- Comments ---
-
 @router.get("/{ticket_uuid}/comments", response_model=list[CommentResponse])
 async def list_comments(
     ticket_uuid: str,

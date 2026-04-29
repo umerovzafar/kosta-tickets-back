@@ -1,4 +1,4 @@
-"""Формулы duration ↔ hours и квант до минуты (time_tracking)."""
+
 
 from decimal import Decimal
 
@@ -8,13 +8,13 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from application.time_rounding import (  # noqa: E402
+from application.time_rounding import (
     hours_from_seconds,
     quantize_seconds_to_minute,
     resolve_duration_for_entry,
     seconds_from_hours,
 )
-from infrastructure.repository_shared import normalize_time_entry_hours  # noqa: E402
+from infrastructure.repository_shared import normalize_time_entry_hours
 
 
 @pytest.mark.parametrize(
@@ -57,5 +57,5 @@ def test_resolve_duration_for_entry_from_seconds() -> None:
 
 def test_resolve_duration_rejects_subminute_after_quantize() -> None:
     with pytest.raises(ValueError, match="не меньше 1"):
-        resolve_duration_for_entry(29, None)  # 29с → 0 мин после квантования
+        resolve_duration_for_entry(29, None)
 

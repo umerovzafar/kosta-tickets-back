@@ -1,15 +1,4 @@
-"""
-Импорт графика отсутствий из Excel (как «График_отпусков_работников_на_2026г.xlsx»).
 
-Ожидается лист с заголовком строки: № | ФИО | (примечание) | даты по колонкам.
-В ячейках дней — коды 1–5 (легенда: ежегодный отпуск, болезнь, day off, командировка, удалёнка).
-
-Запуск (из каталога vacation/, с поднятой БД):
-  set DATABASE_URL=postgresql://vacation:YOUR_PASSWORD@localhost:5432/kosta_vacation
-  python scripts/import_excel.py "C:\\path\\to\\file.xlsx" --year 2026
-
-Удаляются только данные за указанный --year; остальные годы в БД не трогаются.
-"""
 from __future__ import annotations
 
 import argparse
@@ -22,8 +11,8 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from application.excel_schedule_import import import_schedule_from_workbook  # noqa: E402
-from infrastructure.db_sync import sync_engine_url  # noqa: E402
+from application.excel_schedule_import import import_schedule_from_workbook
+from infrastructure.db_sync import sync_engine_url
 
 
 def main() -> None:

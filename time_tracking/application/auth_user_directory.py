@@ -1,4 +1,4 @@
-"""Справочник auth для обогащения ответов time tracking (должность position)."""
+
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ _log = logging.getLogger(__name__)
 
 
 async def fetch_auth_user_positions_by_id(authorization: str) -> dict[int, str | None]:
-    """GET {auth}/users с тем же Bearer — id -> position (или None). При ошибке/403 — пустой dict."""
+
     authz = (authorization or "").strip()
     if not authz:
         return {}
@@ -50,10 +50,7 @@ async def fetch_auth_user_positions_by_id(authorization: str) -> dict[int, str |
 async def fetch_auth_user_partner_hints_by_id(
     authorization: str,
 ) -> dict[int, dict[str, str | None]]:
-    """
-    id -> {position, role} из GET auth/users (для правила «партнёр на проекте» и списка партнёров).
-    При ошибке/без токена — пустой dict.
-    """
+
     authz = (authorization or "").strip()
     if not authz:
         return {}
@@ -94,7 +91,7 @@ async def fetch_auth_user_partner_hints_by_id(
 
 
 async def fetch_auth_user_position(authorization: str, auth_user_id: int) -> str | None:
-    """GET {auth}/users/{id} — должность для одного пользователя."""
+
     authz = (authorization or "").strip()
     if not authz:
         return None

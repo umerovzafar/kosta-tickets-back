@@ -1,7 +1,4 @@
-"""Правило: у проекта с назначенными в доступе пользователями должен быть хотя бы один «партнёр».
 
-Учитываются должность в БД TT, должность из auth и орг-роль из auth (например «Партнер»), если передан Authorization.
-"""
 
 from __future__ import annotations
 
@@ -15,7 +12,7 @@ from infrastructure.repository_clients import ClientProjectRepository
 
 
 def job_title_indicates_partner(position: str | None) -> bool:
-    """Поле position (должность): партнёр / partner."""
+
     if not position or not str(position).strip():
         return False
     s = str(position).strip().casefold()
@@ -27,7 +24,7 @@ def job_title_indicates_partner(position: str | None) -> bool:
 
 
 def org_role_indicates_partner(role: str | None) -> bool:
-    """Орг-роль в auth, например «Партнер» / Partner."""
+
     if not role or not str(role).strip():
         return False
     s = str(role).strip().casefold()
@@ -39,7 +36,7 @@ def org_role_indicates_partner(role: str | None) -> bool:
 
 
 def merged_position_tt_auth(tt_position: str | None, auth_position: str | None) -> str | None:
-    """Сначала TT, иначе auth (как в справочнике пользователей)."""
+
     if tt_position is not None and str(tt_position).strip():
         return str(tt_position).strip()
     if auth_position is not None and str(auth_position).strip():
@@ -66,12 +63,7 @@ async def ensure_projects_have_partner_assignee(
     projects: ClientProjectRepository | None = None,
     authorization: str | None = None,
 ) -> None:
-    """
-    Для каждого project_id: если к проекту привязан хотя бы один пользователь, среди них
-    должен быть минимум один, кого считаем партнёром (должность/роль, см. user_satisfies_partner_rule).
 
-    authorization: тот же Bearer, что к TT — для чтения должности/роли из auth (если в TT пусто).
-    """
     auth_hints: dict[int, dict[str, str | None]] = {}
     if (authorization or "").strip():
         auth_hints = await fetch_auth_user_partner_hints_by_id(authorization or "")

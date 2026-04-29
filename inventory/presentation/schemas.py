@@ -9,7 +9,6 @@ class HealthResponse(BaseModel):
     timestamp: datetime
 
 
-
 class CategoryResponse(BaseModel):
     id: int
     name: str
@@ -32,7 +31,6 @@ class CategoryUpdate(BaseModel):
     description: Optional[str] = None
     sort_order: Optional[int] = None
     parent_id: Optional[int] = None
-
 
 
 class InventoryItemResponse(BaseModel):

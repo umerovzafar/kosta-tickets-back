@@ -20,7 +20,7 @@ def _norm_int(n: Any) -> Optional[int]:
 
 
 def _parse_record_from_info(info: dict) -> dict:
-    """Преобразование одной записи из InfoList (JSON) в удобный формат."""
+
     person_id = _norm(
         info.get("employeeNoString") or info.get("employeeNo") or info.get("cardNo"),
         "-",
@@ -46,7 +46,7 @@ def _parse_record_from_info(info: dict) -> dict:
 
 
 def _parse_json_response(body: dict) -> tuple[list[dict], int, int, str]:
-    """Парсит JSON-ответ AcsEvent. Возвращает (records, totalMatches, numOfMatches, responseStatusStrg)."""
+
     acs = body.get("AcsEvent") or {}
     total = int(acs.get("totalMatches", 0) or 0)
     num = int(acs.get("numOfMatches", 0) or 0)
@@ -79,10 +79,7 @@ def _parse_user_from_info(info: dict) -> dict:
 
 
 def _parse_users_json_response(body: dict) -> tuple[list[dict], int, int, str]:
-    """
-    Парсит JSON-ответ ISAPI UserInfo/Search.
-    Возвращает (users, totalMatches, numOfMatches, responseStatusStrg).
-    """
+
     root = body.get("UserInfoSearch") or body.get("UserInfoSearchResult") or body.get("UserInfo") or {}
     total = int(root.get("totalMatches", 0) or 0)
     num = int(root.get("numOfMatches", 0) or 0)
@@ -90,7 +87,7 @@ def _parse_users_json_response(body: dict) -> tuple[list[dict], int, int, str]:
 
     info_list: Any = root.get("UserInfo") or root.get("UserInfoList") or root.get("InfoList") or []
     if isinstance(info_list, dict):
-        # разные варианты оберток
+
         info_list = (
             info_list.get("UserInfo")
             or info_list.get("UserInfoItem")
@@ -218,7 +215,7 @@ def get_attendance_from_devices(
     max_records_per_device: int,
     timeout: float,
 ) -> list[dict]:
-    """Запросить события сразу с нескольких устройств Hikvision."""
+
     results: list[dict] = []
     for host in hosts:
         host = host.strip()
@@ -249,11 +246,7 @@ def get_users_from_device(
     name: Optional[str] = None,
     employee_no: Optional[str] = None,
 ) -> dict:
-    """
-    Получить список пользователей (persons) с устройства Hikvision.
 
-    Используется ISAPI endpoint: /ISAPI/AccessControl/UserInfo/Search?format=json
-    """
     if not host or not user:
         return {"users": [], "error": "Устройство не настроено (host, user)", "camera_ip": host or "-"}
 
@@ -272,13 +265,13 @@ def get_users_from_device(
     with httpx.Client(timeout=timeout, auth=auth) as client:
         while len(all_users) < max_users:
             page_size = min(50, max_users - len(all_users))
-            # Hikvision expects "UserInfoSearchCond"
+
             cond: dict[str, Any] = {
                 "searchID": "1",
                 "searchResultPosition": position,
                 "maxResults": page_size,
             }
-            # Не все прошивки поддерживают фильтры, поэтому делаем их опциональными
+
             if name:
                 cond["name"] = name
             if employee_no:
@@ -321,7 +314,7 @@ def get_users_from_device(
             if position >= total:
                 break
 
-    # Фильтры на всякий случай применяем ещё раз на нашей стороне (прошивки могут игнорировать)
+
     if name:
         all_users = [u for u in all_users if name.lower() in (u.get("name") or "").lower()]
     if employee_no:

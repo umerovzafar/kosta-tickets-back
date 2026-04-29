@@ -1,4 +1,4 @@
-"""Почта по заявкам на расход: уведомление модераторам при отправке на согласование (submit)."""
+
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class ExpenseModerationEmailContext:
 
 
 def append_url_intent(url: str, param: str, value: str) -> str:
-    """Добавляет query-параметр; для URL с # — в fragment (hash-router)."""
+
     url = (url or "").strip()
     if not url:
         return url
@@ -182,7 +182,7 @@ def _attachment_item_html(
     href: str | None,
     preview_html: str = "",
 ) -> str:
-    """Блок вложения: подпись по типу + строка «иконка · имя · размер» (вся строка — ссылка, если есть href)."""
+
     kind_esc = html.escape(kind_ru)
     size_esc = html.escape(f"~{sz_kb} КБ")
     row_tbl = f"""<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
@@ -701,7 +701,7 @@ async def _send_moderation_message(settings: Settings, ctx: ExpenseModerationEma
 
 
 async def notify_partner_expense_recorded(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
-    """Информационное письмо получателям из routing: расход партнёра добавлен, согласование не требуется."""
+
     if not _smtp_ready(settings):
         _log.warning(
             "expense partner notify: SMTP не настроен (%s), expense_id=%s",
@@ -843,7 +843,7 @@ async def notify_partner_expense_recorded(settings: Settings, ctx: ExpenseModera
 
 
 async def notify_expense_submitted(settings: Settings, ctx: ExpenseModerationEmailContext) -> None:
-    """Письмо модераторам при отправке на согласование (submit → pending_approval)."""
+
     await _send_moderation_message(settings, ctx)
 
 
@@ -856,7 +856,7 @@ async def notify_expense_author_decision(
     decision: Literal["approved", "rejected"],
     reject_reason: str | None,
 ) -> None:
-    """Письмо автору заявки с результатом согласования."""
+
     if not _smtp_ready(settings):
         _log.warning(
             "expense author notify: SMTP не настроен (%s), expense_id=%s",
@@ -972,7 +972,7 @@ async def notify_expense_author_paid(
     expense_id: str,
     paid_by_line: str,
 ) -> None:
-    """Письмо автору: заявка отмечена как оплаченная (кто отметил — в тексте)."""
+
     if not _smtp_ready(settings):
         _log.warning(
             "expense author paid notify: SMTP не настроен (%s), expense_id=%s",
@@ -1078,7 +1078,7 @@ async def notify_expense_author_paid(
 
 
 async def send_expense_smtp_test(settings: Settings) -> list[str]:
-    """Тест SMTP: письмо «на согласование»."""
+
     if not _smtp_ready(settings):
         raise ValueError("Задайте EXPENSE_SMTP_HOST, EXPENSE_SMTP_USER, EXPENSE_SMTP_PASSWORD")
 

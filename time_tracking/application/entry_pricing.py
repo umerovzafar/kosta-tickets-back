@@ -1,4 +1,4 @@
-"""Расчёт ставок и себестоимости по строке времени без привязки к ORM."""
+
 
 from __future__ import annotations
 
@@ -33,10 +33,7 @@ def billable_scoped_user_rates(
     project_currency: str | None,
     time_entry_project_id: str | None,
 ) -> list[Any] | None:
-    """
-    Billable-ставки в валюте проекта: при наличии ставки, привязанной к project_id,
-    она имеет приоритет над «общими» (applies_to_project_id is null).
-    """
+
     base = _scoped_rates(user_rates, project_currency)
     if not base:
         return None
@@ -56,7 +53,7 @@ def _billable_rate_for_entry(
     project_currency: str | None = None,
     time_entry_project_id: str | None = None,
 ) -> tuple[Decimal | None, str]:
-    """Ставка за час (billable) в валюте проекта, действующая на дату."""
+
     base_cur = (project_currency or "USD").strip()[:10] or "USD"
     scoped = billable_scoped_user_rates(user_rates, project_currency, time_entry_project_id)
     if not scoped:
@@ -76,7 +73,7 @@ def _billable_amount_for_entry(
     project_currency: str | None = None,
     time_entry_project_id: str | None = None,
 ) -> tuple[Decimal, str]:
-    """Сумма billable и валюта. Если нет ставки в валюте проекта — 0."""
+
     out_cur = (project_currency or "USD").strip()[:10] or "USD"
     if not is_billable or not user_rates:
         return Decimal(0), out_cur
@@ -96,7 +93,7 @@ def _cost_amount_for_entry(
     *,
     project_currency: str | None = None,
 ) -> tuple[Decimal, Decimal | None, str]:
-    """(cost_amount, cost_rate_per_hour, currency) — в валюте проекта."""
+
     base_cur = (project_currency or "USD").strip()[:10] or "USD"
     scoped = _scoped_rates(user_cost_rates, project_currency)
     if not scoped:

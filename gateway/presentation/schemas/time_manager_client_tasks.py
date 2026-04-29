@@ -1,4 +1,4 @@
-"""Задачи клиента time manager (gateway)."""
+
 
 from decimal import Decimal
 from typing import Optional

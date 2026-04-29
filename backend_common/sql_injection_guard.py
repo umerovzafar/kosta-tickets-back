@@ -1,8 +1,4 @@
-"""Защита от типичных SQL-инъекций в query/path/JSON-теле запроса.
 
-Не заменяет параметризованные запросы (SQLAlchemy ORM) — это дополнительный периметр.
-Отключение: переменная окружения SQL_INJECTION_GUARD_ENABLED=false
-"""
 
 from __future__ import annotations
 
@@ -21,19 +17,19 @@ _ENABLED = os.getenv("SQL_INJECTION_GUARD_ENABLED", "true").lower() in ("1", "tr
 _CHECK_BODY = os.getenv("SQL_INJECTION_GUARD_CHECK_BODY", "true").lower() in ("1", "true", "yes")
 _MAX_BODY = int(os.getenv("SQL_INJECTION_GUARD_MAX_BODY_BYTES", "262144"))
 
-# Типичные конструкции атак; регистронезависимо. Сужены, чтобы снизить ложные срабатывания в обычном тексте.
+
 _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?is)\bunion\s+all\s+select\b"),
     re.compile(r"(?is)\bunion\s+select\b"),
-    re.compile(r"(?is)--[\s\r\n]"),  # SQL-комментарий с пробелом/переводом строки после --
-    re.compile(r"(?is)/\*.*\*/"),  # блочный комментарий /* */
+    re.compile(r"(?is)--[\s\r\n]"),
+    re.compile(r"(?is)/\*.*\*/"),
     re.compile(r"(?is);\s*(drop|delete|truncate|insert|update|alter|create\s+table|exec|execute)\b"),
     re.compile(r"(?is)\bor\b\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+"),
     re.compile(r"(?is)\band\b\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+"),
     re.compile(r"(?is)(?:^|[^\d])1\s*=\s*1(?:[^\d]|$)"),
     re.compile(r"(?is)\b1\s*=\s*'1'\b"),
-    re.compile(r"(?is)'--"),  # '--
-    re.compile(r"(?is)--\s*$"),  # конец строки после --
+    re.compile(r"(?is)'--"),
+    re.compile(r"(?is)--\s*$"),
     re.compile(r"(?is)information_schema\b"),
     re.compile(r"(?is)\bsys\.databases\b"),
     re.compile(r"(?is)\bsys\.tables\b"),
@@ -52,7 +48,7 @@ _PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def contains_sql_injection_pattern(value: str) -> bool:
-    """True, если строка похожа на попытку SQL-инъекции."""
+
     if not value or len(value) > 200_000:
         return False
     s = value.strip()
@@ -84,7 +80,7 @@ def _scan_json_value(obj: Any, *, depth: int = 0) -> bool:
 
 
 def _bad_request() -> JSONResponse:
-    # Единый ответ без деталей — не подсказываем сработавшее правило
+
     return JSONResponse(
         status_code=400,
         content={"detail": "Некорректный запрос"},
@@ -92,7 +88,7 @@ def _bad_request() -> JSONResponse:
 
 
 class SqlInjectionGuardMiddleware(BaseHTTPMiddleware):
-    """Проверяет query string, path и (опционально) JSON-тело на типичные SQLi-паттерны."""
+
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Any]) -> Response:
         if not _ENABLED:
@@ -103,7 +99,7 @@ class SqlInjectionGuardMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         raw_path = request.url.path or ""
-        # OAuth: длинные непрозрачные code/state в query ложно матчат эвристики; SQL здесь не строится из query.
+
         if raw_path == "/api/v1/auth/azure/callback":
             return await call_next(request)
         try:
@@ -157,7 +153,7 @@ class SqlInjectionGuardMiddleware(BaseHTTPMiddleware):
 
 
 def validate_sql_identifier(name: str, *, kind: str = "identifier") -> str:
-    """Разрешены только безопасные идентификаторы для сырого SQL (таблица/имя колонки)."""
+
     if not name or len(name) > 128:
         raise ValueError(f"Invalid {kind}")
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):

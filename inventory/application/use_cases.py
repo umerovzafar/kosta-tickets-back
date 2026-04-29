@@ -25,7 +25,6 @@ class GetHealthUseCase:
         )
 
 
-
 class CreateCategoryUseCase:
     def __init__(self, repo: CategoryRepositoryPort):
         self._repo = repo
@@ -88,7 +87,6 @@ class DeleteCategoryUseCase:
 
     async def execute(self, category_id: int) -> bool:
         return await self._repo.delete(category_id)
-
 
 
 class CreateItemUseCase:

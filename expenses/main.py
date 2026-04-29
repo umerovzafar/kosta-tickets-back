@@ -4,7 +4,7 @@ import sys
 
 
 def _configure_logging() -> None:
-    """Логи в stdout — видны в `docker compose logs expenses`. Уровень: LOG_LEVEL (по умолчанию INFO)."""
+
     raw = (os.getenv("LOG_LEVEL") or "").strip()
     level_name = (raw or "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -21,4 +21,4 @@ def _configure_logging() -> None:
 
 _configure_logging()
 
-from presentation.api import app  # noqa: E402
+from presentation.api import app

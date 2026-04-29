@@ -1,4 +1,4 @@
-"""Периодическая сдача прошлой ISO-недели (Celery)."""
+
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def submit_last_closed_iso_weeks() -> int:
     from application.weekly_submission_service import run_weekly_auto_submit_sync
 
     n = run_weekly_auto_submit_sync()
-    # Префикс для grep в логах воркера: docker logs ... time_tracking_celery_worker
+
     _log.info(
         "[weekly-celery] auto-submit users_with_new_submission=%s (0 = all weeks already closed or no users)",
         n,

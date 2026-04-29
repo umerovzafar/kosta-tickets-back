@@ -1,7 +1,4 @@
-"""
-Типы отсутствий для UI: подписи как в Excel/макете и фирменные цвета легенды.
-Единый источник для GET /schedule/kind-legend и документации фронта.
-"""
+
 
 from __future__ import annotations
 
@@ -16,7 +13,6 @@ class KindLegendEntry(BaseModel):
     color_text_hex: str = Field(description="Цвет текста на плашке для контраста")
 
 
-# Цвета подобраны под макет (лавандовый, лососевый, небесно-голубой, мятный, жёлтый).
 KIND_LEGEND_ENTRIES: list[KindLegendEntry] = [
     KindLegendEntry(
         kind_code=1,

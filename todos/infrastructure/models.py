@@ -1,4 +1,4 @@
-"""Модели БД (SQLAlchemy)."""
+
 
 from datetime import datetime
 
@@ -9,7 +9,7 @@ from infrastructure.database import Base
 
 
 class OutlookCalendarTokenModel(Base):
-    """Токены OAuth календаря Outlook (access + refresh) по user_id."""
+
 
     __tablename__ = "outlook_calendar_tokens"
 
@@ -21,7 +21,7 @@ class OutlookCalendarTokenModel(Base):
 
 
 class TodoBoardModel(Base):
-    """Личная Kanban-доска пользователя (одна на user_id)."""
+
 
     __tablename__ = "todo_boards"
 
@@ -44,7 +44,7 @@ class TodoBoardModel(Base):
 
 
 class TodoBoardLabelModel(Base):
-    """Метка на доске (переиспользуется на карточках)."""
+
 
     __tablename__ = "todo_board_labels"
 
@@ -70,7 +70,7 @@ class TodoBoardLabelModel(Base):
 
 
 class TodoColumnModel(Base):
-    """Колонка доски (порядок по полю position)."""
+
 
     __tablename__ = "todo_board_columns"
 
@@ -97,7 +97,7 @@ class TodoColumnModel(Base):
 
 
 class TodoCardModel(Base):
-    """Карточка в колонке."""
+
 
     __tablename__ = "todo_board_cards"
 
@@ -146,7 +146,7 @@ class TodoCardModel(Base):
 
 
 class TodoCardLabelModel(Base):
-    """Связь карточка — метка доски."""
+
 
     __tablename__ = "todo_card_labels"
 
@@ -166,7 +166,7 @@ class TodoCardLabelModel(Base):
 
 
 class TodoCardChecklistItemModel(Base):
-    """Пункт чеклиста на карточке."""
+
 
     __tablename__ = "todo_card_checklist_items"
 
@@ -187,7 +187,7 @@ class TodoCardChecklistItemModel(Base):
 
 
 class TodoCardParticipantModel(Base):
-    """Участник карточки (user_id из auth)."""
+
 
     __tablename__ = "todo_card_participants"
 
@@ -202,7 +202,7 @@ class TodoCardParticipantModel(Base):
 
 
 class TodoCardAttachmentModel(Base):
-    """Вложение файла (путь относительно MEDIA_PATH)."""
+
 
     __tablename__ = "todo_card_attachments"
 
@@ -223,7 +223,7 @@ class TodoCardAttachmentModel(Base):
 
 
 class TodoCardCommentModel(Base):
-    """Комментарий к карточке (лента активности)."""
+
 
     __tablename__ = "todo_card_comments"
 

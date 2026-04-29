@@ -1,4 +1,4 @@
-"""Интервалы дат и выбор ставки (hourly_rate_logic)."""
+
 
 from datetime import date
 from types import SimpleNamespace
@@ -9,7 +9,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("time_tracking")
 
-from application.hourly_rate_logic import (  # noqa: E402
+from application.hourly_rate_logic import (
     filter_rates_by_currency,
     intervals_overlap,
     pick_rate_for_date,

@@ -1,4 +1,4 @@
-"""Бизнес-логика счетов: суммы, статусы, привязка времени и расходов."""
+
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from infrastructure.repositories import ClientProjectRepository
 from infrastructure.repository_invoices import InvoiceRepository
 from infrastructure.repository_shared import _now_utc
 
-# В счёт — только согласованные расходы (отчёт шире — см. REPORT_INCLUSION_STATUSES в expenses)
+
 _INVOICABLE_EXPENSE_STATUSES = frozenset({"approved", "paid", "closed"})
 
 _Q4 = Decimal("0.0001")
@@ -51,7 +51,7 @@ def _compute_totals(
     tax_percent: Decimal | None,
     tax2_percent: Decimal | None,
 ) -> tuple[Decimal, Decimal, Decimal]:
-    """Возвращает (discount_amount, tax_amount, total_amount)."""
+
     sub = _money4(subtotal_lines)
     dp = discount_percent or Decimal(0)
     t1 = tax_percent or Decimal(0)
@@ -64,7 +64,7 @@ def _compute_totals(
 
 
 def effective_invoice_status(inv: InvoiceModel, *, today: date | None = None) -> str:
-    """Статус для UI: overdue вычисляется."""
+
     today = today or date.today()
     if inv.status == "canceled":
         return "canceled"
@@ -262,7 +262,7 @@ async def _append_time_line(
     cpr = ClientProjectRepository(session)
     proj = await cpr.get_by_id_global(entry.project_id) if entry.project_id else None
     pc = (getattr(proj, "currency", None) or "USD") if proj else "USD"
-    # В счёте количество часов и сумма — billable в валюте проекта.
+
     qty = dec(entry.hours)
     amt, _cur = _billable_amount_for_entry(
         qty,
@@ -553,7 +553,7 @@ async def delete_draft_invoice(
     repo = InvoiceRepository(session)
     if await repo.sum_payments(inv.id) > 0:
         raise HTTPException(status_code=400, detail="Нельзя удалить счёт с платежами")
-    _ = actor_auth_user_id  # зарезервировано для будущего внешнего аудита
+    _ = actor_auth_user_id
     await session.delete(inv)
 
 
@@ -630,10 +630,7 @@ async def get_invoices_aggregated_stats(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict[str, Any]:
-    """Сводка: сколько счетов по эффективным статусам, суммы/оплаты/остаток по валютам, непогашенный остаток.
 
-    Статусы считаются как в ``effective_invoice_status`` (в т.ч. overdue, paid по факту оплаты).
-    """
     repo = InvoiceRepository(session)
     rows = await repo.list_invoices_for_aggregation(
         client_id=client_id,
@@ -739,7 +736,7 @@ async def list_unbilled_time_entries(
                 "authUserId": e.auth_user_id,
                 "workDate": e.work_date.isoformat(),
                 "hours": float(h),
-                # roundedHours сохранён для совместимости с фронтом и всегда = hours.
+
                 "roundedHours": float(h),
                 "durationSeconds": int(e.duration_seconds),
                 "description": e.description,

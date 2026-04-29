@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend_common.sql_injection_guard import SqlInjectionGuardMiddleware
-from infrastructure.models import (  # noqa: F401 — регистрация таблиц для create_all
+from infrastructure.models import (
     OutlookCalendarTokenModel,
     TodoBoardLabelModel,
     TodoBoardModel,
@@ -26,7 +26,7 @@ from infrastructure.schema_patches import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Создание таблиц при старте (если нет миграций)."""
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await apply_todo_board_columns_collapsed_patch(conn)

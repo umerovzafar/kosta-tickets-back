@@ -1,4 +1,4 @@
-"""Связь записи времени с задачей клиента (тип оплачиваемости из справочника задач)."""
+
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,10 +11,7 @@ async def resolve_time_entry_task_for_project(
     project_id: str | None,
     task_id: str | None,
 ) -> tuple[str | None, bool | None]:
-    """
-    Без задачи: (None, None).
-    С задачей: (нормализованный id, billable_by_default из справочника).
-    """
+
     if task_id is None:
         return None, None
     raw = str(task_id).strip()

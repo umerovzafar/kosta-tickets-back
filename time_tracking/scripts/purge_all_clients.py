@@ -1,19 +1,4 @@
-"""
-Полное удаление данных time manager: ВСЕ клиенты, проекты, контакты, задачи, категории
-расходов, счета (invoices), назначенный доступ к проектам; записи времени, относящиеся
-к проектам и задачам этих клиентов.
 
-НЕ трогает: справочник пользователей time_tracking (time_tracking_users), почасовые ставки
-пользователей, недельные сдачи (weekly_submissions), снимки отчётов (tt_report_*),
-сохранённые виды отчётов. Записи времени без project_id и task_id остаются.
-
-ОПАСНО для прода. Сначала бэкап БД, затем --dry-run, затем --execute с --confirm.
-
-Запуск (из корня time_tracking, как и delete_mock_clients.py):
-  export DATABASE_URL=postgresql+asyncpg://...
-  python scripts/purge_all_clients.py --dry-run
-  python scripts/purge_all_clients.py --execute --confirm DELETE_ALL_CLIENTS
-"""
 from __future__ import annotations
 
 import argparse
@@ -23,16 +8,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import delete, func, or_, select  # noqa: E402
+from sqlalchemy import delete, func, or_, select
 
-from infrastructure.database import async_session_factory  # noqa: E402
-from infrastructure.models import (  # noqa: E402
+from infrastructure.database import async_session_factory
+from infrastructure.models import (
     TimeEntryModel,
     TimeManagerClientModel,
     TimeManagerClientProjectModel,
     TimeManagerClientTaskModel,
 )
-from infrastructure.models_invoices import InvoiceModel  # noqa: E402
+from infrastructure.models_invoices import InvoiceModel
 
 CONFIRM_PHRASE = "DELETE_ALL_CLIENTS"
 
@@ -98,7 +83,7 @@ async def _run(*, dry_run: bool) -> int:
         await session.execute(delete(InvoiceModel))
         await session.execute(delete(TimeManagerClientModel))
 
-        # На случай «висячих» project_id, если схема без жёсткого FK
+
         await session.execute(
             delete(TimeEntryModel).where(TimeEntryModel.project_id.isnot(None))
         )

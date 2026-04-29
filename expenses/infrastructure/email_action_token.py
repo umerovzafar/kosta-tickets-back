@@ -1,4 +1,4 @@
-"""Подписанные токены для ссылок из письма (без Bearer): согласование и просмотр вложений."""
+
 
 from __future__ import annotations
 
@@ -42,9 +42,7 @@ def sign_email_action_token(
 
 
 def verify_email_action_token(secret: str, *, token: str, expense_id: str) -> Action:
-    """
-    Проверяет подпись и срок. expense_id должен совпадать с путём URL.
-    """
+
     if not (secret or "").strip():
         raise ValueError("Секрет не настроен")
     parts = (token or "").strip().split(".")
@@ -67,7 +65,7 @@ def verify_email_action_token(secret: str, *, token: str, expense_id: str) -> Ac
     act = body.get("act")
     if act not in ("approve", "reject"):
         raise ValueError("Недействительная ссылка")
-    return act  # type: ignore[return-value]
+    return act
 
 
 def sign_attachment_view_token(

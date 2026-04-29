@@ -1,8 +1,4 @@
-"""Общие задачи по умолчанию для всех клиентов time manager.
 
-Список совпадает с задачами из раздела «Other tasks», которые должны
-автоматически попадать в «Common tasks» (common_for_future_projects).
-"""
 
 from __future__ import annotations
 
@@ -13,7 +9,7 @@ from infrastructure.models import TimeManagerClientModel, TimeManagerClientTaskM
 from infrastructure.repositories import ClientTaskRepository
 from infrastructure.repository_shared import _now_utc
 
-# Имена как в UI (при сопоставлении используется lower(trim(name))).
+
 DEFAULT_COMMON_TASK_NAMES: tuple[str, ...] = (
     "Accounting",
     "Business Development",
@@ -33,7 +29,7 @@ def _names_lower() -> tuple[str, ...]:
 
 
 async def _promote_existing_tasks_to_common(session: AsyncSession, *, client_id: str | None) -> None:
-    """Поставить common_for_future_projects=TRUE у задач с именами из списка."""
+
     cond = [
         func.lower(func.trim(TimeManagerClientTaskModel.name)).in_(_names_lower()),
         TimeManagerClientTaskModel.common_for_future_projects.is_(False),
@@ -48,7 +44,7 @@ async def _promote_existing_tasks_to_common(session: AsyncSession, *, client_id:
 
 
 async def _insert_missing_default_tasks(session: AsyncSession, client_id: str) -> None:
-    """Создать отсутствующие задачи из списка с common_for_future_projects=TRUE."""
+
     r = await session.execute(
         select(TimeManagerClientTaskModel.name).where(TimeManagerClientTaskModel.client_id == client_id)
     )
@@ -69,13 +65,13 @@ async def _insert_missing_default_tasks(session: AsyncSession, client_id: str) -
 
 
 async def seed_default_common_tasks_for_client(session: AsyncSession, client_id: str) -> None:
-    """Один клиент: поднять флаг common у совпадающих задач и добавить недостающие из списка."""
+
     await _promote_existing_tasks_to_common(session, client_id=client_id)
     await _insert_missing_default_tasks(session, client_id)
 
 
 async def seed_default_common_tasks_for_all_clients(session: AsyncSession) -> None:
-    """Все клиенты: глобально поднять флаг, затем для каждого — только недостающие INSERT."""
+
     await _promote_existing_tasks_to_common(session, client_id=None)
     r = await session.execute(select(TimeManagerClientModel.id))
     for cid in r.scalars().all():

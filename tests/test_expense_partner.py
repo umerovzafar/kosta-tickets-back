@@ -1,4 +1,4 @@
-"""Правила для расхода партнёра (без согласования)."""
+
 
 from datetime import date
 from decimal import Decimal
@@ -9,7 +9,7 @@ from service_path import ensure_service_in_path
 
 ensure_service_in_path("expenses")
 
-from application.expense_service import is_partner_expense, validate_submit_fields  # noqa: E402
+from application.expense_service import is_partner_expense, validate_submit_fields
 
 
 def test_is_partner_expense():
@@ -18,7 +18,7 @@ def test_is_partner_expense():
 
 
 def test_partner_submit_relaxes_reimbursable_requirements():
-    """partner_expense: не требуются projectId и документ для оплаты даже при isReimbursable=true."""
+
     validate_submit_fields(
         description="Партнёр",
         expense_date=date(2026, 1, 10),
@@ -38,7 +38,7 @@ def test_partner_submit_relaxes_reimbursable_requirements():
 
 
 def test_reimbursable_without_project_allowed_when_docs_ok():
-    """Возмещаемый не-партнёрский расход без projectId: допустимо (см. политику вложений)."""
+
     validate_submit_fields(
         description="Такси",
         expense_date=date(2026, 1, 10),

@@ -1,4 +1,4 @@
-"""Конфигурация vacation: пароль БД должен совпадать с vacation_db в compose (VACATION_DB_*)."""
+
 
 import logging
 from functools import lru_cache
@@ -13,12 +13,12 @@ _log = logging.getLogger("vacation.config")
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # Полный URL (редко). По умолчанию URL собирается из VACATION_DB_* — тот же пароль, что у контейнера vacation_db.
+
     database_url: str = Field(
         default="",
         validation_alias=AliasChoices("DATABASE_URL", "VACATION_DATABASE_URL"),
     )
-    # true — использовать database_url как есть (нестандартный хост и т.д.). Иначе пароль всегда из VACATION_DB_*.
+
     vacation_use_explicit_database_url: bool = Field(
         default=False,
         validation_alias="VACATION_USE_EXPLICIT_DATABASE_URL",
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
 
 def build_database_url_from_parts(settings: Settings) -> str:
-    """postgresql://… с корректным экранированием пароля (символы @ : и т.д.)."""
+
     u = quote((settings.vacation_db_user or "vacation").strip() or "vacation", safe="")
     p = quote((settings.vacation_db_password or "").strip(), safe="")
     h = (settings.vacation_db_host or "vacation_db").strip() or "vacation_db"
@@ -50,7 +50,7 @@ def build_database_url_from_parts(settings: Settings) -> str:
 
 def resolve_database_url(settings: Settings) -> str:
     raw = (settings.database_url or "").strip()
-    # Portainer часто держит старый VACATION_DATABASE_URL с другим паролем, чем VACATION_DB_PASSWORD / volume Postgres.
+
     if raw and settings.vacation_use_explicit_database_url:
         return raw
     if raw and not settings.vacation_use_explicit_database_url:

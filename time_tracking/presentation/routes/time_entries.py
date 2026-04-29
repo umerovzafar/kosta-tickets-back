@@ -1,4 +1,4 @@
-"""Записи списанного времени (для расчёта загрузки команды)."""
+
 
 import uuid
 from datetime import date
@@ -48,7 +48,7 @@ async def _validate_project_if_set(
     session: AsyncSession,
     project_id: str | None,
 ) -> str | None:
-    """Пустая строка → None; иначе проект должен существовать и не быть в архиве."""
+
     pid = _normalize_project_id(project_id)
     if pid is None:
         return None
@@ -101,7 +101,7 @@ async def list_time_entries(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> list[TimeEntryOut]:
-    """Список записей за период: всегда в хронологическом порядке (work_date ↑, created_at ↑, id ↑)."""
+
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=False)
     await _ensure_user(session, auth_user_id)
     if date_to < date_from:
@@ -118,9 +118,7 @@ async def create_time_entry(
     session: AsyncSession = Depends(get_session),
     viewer: dict = Depends(require_bearer_user),
 ) -> TimeEntryOut:
-    """Создание записи для **auth_user_id** (сотрудник). Менеджер/офис: тот же POST с id сотрудника из
-    `GET /projects/{projectId}/time-tracking-assignees`, тело — workDate, durationSeconds, projectId, taskId, …
-    """
+
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     await _raise_if_work_date_is_closed(
@@ -251,7 +249,7 @@ async def delete_time_entry(
     viewer: dict = Depends(require_bearer_user),
     body: TimeEntryDeleteBody | None = Body(default=None),
 ):
-    """Удаление владельцем — полная очистка (204). Удаление менеджером чужой записи — снятие с учёта (200)."""
+
     await ensure_time_entry_subject_allowed(session, viewer, auth_user_id, write=True)
     await _ensure_user(session, auth_user_id)
     repo = TimeEntryRepository(session)

@@ -1,4 +1,4 @@
-"""Uninvoiced Report Service — отчёт по неинвойсированным часам и расходам."""
+
 
 from __future__ import annotations
 
@@ -39,13 +39,13 @@ async def get_uninvoiced_report(
     clients_map = await _load_clients_map(session)
     users_map = await _load_users_map(session)
 
-    # Все billable записи периода
+
     all_cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
     )
     all_cond.append(TimeEntryModel.is_billable.is_(True))
 
-    # Uninvoiced всегда считается по округлённым часам (как в счетах).
+
     all_entries_q = select(
         TimeEntryModel.id,
         TimeEntryModel.auth_user_id,
@@ -55,7 +55,7 @@ async def get_uninvoiced_report(
     ).where(and_(*all_cond))
     all_entries = (await session.execute(all_entries_q)).all()
 
-    # Неинвойсированные billable записи
+
     uninv_cond = _base_entry_conditions(
         date_from, date_to, user_ids, project_ids, client_ids, include_fixed_fee,
         exclude_invoiced_time=True,
@@ -68,7 +68,7 @@ async def get_uninvoiced_report(
     all_uid_set = {e.auth_user_id for e in all_entries} | {e.auth_user_id for e in uninv_entries}
     rates_map = await _load_user_rates(session, list(all_uid_set) or None)
 
-    # Расходы из внешнего сервиса (только с project_id = проект time manager)
+
     raw_expenses = await _fetch_expense_report_data(date_from, date_to, user_ids, project_ids)
     raw_expenses = filter_expense_rows_to_tt_projects(raw_expenses, projects_map)
     if client_ids:
@@ -78,17 +78,17 @@ async def get_uninvoiced_report(
             if _get_expense_client_id(e, projects_map) in client_ids_set
         ]
 
-    # Агрегация total часов по проекту
+
     total_by_project: dict[str | None, Decimal] = {}
     for e in all_entries:
         pid = e.project_id
         total_by_project[pid] = total_by_project.get(pid, _ZERO) + _d(e.hours)
 
-    # Агрегация uninvoiced часов / сумм / пользователей по проекту
+
     uninv_hours_by_project: dict[str | None, Decimal] = {}
     uninv_amount_by_project: dict[str | None, Decimal] = {}
     uninv_currency_by_project: dict[str | None, str] = {}
-    # user_buckets per project: pid -> { uid -> {total, billable, amount, currency} }
+
     user_buckets_by_project: dict[str | None, dict[int, dict]] = {}
 
     for e in uninv_entries:
@@ -111,7 +111,7 @@ async def get_uninvoiced_report(
         elif pid not in uninv_currency_by_project:
             uninv_currency_by_project[pid] = "USD"
 
-        # Per-user tracking
+
         uid = e.auth_user_id
         if pid not in user_buckets_by_project:
             user_buckets_by_project[pid] = {}
@@ -124,7 +124,7 @@ async def get_uninvoiced_report(
         if cur != "USD":
             ubkt["currency"] = cur
 
-    # Агрегация расходов по проекту
+
     uninv_expenses_by_project: dict[str | None, Decimal] = {}
     for e in raw_expenses:
         pid = e.get("project_id")
@@ -141,11 +141,11 @@ async def get_uninvoiced_report(
         uninv_h = uninv_hours_by_project.get(pid, _ZERO)
         uninv_exp = uninv_expenses_by_project.get(pid, _ZERO)
         uninv_amt = uninv_amount_by_project.get(pid, _ZERO)
-        # Приоритет — валюта проекта; если не задана, берём из ставки
+
         project_currency = (getattr(p, "currency", None) or "USD") if p else "USD"
         currency = project_currency if project_currency != "USD" else uninv_currency_by_project.get(pid, "USD")
 
-        # Список пользователей по данному проекту
+
         user_buckets = user_buckets_by_project.get(pid, {})
         users_list = _build_users_list(user_buckets, users_map)
 

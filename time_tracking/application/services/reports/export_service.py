@@ -1,4 +1,4 @@
-"""Export Service — генерация CSV и XLSX из данных отчётов."""
+
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 
 def _filename(report_type: str, group_by: str | None, date_from: date, date_to: date, fmt: str) -> str:
-    """Имя файла согласно ТЗ: time_projects_2026-04-01_2026-04-15.xlsx"""
+
     parts = [report_type]
     if group_by:
         parts.append(group_by)
@@ -34,7 +34,7 @@ def _collect_fieldnames(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def _json_default(o: Any) -> Any:
-    """Сериализация вложенных объектов (Pydantic, Decimal, даты) в JSON для ячейки."""
+
     if hasattr(o, "model_dump"):
         try:
             return o.model_dump(mode="json")
@@ -50,10 +50,7 @@ def _json_default(o: Any) -> Any:
 
 
 def _cell_value_for_export(val: Any) -> Any:
-    """
-    Скаляр для CSV / openpyxl.
-    openpyxl не принимает list/dict в ячейке — всё сложное → JSON-строка (как в ТЗ для users[]).
-    """
+
     if val is None:
         return ""
     if val is True or val is False:
@@ -75,7 +72,7 @@ def _cell_value_for_export(val: Any) -> Any:
 
 
 def _row_to_plain_dict(row: Any) -> dict[str, Any]:
-    """Строка отчёта → dict (dict / Pydantic / SQLAlchemy Row)."""
+
     if isinstance(row, dict):
         return dict(row)
     model_dump = getattr(row, "model_dump", None)
@@ -115,7 +112,7 @@ def export_csv(
         writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(safe_rows)
-    # UTF-8 BOM for Excel compatibility
+
     content = ("\ufeff" + buf.getvalue()).encode("utf-8")
     fname = _filename(report_type, group_by, date_from, date_to, "csv")
     return Response(
@@ -145,7 +142,7 @@ def export_xlsx(
     safe_rows = _sanitize_export_rows(rows)
     fieldnames = _collect_fieldnames(safe_rows) if safe_rows else []
 
-    # Header row
+
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True)
     for col_idx, name in enumerate(fieldnames, start=1):
@@ -154,7 +151,7 @@ def export_xlsx(
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
-    # Data rows (повторное приведение типов — на случай если openpyxl всё ещё получит list/dict)
+
     for row_idx, row in enumerate(safe_rows, start=2):
         for col_idx, name in enumerate(fieldnames, start=1):
             raw = row.get(name, "")
@@ -163,7 +160,7 @@ def export_xlsx(
             val = _cell_value_for_export(raw)
             ws.cell(row=row_idx, column=col_idx, value=val)
 
-    # Auto-width columns
+
     for col in ws.columns:
         max_len = 0
         col_letter = col[0].column_letter
@@ -188,11 +185,7 @@ def export_xlsx(
 
 
 def _humanize_header(name: str) -> str:
-    """Преобразовать snake_case в заголовок с заглавной буквы.
 
-    Если имя уже содержит пробел — оно уже отформатировано (напр. "Invoice ID",
-    "First Name", "Billable?") и возвращается без изменений.
-    """
     if " " in name or "?" in name:
         return name
     return name.replace("_", " ").title()
@@ -206,7 +199,7 @@ def export_report(
     date_from: date,
     date_to: date,
 ) -> Response:
-    """Точка входа: выбрать формат и сгенерировать файл."""
+
     if fmt == "xlsx":
         return export_xlsx(rows, report_type, group_by, date_from, date_to)
     return export_csv(rows, report_type, group_by, date_from, date_to)
